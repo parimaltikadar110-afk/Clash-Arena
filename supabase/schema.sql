@@ -109,12 +109,13 @@ CREATE POLICY "Admins can read all transactions" ON transactions
     (SELECT role FROM users WHERE id = auth.uid()) = 'admin'
   );
 
--- Function to create user profile on auth signup
+-- Function to create user profile on auth signup.
+-- New users start with zero wallet balance; there is no signup bonus.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.users (id, game_name, wallet_balance, role)
-  VALUES (NEW.id, NEW.email, 500, 'player');
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'game_name', NEW.email), 0, 'player');
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
