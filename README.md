@@ -1,32 +1,75 @@
-# Clash Arena
+import { createClient } from '@supabase/supabase-js'
 
-Free Fire Tournament App starter project.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-## Features
-- Login with username, email, or phone number
-- User profile section inside the app
-- Dashboard and leaderboard
-- Tournament cards
-- Admin panel inside the app
-- Supabase-ready schema for users, tournaments, registrations, and transactions
+export const supabase =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : null
 
-## Tech stack
-- React + Vite
-- Supabase JavaScript client
+export const demoUsers = {
+  user: {
+    id: 'local-user-1',
+    full_name: 'Demo Player',
+    username: 'demo',
+    email: 'demo@clasharena.app',
+    phone: '+8801700000000',
+    coins: 1200,
+    role: 'user'
+  },
+  admin: {
+    id: 'admin-user-1',
+    full_name: 'Admin Clash',
+    username: 'admin',
+    email: 'admin@clasharena.app',
+    phone: '+8801700000001',
+    coins: 5000,
+    role: 'admin'
+  }
+}
 
-## Run locally
-1. Install dependencies:
-   npm install
-2. Copy `.env.example` to `.env` and add your Supabase values.
-3. Start development server:
-   npm run dev
+export const localUser = demoUsers.user
 
-## Demo login
-- Username / Email / Phone: `demo`
-- Password: `123456`
+export const mockTournaments = [
+  {
+    id: 1,
+    title: 'Daily Clash Cup',
+    game: 'Free Fire',
+    prize: '৳1200',
+    entryFee: 'Free',
+    slots: 50,
+    registered: 32,
+    start_time: 'Today, 8:00 PM',
+    status: 'Open'
+  },
+  {
+    id: 2,
+    title: 'Weekend Arena',
+    game: 'Free Fire',
+    prize: '৳2800',
+    entryFee: 'Free',
+    slots: 100,
+    registered: 77,
+    start_time: 'Saturday, 9:00 PM',
+    status: 'Open'
+  },
+  {
+    id: 3,
+    title: 'Night Rush',
+    game: 'Free Fire',
+    prize: '৳900',
+    entryFee: 'Free',
+    slots: 25,
+    registered: 19,
+    start_time: 'Tonight, 10:30 PM',
+    status: 'Hot'
+  }
+]
 
-## Supabase setup
-1. Create a new Supabase project.
-2. Open SQL editor and run the SQL in `supabase/schema.sql`.
-3. Copy your project URL and anon key into `.env`.
-4. Update the app logic later to connect real auth and data queries.
+export const mockLeaderboard = [
+  { rank: 1, name: 'Sakib', wins: 42 },
+  { rank: 2, name: 'Rafsan', wins: 39 },
+  { rank: 3, name: 'Nabil', wins: 34 },
+  { rank: 4, name: 'Ishrak', wins: 29 }
+]
