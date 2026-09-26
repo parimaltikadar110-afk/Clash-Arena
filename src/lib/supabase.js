@@ -6,7 +6,9 @@ import {
   mockLeaderboard,
   supabase,
   joinTournamentInSupabase,
-  seedSupabaseDemoData
+  seedSupabaseDemoData,
+  createTournamentInSupabase,
+  mockTournaments
 } from './lib/supabase'
 
 const storageKey = 'clash-arena-user'
@@ -18,13 +20,20 @@ function App() {
   })
 
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [tournaments, setTournaments] = useState([])
+  const [tournaments, setTournaments] = useState(mockTournaments)
   const [isLoading, setIsLoading] = useState(true)
+  const [form, setForm] = useState({
+    title: '',
+    game: 'Free Fire',
+    prize: '৳1200',
+    slots: '50',
+    start_time: ''
+  })
 
   useEffect(() => {
     const loadTournaments = async () => {
       if (!supabase) {
-        setTournaments([])
+        setTournaments(mockTournaments)
         setIsLoading(false)
         return
       }
@@ -32,14 +41,10 @@ function App() {
       try {
         await seedSupabaseDemoData()
         const rows = await fetchTournamentsFromSupabase()
-        if (rows?.length) {
-          setTournaments(rows)
-        } else {
-          setTournaments([])
-        }
+        setTournaments(rows.length ? rows : mockTournaments)
       } catch (error) {
         console.error('Error loading tournaments:', error)
-        setTournaments([])
+        setTournaments(mockTournaments)
       } finally {
         setIsLoading(false)
       }
@@ -110,19 +115,55 @@ function App() {
       )
     )
 
-    setUser((currentUser) =>
-      currentUser
-        ? { ...currentUser, coins: Number(currentUser.coins || 0) + 50 }
-        : currentUser
-    )
+    const nextCoins = Number(user.coins || 0) + 50
+    const updatedUser = { ...user, coins: nextCoins }
+    setUser(updatedUser)
+    localStorage.setItem(storageKey, JSON.stringify(updatedUser))
+  }
 
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify({
-        ...user,
-        coins: Number(user.coins || 0) + 50
-      })
-    )
+  const handleCreateTournament = async (event) => {
+    event.preventDefault()
+
+    if (!form.title.trim()) {
+      alert('Tournament title is required')
+      return
+    }
+
+    const generatedTournament = {
+      id: Date.now(),
+      title: form.title.trim(),
+      game: form.game,
+      prize: form.prize || '৳1200',
+      entryFee: 'Free',
+      slots: Number(form.slots) || 50,
+      registered: 0,
+      start_time: form.start_time || 'Tomorrow, 8:00 PM',
+      status: 'Open'
+    }
+
+    try {
+      if (supabase) {
+        const inserted = await createTournamentInSupabase({
+          title: generatedTournament.title,
+          game: generatedTournament.game,
+          prize: generatedTournament.prize,
+          slots: generatedTournament.slots,
+          start_time: generatedTournament.start_time
+        })
+
+        if (inserted) {
+          setTournaments((current) => [inserted, ...current])
+        }
+      } else {
+        setTournaments((current) => [generatedTournament, ...current])
+      }
+    } catch (error) {
+      console.error('Create tournament failed:', error)
+      setTournaments((current) => [generatedTournament, ...current])
+    }
+
+    setForm({ title: '', game: 'Free Fire', prize: '৳1200', slots: '50', start_time: '' })
+    setActiveTab('tournaments')
   }
 
   const userStats = useMemo(
@@ -195,7 +236,9 @@ function App() {
                 <p className="eyebrow">Welcome back</p>
                 <h1>Dashboard</h1>
               </div>
-              <button className="primary-btn">Create Match</button>
+              <button className="primary-btn" onClick={() => setActiveTab('tournaments')}>
+                View Matches
+              </button>
             </div>
 
             <div className="stats-grid">
@@ -359,6 +402,67 @@ function App() {
                 <h3>Reports</h3>
                 <p>3 new issues</p>
               </div>
+            </div>
+
+            <div className="panel tournament-form-panel">
+              <h3>Create Tournament</h3>
+              <form onSubmit={handleCreateTournament} className="form-grid">
+                <div className="field-group">
+                  <label>Tournament Name</label>
+                  <input
+                    type="text"
+                    value={form.title}
+                    onChange={(event) => setForm({ ...form, title: event.target.value })}
+                    placeholder="Example: Royal Arena Cup"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label>Game</label>
+                  <select
+                    value={form.game}
+                    onChange={(event) => setForm({ ...form, game: event.target.value })}
+                  >
+                    <option value="Free Fire">Free Fire</option>
+                    <option value="PUBG Mobile">PUBG Mobile</option>
+                    <option value="BGMI">BGMI</option>
+                  </select>
+                </div>
+
+                <div className="field-group">
+                  <label>Prize</label>
+                  <input
+                    type="text"
+                    value={form.prize}
+                    onChange={(event) => setForm({ ...form, prize: event.target.value })}
+                    placeholder="৳1200"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label>Slots</label>
+                  <input
+                    type="number"
+                    min="10"
+                    value={form.slots}
+                    onChange={(event) => setForm({ ...form, slots: event.target.value })}
+                  />
+                </div>
+
+                <div className="field-group full-width">
+                  <label>Start Time</label>
+                  <input
+                    type="text"
+                    value={form.start_time}
+                    onChange={(event) => setForm({ ...form, start_time: event.target.value })}
+                    placeholder="Tomorrow, 8:00 PM"
+                  />
+                </div>
+
+                <button type="submit" className="primary-btn full-width">
+                  Publish Tournament
+                </button>
+              </form>
             </div>
           </section>
         )}

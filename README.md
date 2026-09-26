@@ -31,7 +31,7 @@ a {
   text-decoration: none;
 }
 
-button, input {
+button, input, select {
   font: inherit;
 }
 
@@ -134,7 +134,8 @@ h1, h2, h3, p {
 .admin-box,
 .login-card,
 .wallet-box,
-.empty-state {
+.empty-state,
+.tournament-form-panel {
   background: rgba(18, 26, 44, 0.92);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -333,6 +334,42 @@ h1, h2, h3, p {
   padding: 22px;
 }
 
+.tournament-form-panel {
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-group label {
+  color: var(--muted);
+}
+
+.field-group input,
+.field-group select {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
 .wallet-grid {
   grid-template-columns: repeat(2, minmax(220px, 1fr));
 }
@@ -409,7 +446,8 @@ h1, h2, h3, p {
   .stats-grid,
   .wallet-grid,
   .quick-grid,
-  .admin-grid {
+  .admin-grid,
+  .form-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -423,7 +461,8 @@ h1, h2, h3, p {
   .wallet-grid,
   .quick-grid,
   .admin-grid,
-  .summary-strip {
+  .summary-strip,
+  .form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -433,3 +472,6 @@ h1, h2, h3, p {
     align-items: flex-start;
   }
 }
+
+
+

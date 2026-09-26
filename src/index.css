@@ -122,7 +122,7 @@ export async function seedSupabaseDemoData() {
 }
 
 export async function fetchTournamentsFromSupabase() {
-  if (!supabase) return []
+  if (!supabase) return mockTournaments
 
   const { data, error } = await supabase
     .from('tournaments')
@@ -198,5 +198,37 @@ export async function joinTournamentInSupabase(userId, tournamentId) {
       .from('tournaments')
       .update({ registered_count: (tournament.registered_count || 0) + 1 })
       .eq('id', tournamentId)
+  }
+}
+
+export async function createTournamentInSupabase({ title, game, prize, slots, start_time }) {
+  if (!supabase) return null
+
+  const payload = {
+    id: `tournament-${Date.now()}`,
+    title,
+    game,
+    prize,
+    max_slots: Number(slots) || 50,
+    registered_count: 0,
+    start_time: new Date().toISOString(),
+    status: 'open',
+    created_at: new Date().toISOString()
+  }
+
+  const { data, error } = await supabase.from('tournaments').insert([payload]).select().single()
+
+  if (error) throw error
+
+  return {
+    id: data.id,
+    title: data.title,
+    game: data.game,
+    prize: data.prize,
+    entryFee: 'Free',
+    slots: data.max_slots || 0,
+    registered: data.registered_count || 0,
+    start_time: start_time || 'Schedule pending',
+    status: data.status || 'Open'
   }
 }
