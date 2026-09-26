@@ -12,7 +12,7 @@ import {
   updateTournamentResultInSupabase,
   createUserInSupabase,
   updateUserProfileInSupabase
-} from './lib/supabase'
+} from './lib/supabase.jsx'
 
 const storageKey = 'clash-arena-user'
 const userStoreKey = 'clash-arena-users'
