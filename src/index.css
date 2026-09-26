@@ -1,343 +1,202 @@
-import { useMemo, useState } from 'react'
-import { demoUsers, mockLeaderboard, mockTournaments } from './lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
-const storageKey = 'clash-arena-user'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-function App() {
-  const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem(storageKey)
-    return stored ? JSON.parse(stored) : null
-  })
+export const supabase =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : null
 
-  const [activeTab, setActiveTab] = useState('dashboard')
-  const [tournaments, setTournaments] = useState(mockTournaments)
+export const demoUsers = {
+  user: {
+    id: 'local-user-1',
+    full_name: 'Demo Player',
+    username: 'demo',
+    email: 'demo@clasharena.app',
+    phone: '+8801700000000',
+    coins: 1200,
+    role: 'user'
+  },
+  admin: {
+    id: 'admin-user-1',
+    full_name: 'Admin Clash',
+    username: 'admin',
+    email: 'admin@clasharena.app',
+    phone: '+8801700000001',
+    coins: 5000,
+    role: 'admin'
+  }
+}
 
-  const handleLogin = (formData) => {
-    const loginValue = formData.login.trim().toLowerCase().replace(/\s+/g, '')
-    const password = formData.password
+export const mockTournaments = [
+  {
+    id: 1,
+    title: 'Daily Clash Cup',
+    game: 'Free Fire',
+    prize: '৳1200',
+    entryFee: 'Free',
+    slots: 50,
+    registered: 32,
+    start_time: 'Today, 8:00 PM',
+    status: 'Open'
+  },
+  {
+    id: 2,
+    title: 'Weekend Arena',
+    game: 'Free Fire',
+    prize: '৳2800',
+    entryFee: 'Free',
+    slots: 100,
+    registered: 77,
+    start_time: 'Saturday, 9:00 PM',
+    status: 'Open'
+  },
+  {
+    id: 3,
+    title: 'Night Rush',
+    game: 'Free Fire',
+    prize: '৳900',
+    entryFee: 'Free',
+    slots: 25,
+    registered: 19,
+    start_time: 'Tonight, 10:30 PM',
+    status: 'Hot'
+  }
+]
 
-    const foundUser = Object.values(demoUsers).find((account) => {
-      const values = [
-        account.username,
-        account.email,
-        account.phone,
-        account.full_name
-      ].map((value) => value.toLowerCase().replace(/\s+/g, ''))
+export const mockLeaderboard = [
+  { rank: 1, name: 'Sakib', wins: 42 },
+  { rank: 2, name: 'Rafsan', wins: 39 },
+  { rank: 3, name: 'Nabil', wins: 34 },
+  { rank: 4, name: 'Ishrak', wins: 29 }
+]
 
-      return values.includes(loginValue)
-    })
+export async function seedSupabaseDemoData() {
+  if (!supabase) return
 
-    if (!foundUser || password !== '123456') {
-      alert('Invalid login. Demo credentials: demo / demo@clasharena.app / +8801700000000 and password = 123456')
-      return
+  try {
+    const { data: existingUsers, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .limit(1)
+
+    if (!userError && (!existingUsers || existingUsers.length === 0)) {
+      const userRows = Object.values(demoUsers).map((user) => ({
+        id: user.id,
+        full_name: user.full_name,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        password_hash: '123456',
+        role: user.role,
+        coins: user.coins
+      }))
+
+      await supabase.from('users').insert(userRows)
     }
 
-    const loggedUser = { ...foundUser }
-    localStorage.setItem(storageKey, JSON.stringify(loggedUser))
-    setUser(loggedUser)
+    const { data: existingTournaments, error: tournamentError } = await supabase
+      .from('tournaments')
+      .select('id')
+      .limit(1)
+
+    if (!tournamentError && (!existingTournaments || existingTournaments.length === 0)) {
+      const tournamentRows = mockTournaments.map((tournament, index) => ({
+        id: `tournament-${index + 1}`,
+        title: tournament.title,
+        game: tournament.game,
+        prize: tournament.prize,
+        max_slots: tournament.slots,
+        registered_count: tournament.registered,
+        start_time: new Date().toISOString(),
+        status: tournament.status.toLowerCase(),
+        created_at: new Date().toISOString()
+      }))
+
+      await supabase.from('tournaments').insert(tournamentRows)
+    }
+  } catch (error) {
+    console.error('Supabase seed failed:', error)
   }
-
-  const handleLogout = () => {
-    localStorage.removeItem(storageKey)
-    setUser(null)
-  }
-
-  const handleJoinTournament = (tournamentId) => {
-    setTournaments((current) =>
-      current.map((tournament) =>
-        tournament.id === tournamentId
-          ? { ...tournament, registered: tournament.registered + 1 }
-          : tournament
-      )
-    )
-
-    setUser((currentUser) =>
-      currentUser
-        ? { ...currentUser, coins: currentUser.coins + 50 }
-        : currentUser
-    )
-  }
-
-  const userStats = useMemo(
-    () => [
-      { label: 'Tournament Played', value: '12' },
-      { label: 'Win Rate', value: '58%' },
-      { label: 'Coins', value: `${user?.coins ?? 0}` },
-      { label: 'Rank', value: user?.role === 'admin' ? 'Admin' : '#18' }
-    ],
-    [user]
-  )
-
-  const totalSlots = tournaments.reduce((sum, item) => sum + item.slots, 0)
-  const totalRegistered = tournaments.reduce((sum, item) => sum + item.registered, 0)
-
-  if (!user) {
-    return <LoginPage onLogin={handleLogin} />
-  }
-
-  const isAdmin = user.role === 'admin'
-
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-box">
-          <div className="brand-badge">CA</div>
-          <div>
-            <p className="eyebrow">Game Arena</p>
-            <h2>Clash Arena</h2>
-          </div>
-        </div>
-
-        <nav className="nav">
-          {[
-            ['dashboard', 'Dashboard'],
-            ['tournaments', 'Tournaments'],
-            ['wallet', 'Wallet'],
-            ['profile', 'Profile'],
-            isAdmin ? ['admin', 'Admin Panel'] : null
-          ]
-            .filter(Boolean)
-            .map(([key, label]) => (
-              <button
-                key={key}
-                className={activeTab === key ? 'nav-btn active' : 'nav-btn'}
-                onClick={() => setActiveTab(key)}
-              >
-                {label}
-              </button>
-            ))}
-        </nav>
-
-        <div className="user-card">
-          <p>{user.full_name}</p>
-          <small>@{user.username}</small>
-          <span className="badge-role">{user.role}</span>
-          <button className="ghost-btn" onClick={handleLogout}>Logout</button>
-        </div>
-      </aside>
-
-      <main className="main-panel">
-        {activeTab === 'dashboard' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Welcome back</p>
-                <h1>Dashboard</h1>
-              </div>
-              <button className="primary-btn">Create Match</button>
-            </div>
-
-            <div className="stats-grid">
-              {userStats.map((item) => (
-                <div key={item.label} className="stat-card">
-                  <small>{item.label}</small>
-                  <h3>{item.value}</h3>
-                </div>
-              ))}
-            </div>
-
-            <div className="quick-grid">
-              <div className="panel spotlight-card">
-                <p className="eyebrow">Current event</p>
-                <h3>Daily Clash Cup</h3>
-                <p>Free entry • 25 players • 6 squads • Winner gets prize pool</p>
-                <button className="primary-btn" onClick={() => setActiveTab('tournaments')}>
-                  Join Now
-                </button>
-              </div>
-
-              <div className="panel">
-                <div className="section-header">
-                  <h3>Leaderboard</h3>
-                </div>
-                <div className="leaderboard-list">
-                  {mockLeaderboard.map((player) => (
-                    <div key={player.rank} className="leaderboard-row">
-                      <span>#{player.rank}</span>
-                      <strong>{player.name}</strong>
-                      <span>{player.wins} Wins</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'tournaments' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Daily events</p>
-                <h1>Available Tournaments</h1>
-              </div>
-            </div>
-
-            <div className="summary-strip">
-              <div className="mini-stat">
-                <small>Total slots</small>
-                <strong>{totalSlots}</strong>
-              </div>
-              <div className="mini-stat">
-                <small>Players joined</small>
-                <strong>{totalRegistered}</strong>
-              </div>
-              <div className="mini-stat">
-                <small>Entry fee</small>
-                <strong>Free</strong>
-              </div>
-            </div>
-
-            <div className="card-grid">
-              {tournaments.map((tournament) => (
-                <div key={tournament.id} className="tournament-card">
-                  <div className="card-header">
-                    <span className="pill">{tournament.status}</span>
-                    <span>{tournament.game}</span>
-                  </div>
-                  <h3>{tournament.title}</h3>
-                  <div className="meta">
-                    <span>Prize: {tournament.prize}</span>
-                    <span>Entry: {tournament.entryFee}</span>
-                    <span>{tournament.registered}/{tournament.slots} joined</span>
-                  </div>
-                  <p>{tournament.start_time}</p>
-                  <button className="primary-btn" onClick={() => handleJoinTournament(tournament.id)}>
-                    Join Tournament
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'wallet' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Balance</p>
-                <h1>Wallet</h1>
-              </div>
-            </div>
-
-            <div className="wallet-grid">
-              <div className="panel wallet-box">
-                <small>Available Coins</small>
-                <h2>{user.coins}</h2>
-                <p>Earn coins by joining tournaments and winning matches.</p>
-              </div>
-              <div className="panel wallet-box">
-                <small>Rewards</small>
-                <h2>৳0</h2>
-                <p>Daily prize pool and bonus rewards are shown here.</p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'profile' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Your account</p>
-                <h1>Profile</h1>
-              </div>
-            </div>
-
-            <div className="profile-card panel">
-              <div className="avatar">{user.full_name.charAt(0)}</div>
-              <div className="profile-info">
-                <h3>{user.full_name}</h3>
-                <p>Username: @{user.username}</p>
-                <p>Email: {user.email}</p>
-                <p>Phone: {user.phone}</p>
-                <p>Coins: {user.coins}</p>
-                <p>Role: {user.role}</p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {isAdmin && activeTab === 'admin' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Management</p>
-                <h1>Admin Panel</h1>
-              </div>
-            </div>
-
-            <div className="panel admin-grid">
-              <div className="admin-box">
-                <h3>Active Matches</h3>
-                <p>{tournaments.length} tournaments running</p>
-              </div>
-              <div className="admin-box">
-                <h3>Players</h3>
-                <p>8,420 registered users</p>
-              </div>
-              <div className="admin-box">
-                <h3>Transactions</h3>
-                <p>৳14,500 processed</p>
-              </div>
-              <div className="admin-box">
-                <h3>Reports</h3>
-                <p>3 new issues</p>
-              </div>
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
-  )
 }
 
-function LoginPage({ onLogin }) {
-  const [formData, setFormData] = useState({ login: '', password: '' })
+export async function fetchTournamentsFromSupabase() {
+  if (!supabase) return []
 
-  const submitForm = (event) => {
-    event.preventDefault()
-    onLogin(formData)
-  }
+  const { data, error } = await supabase
+    .from('tournaments')
+    .select('*')
+    .order('created_at', { ascending: false })
 
-  return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="logo-wrap">
-          <div className="brand-badge large">CA</div>
-          <h1>Clash Arena</h1>
-        </div>
+  if (error) throw error
 
-        <form onSubmit={submitForm} className="login-form">
-          <label>
-            Username / Email / Phone
-            <input
-              type="text"
-              value={formData.login}
-              onChange={(e) => setFormData({ ...formData, login: e.target.value })}
-              placeholder="demo / demo@clasharena.app / +8801700000000"
-            />
-          </label>
-
-          <label>
-            Password
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Enter password"
-            />
-          </label>
-
-          <button type="submit" className="primary-btn full-width">
-            Login
-          </button>
-        </form>
-
-        <p className="demo-note">Demo login: username/email/phone = demo, password = 123456</p>
-      </div>
-    </div>
-  )
+  return (data || []).map((tournament) => ({
+    id: tournament.id,
+    title: tournament.title,
+    game: tournament.game,
+    prize: tournament.prize,
+    entryFee: 'Free',
+    slots: tournament.max_slots || 0,
+    registered: tournament.registered_count || 0,
+    start_time: tournament.start_time ? new Date(tournament.start_time).toLocaleString() : 'Schedule pending',
+    status: tournament.status || 'Open'
+  }))
 }
 
-export default App
+export async function loginWithSupabase({ login, password }) {
+  if (!supabase) return null
+
+  const lookup = login.trim().toLowerCase()
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .or(`username.ilike.%${lookup}%,email.ilike.%${lookup}%,phone.ilike.%${lookup}%,full_name.ilike.%${lookup}%`)
+    .limit(1)
+
+  if (error || !data || data.length === 0) return null
+
+  const account = data[0]
+  const passwordMatches = account.password_hash === password || account.password_hash === String(password)
+
+  if (!passwordMatches) return null
+
+  return {
+    id: account.id,
+    full_name: account.full_name,
+    username: account.username,
+    email: account.email,
+    phone: account.phone,
+    coins: account.coins || 0,
+    role: account.role || 'user'
+  }
+}
+
+export async function joinTournamentInSupabase(userId, tournamentId) {
+  if (!supabase || !userId || !tournamentId) return
+
+  const { error: registrationError } = await supabase.from('registrations').insert([
+    {
+      user_id: userId,
+      tournament_id: tournamentId,
+      registered_at: new Date().toISOString()
+    }
+  ])
+
+  if (registrationError) {
+    throw registrationError
+  }
+
+  const { data: tournament, error: tournamentError } = await supabase
+    .from('tournaments')
+    .select('registered_count')
+    .eq('id', tournamentId)
+    .single()
+
+  if (!tournamentError && tournament) {
+    await supabase
+      .from('tournaments')
+      .update({ registered_count: (tournament.registered_count || 0) + 1 })
+      .eq('id', tournamentId)
+  }
+}

@@ -1,418 +1,418 @@
-* {
-  box-sizing: border-box;
-}
+import { useEffect, useMemo, useState } from 'react'
+import {
+  demoUsers,
+  fetchTournamentsFromSupabase,
+  loginWithSupabase,
+  mockLeaderboard,
+  supabase,
+  joinTournamentInSupabase,
+  seedSupabaseDemoData
+} from './lib/supabase'
 
-:root {
-  color-scheme: dark;
-  --bg: #070d1a;
-  --bg-2: #101a2d;
-  --panel: rgba(17, 25, 40, 0.92);
-  --panel-strong: rgba(22, 34, 52, 0.98);
-  --primary: #6ee7b7;
-  --primary-strong: #34d399;
-  --accent: #7dd3fc;
-  --text: #edf5ff;
-  --muted: #9db0d1;
-  --line: rgba(148, 163, 184, 0.15);
-  --shadow: rgba(15, 23, 42, 0.48);
-}
+const storageKey = 'clash-arena-user'
 
-html, body, #root {
-  margin: 0;
-  min-height: 100%;
-  height: 100%;
-  font-family: Inter, 'Segoe UI', sans-serif;
-  background: radial-gradient(circle at top, #142341 0%, #09131f 42%, var(--bg) 100%);
-  color: var(--text);
-}
+function App() {
+  const [user, setUser] = useState(() => {
+    const stored = localStorage.getItem(storageKey)
+    return stored ? JSON.parse(stored) : null
+  })
 
-a {
-  color: var(--primary);
-  text-decoration: none;
-}
+  const [activeTab, setActiveTab] = useState('dashboard')
+  const [tournaments, setTournaments] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
 
-button, input {
-  font: inherit;
-}
+  useEffect(() => {
+    const loadTournaments = async () => {
+      if (!supabase) {
+        setTournaments([])
+        setIsLoading(false)
+        return
+      }
 
-button {
-  cursor: pointer;
-}
+      try {
+        await seedSupabaseDemoData()
+        const rows = await fetchTournamentsFromSupabase()
+        if (rows?.length) {
+          setTournaments(rows)
+        } else {
+          setTournaments([])
+        }
+      } catch (error) {
+        console.error('Error loading tournaments:', error)
+        setTournaments([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
 
-.app-shell {
-  display: flex;
-  min-height: 100vh;
-}
+    loadTournaments()
+  }, [])
 
-.sidebar {
-  width: 280px;
-  background: rgba(10, 16, 28, 0.9);
-  border-right: 1px solid var(--line);
-  padding: 28px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
+  const handleLogin = async (formData) => {
+    const loginValue = formData.login.trim().toLowerCase().replace(/\s+/g, '')
+    const password = formData.password
 
-.brand-box {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+    try {
+      if (supabase) {
+        const supabaseUser = await loginWithSupabase({ login: loginValue, password })
+        if (supabaseUser) {
+          localStorage.setItem(storageKey, JSON.stringify(supabaseUser))
+          setUser(supabaseUser)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Supabase login failed, falling back to demo mode:', error)
+    }
 
-.brand-badge {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: #061320;
-  font-weight: 800;
-}
+    const foundUser = Object.values(demoUsers).find((account) => {
+      const values = [
+        account.username,
+        account.email,
+        account.phone,
+        account.full_name
+      ].map((value) => value.toLowerCase().replace(/\s+/g, ''))
 
-.brand-badge.large {
-  width: 56px;
-  height: 56px;
-  font-size: 1.4rem;
-}
+      return values.includes(loginValue)
+    })
 
-.eyebrow {
-  margin: 0;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
+    if (!foundUser || password !== '123456') {
+      alert('Invalid login. Demo credentials: demo / demo@clasharena.app / +8801700000000 or admin and password = 123456')
+      return
+    }
 
-h1, h2, h3, p {
-  margin-top: 0;
-}
-
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.nav-btn,
-.primary-btn,
-.ghost-btn {
-  border: none;
-  border-radius: 12px;
-  padding: 12px 14px;
-  transition: 0.2s ease;
-}
-
-.nav-btn {
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.nav-btn.active,
-.nav-btn:hover {
-  background: rgba(110, 231, 183, 0.12);
-  border-color: rgba(110, 231, 183, 0.35);
-}
-
-.user-card,
-.panel,
-.stat-card,
-.tournament-card,
-.admin-box,
-.login-card,
-.wallet-box {
-  background: rgba(18, 26, 44, 0.92);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: 0 12px 32px var(--shadow);
-}
-
-.user-card {
-  margin-top: auto;
-  padding: 16px;
-}
-
-.user-card p,
-.user-card small {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.badge-role {
-  display: inline-block;
-  margin-bottom: 12px;
-  background: rgba(125, 211, 252, 0.12);
-  padding: 5px 10px;
-  border-radius: 999px;
-  color: var(--accent);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-}
-
-.main-panel {
-  flex: 1;
-  padding: 32px;
-}
-
-.topbar,
-.section-header,
-.card-header,
-.meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.topbar {
-  margin-bottom: 18px;
-}
-
-.stats-grid,
-.quick-grid,
-.summary-strip,
-.card-grid,
-.admin-grid,
-.wallet-grid {
-  display: grid;
-  gap: 18px;
-}
-
-.stats-grid {
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
-  margin-bottom: 22px;
-}
-
-.quick-grid {
-  grid-template-columns: 1.2fr 1fr;
-}
-
-.stat-card {
-  padding: 18px;
-}
-
-.stat-card small {
-  color: var(--muted);
-}
-
-.stat-card h3 {
-  font-size: 1.7rem;
-  margin-bottom: 0;
-}
-
-.panel {
-  padding: 18px;
-}
-
-.spotlight-card {
-  background: linear-gradient(135deg, rgba(22, 34, 52, 0.95), rgba(22, 51, 44, 0.88));
-}
-
-.leaderboard-list {
-  display: grid;
-  gap: 12px;
-}
-
-.leaderboard-row {
-  display: grid;
-  grid-template-columns: 48px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.leaderboard-row:last-child {
-  border-bottom: none;
-}
-
-.summary-strip {
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
-  margin-bottom: 18px;
-}
-
-.mini-stat {
-  background: rgba(17, 25, 40, 0.8);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px 16px;
-}
-
-.mini-stat small {
-  color: var(--muted);
-  display: block;
-  margin-bottom: 8px;
-}
-
-.card-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
-.tournament-card {
-  padding: 18px;
-}
-
-.pill {
-  background: rgba(52, 211, 153, 0.15);
-  color: var(--primary);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 0.72rem;
-}
-
-.meta {
-  flex-direction: column;
-  align-items: flex-start;
-  margin: 12px 0;
-  color: var(--muted);
-}
-
-.primary-btn {
-  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
-  color: #061320;
-  font-weight: 700;
-}
-
-.primary-btn:hover {
-  filter: brightness(1.05);
-}
-
-.ghost-btn {
-  background: rgba(148, 163, 184, 0.12);
-  color: var(--text);
-}
-
-.full-width {
-  width: 100%;
-}
-
-.profile-card {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 20px;
-}
-
-.avatar {
-  width: 70px;
-  height: 70px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--primary), #7c3aed);
-  font-size: 1.8rem;
-  font-weight: 800;
-  color: #07111f;
-}
-
-.admin-grid {
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-}
-
-.admin-box {
-  padding: 22px;
-}
-
-.wallet-grid {
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-}
-
-.wallet-box {
-  padding: 24px;
-}
-
-.wallet-box small {
-  color: var(--muted);
-}
-
-.wallet-box h2 {
-  margin: 8px 0;
-  font-size: 2.2rem;
-}
-
-.login-screen {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-}
-
-.login-card {
-  width: min(420px, 100%);
-  padding: 28px;
-}
-
-.logo-wrap {
-  text-align: center;
-  margin-bottom: 18px;
-}
-
-.login-form {
-  display: grid;
-  gap: 16px;
-}
-
-.login-form label {
-  display: grid;
-  gap: 8px;
-  color: var(--muted);
-}
-
-.login-form input {
-  width: 100%;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  color: var(--text);
-  border-radius: 12px;
-  padding: 12px 14px;
-}
-
-.demo-note {
-  padding-top: 14px;
-  margin-bottom: 0;
-  color: var(--muted);
-  text-align: center;
-  font-size: 0.9rem;
-}
-
-@media (max-width: 900px) {
-  .app-shell {
-    flex-direction: column;
+    const loggedUser = { ...foundUser }
+    localStorage.setItem(storageKey, JSON.stringify(loggedUser))
+    setUser(loggedUser)
   }
 
-  .sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
+  const handleLogout = () => {
+    localStorage.removeItem(storageKey)
+    setUser(null)
   }
 
-  .stats-grid,
-  .wallet-grid,
-  .quick-grid,
-  .admin-grid {
-    grid-template-columns: 1fr 1fr;
+  const handleJoinTournament = async (tournamentId) => {
+    if (!user) return
+
+    try {
+      if (supabase) {
+        await joinTournamentInSupabase(user.id, tournamentId)
+      }
+    } catch (error) {
+      console.error('Tournament join failed:', error)
+    }
+
+    setTournaments((current) =>
+      current.map((tournament) =>
+        tournament.id === tournamentId
+          ? { ...tournament, registered: Number(tournament.registered || 0) + 1 }
+          : tournament
+      )
+    )
+
+    setUser((currentUser) =>
+      currentUser
+        ? { ...currentUser, coins: Number(currentUser.coins || 0) + 50 }
+        : currentUser
+    )
+
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        ...user,
+        coins: Number(user.coins || 0) + 50
+      })
+    )
   }
+
+  const userStats = useMemo(
+    () => [
+      { label: 'Tournament Played', value: '12' },
+      { label: 'Win Rate', value: '58%' },
+      { label: 'Coins', value: `${user?.coins ?? 0}` },
+      { label: 'Rank', value: user?.role === 'admin' ? 'Admin' : '#18' }
+    ],
+    [user]
+  )
+
+  const totalSlots = tournaments.reduce((sum, item) => sum + Number(item.slots || 0), 0)
+  const totalRegistered = tournaments.reduce((sum, item) => sum + Number(item.registered || 0), 0)
+
+  if (!user) {
+    return <LoginPage onLogin={handleLogin} />
+  }
+
+  if (isLoading && supabase) {
+    return <div className="loading-screen">Loading Clash Arena...</div>
+  }
+
+  const isAdmin = user.role === 'admin'
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-box">
+          <div className="brand-badge">CA</div>
+          <div>
+            <p className="eyebrow">Game Arena</p>
+            <h2>Clash Arena</h2>
+          </div>
+        </div>
+
+        <nav className="nav">
+          {[
+            ['dashboard', 'Dashboard'],
+            ['tournaments', 'Tournaments'],
+            ['wallet', 'Wallet'],
+            ['profile', 'Profile'],
+            isAdmin ? ['admin', 'Admin Panel'] : null
+          ]
+            .filter(Boolean)
+            .map(([key, label]) => (
+              <button
+                key={key}
+                className={activeTab === key ? 'nav-btn active' : 'nav-btn'}
+                onClick={() => setActiveTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+        </nav>
+
+        <div className="user-card">
+          <p>{user.full_name}</p>
+          <small>@{user.username}</small>
+          <span className="badge-role">{user.role}</span>
+          <button className="ghost-btn" onClick={handleLogout}>Logout</button>
+        </div>
+      </aside>
+
+      <main className="main-panel">
+        {activeTab === 'dashboard' && (
+          <section>
+            <div className="topbar">
+              <div>
+                <p className="eyebrow">Welcome back</p>
+                <h1>Dashboard</h1>
+              </div>
+              <button className="primary-btn">Create Match</button>
+            </div>
+
+            <div className="stats-grid">
+              {userStats.map((item) => (
+                <div key={item.label} className="stat-card">
+                  <small>{item.label}</small>
+                  <h3>{item.value}</h3>
+                </div>
+              ))}
+            </div>
+
+            <div className="quick-grid">
+              <div className="panel spotlight-card">
+                <p className="eyebrow">Current event</p>
+                <h3>Daily Clash Cup</h3>
+                <p>Free entry • 25 players • 6 squads • Winner gets prize pool</p>
+                <button className="primary-btn" onClick={() => setActiveTab('tournaments')}>
+                  Join Now
+                </button>
+              </div>
+
+              <div className="panel">
+                <div className="section-header">
+                  <h3>Leaderboard</h3>
+                </div>
+                <div className="leaderboard-list">
+                  {mockLeaderboard.map((player) => (
+                    <div key={player.rank} className="leaderboard-row">
+                      <span>#{player.rank}</span>
+                      <strong>{player.name}</strong>
+                      <span>{player.wins} Wins</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'tournaments' && (
+          <section>
+            <div className="topbar">
+              <div>
+                <p className="eyebrow">Daily events</p>
+                <h1>Available Tournaments</h1>
+              </div>
+            </div>
+
+            <div className="summary-strip">
+              <div className="mini-stat">
+                <small>Total slots</small>
+                <strong>{totalSlots}</strong>
+              </div>
+              <div className="mini-stat">
+                <small>Players joined</small>
+                <strong>{totalRegistered}</strong>
+              </div>
+              <div className="mini-stat">
+                <small>Entry fee</small>
+                <strong>Free</strong>
+              </div>
+            </div>
+
+            <div className="card-grid">
+              {tournaments.length === 0 ? (
+                <div className="panel empty-state">No tournaments available yet.</div>
+              ) : (
+                tournaments.map((tournament) => (
+                  <div key={tournament.id} className="tournament-card">
+                    <div className="card-header">
+                      <span className="pill">{tournament.status}</span>
+                      <span>{tournament.game}</span>
+                    </div>
+                    <h3>{tournament.title}</h3>
+                    <div className="meta">
+                      <span>Prize: {tournament.prize}</span>
+                      <span>Entry: {tournament.entryFee || 'Free'}</span>
+                      <span>{tournament.registered || 0}/{tournament.slots || 0} joined</span>
+                    </div>
+                    <p>{tournament.start_time}</p>
+                    <button className="primary-btn" onClick={() => handleJoinTournament(tournament.id)}>
+                      Join Tournament
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'wallet' && (
+          <section>
+            <div className="topbar">
+              <div>
+                <p className="eyebrow">Balance</p>
+                <h1>Wallet</h1>
+              </div>
+            </div>
+
+            <div className="wallet-grid">
+              <div className="panel wallet-box">
+                <small>Available Coins</small>
+                <h2>{user.coins}</h2>
+                <p>Earn coins by joining tournaments and winning matches.</p>
+              </div>
+              <div className="panel wallet-box">
+                <small>Rewards</small>
+                <h2>৳0</h2>
+                <p>Daily prize pool and bonus rewards are shown here.</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'profile' && (
+          <section>
+            <div className="topbar">
+              <div>
+                <p className="eyebrow">Your account</p>
+                <h1>Profile</h1>
+              </div>
+            </div>
+
+            <div className="profile-card panel">
+              <div className="avatar">{user.full_name.charAt(0)}</div>
+              <div className="profile-info">
+                <h3>{user.full_name}</h3>
+                <p>Username: @{user.username}</p>
+                <p>Email: {user.email}</p>
+                <p>Phone: {user.phone}</p>
+                <p>Coins: {user.coins}</p>
+                <p>Role: {user.role}</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {isAdmin && activeTab === 'admin' && (
+          <section>
+            <div className="topbar">
+              <div>
+                <p className="eyebrow">Management</p>
+                <h1>Admin Panel</h1>
+              </div>
+            </div>
+
+            <div className="panel admin-grid">
+              <div className="admin-box">
+                <h3>Active Matches</h3>
+                <p>{tournaments.length} tournaments running</p>
+              </div>
+              <div className="admin-box">
+                <h3>Players</h3>
+                <p>8,420 registered users</p>
+              </div>
+              <div className="admin-box">
+                <h3>Transactions</h3>
+                <p>৳14,500 processed</p>
+              </div>
+              <div className="admin-box">
+                <h3>Reports</h3>
+                <p>3 new issues</p>
+              </div>
+            </div>
+          </section>
+        )}
+      </main>
+    </div>
+  )
 }
 
-@media (max-width: 640px) {
-  .main-panel {
-    padding: 18px;
+function LoginPage({ onLogin }) {
+  const [formData, setFormData] = useState({ login: '', password: '' })
+
+  const submitForm = (event) => {
+    event.preventDefault()
+    onLogin(formData)
   }
 
-  .stats-grid,
-  .wallet-grid,
-  .quick-grid,
-  .admin-grid,
-  .summary-strip {
-    grid-template-columns: 1fr;
-  }
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="logo-wrap">
+          <div className="brand-badge large">CA</div>
+          <h1>Clash Arena</h1>
+        </div>
 
-  .profile-card,
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+        <form onSubmit={submitForm} className="login-form">
+          <label>
+            Username / Email / Phone
+            <input
+              type="text"
+              value={formData.login}
+              onChange={(e) => setFormData({ ...formData, login: e.target.value })}
+              placeholder="demo / demo@clasharena.app / +8801700000000"
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder="Enter password"
+            />
+          </label>
+
+          <button type="submit" className="primary-btn full-width">
+            Login
+          </button>
+        </form>
+
+        <p className="demo-note">Demo login: username/email/phone = demo or admin, password = 123456</p>
+      </div>
+    </div>
+  )
 }
+
+export default App
