@@ -370,6 +370,25 @@ h1, h2, h3, p {
   grid-column: 1 / -1;
 }
 
+.result-box {
+  margin-top: 12px;
+}
+
+.result-box input {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.winner-tag {
+  color: var(--primary);
+  font-weight: 700;
+  margin: 10px 0;
+}
+
 .wallet-grid {
   grid-template-columns: repeat(2, minmax(220px, 1fr));
 }
@@ -472,6 +491,3 @@ h1, h2, h3, p {
     align-items: flex-start;
   }
 }
-
-
-

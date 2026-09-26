@@ -8,7 +8,8 @@ import {
   joinTournamentInSupabase,
   seedSupabaseDemoData,
   createTournamentInSupabase,
-  mockTournaments
+  mockTournaments,
+  updateTournamentResultInSupabase
 } from './lib/supabase'
 
 const storageKey = 'clash-arena-user'
@@ -166,6 +167,20 @@ function App() {
     setActiveTab('tournaments')
   }
 
+  const handleResultSubmit = async (tournamentId, winnerName) => {
+    if (!winnerName.trim()) return
+
+    const updated = await updateTournamentResultInSupabase(tournamentId, winnerName)
+
+    if (updated) {
+      setTournaments((current) =>
+        current.map((item) =>
+          item.id === tournamentId ? { ...item, winner: winnerName.trim(), status: 'Completed' } : item
+        )
+      )
+    }
+  }
+
   const userStats = useMemo(
     () => [
       { label: 'Tournament Played', value: '12' },
@@ -309,7 +324,7 @@ function App() {
                 tournaments.map((tournament) => (
                   <div key={tournament.id} className="tournament-card">
                     <div className="card-header">
-                      <span className="pill">{tournament.status}</span>
+                      <span className="pill">{tournament.status || 'Open'}</span>
                       <span>{tournament.game}</span>
                     </div>
                     <h3>{tournament.title}</h3>
@@ -319,9 +334,25 @@ function App() {
                       <span>{tournament.registered || 0}/{tournament.slots || 0} joined</span>
                     </div>
                     <p>{tournament.start_time}</p>
+                    {tournament.winner && <p className="winner-tag">Winner: {tournament.winner}</p>}
                     <button className="primary-btn" onClick={() => handleJoinTournament(tournament.id)}>
                       Join Tournament
                     </button>
+
+                    {isAdmin && (
+                      <div className="result-box">
+                        <input
+                          type="text"
+                          placeholder="Winner name"
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              handleResultSubmit(tournament.id, event.target.value)
+                              event.target.value = ''
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))
               )}

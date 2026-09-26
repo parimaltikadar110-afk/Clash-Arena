@@ -140,7 +140,8 @@ export async function fetchTournamentsFromSupabase() {
     slots: tournament.max_slots || 0,
     registered: tournament.registered_count || 0,
     start_time: tournament.start_time ? new Date(tournament.start_time).toLocaleString() : 'Schedule pending',
-    status: tournament.status || 'Open'
+    status: tournament.status || 'Open',
+    winner: tournament.winner || null
   }))
 }
 
@@ -231,4 +232,19 @@ export async function createTournamentInSupabase({ title, game, prize, slots, st
     start_time: start_time || 'Schedule pending',
     status: data.status || 'Open'
   }
+}
+
+export async function updateTournamentResultInSupabase(tournamentId, winnerName) {
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('tournaments')
+    .update({ winner: winnerName, status: 'completed' })
+    .eq('id', tournamentId)
+    .select()
+    .single()
+
+  if (error) throw error
+
+  return data
 }
