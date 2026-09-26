@@ -10,6 +10,7 @@ Your Clash Arena app is now connected to Supabase with:
 - ✅ Wallet and transaction history
 - ✅ Row Level Security (RLS) policies
 - ✅ Admin role for tournament creation
+- ✅ **No signup bonus — new users start with wallet balance 0**
 
 ---
 
@@ -43,6 +44,7 @@ This will:
 - Set up indexes for performance
 - Enable Row Level Security
 - Create auth trigger for automatic user profile creation
+- Start every new user's `wallet_balance` at `0`
 
 ### Step 3: Enable Email/Password Auth
 
@@ -75,7 +77,7 @@ import { useAuth } from './hooks/useAuth'
 function App() {
   const { user, profile, login, signup, logout } = useAuth()
 
-  // Sign up
+  // Sign up — new account starts with wallet_balance = 0
   await signup('user@example.com', 'password123', 'MyGameName')
 
   // Sign in
@@ -180,7 +182,7 @@ Admin users can:
 ### 1. User Signs Up
 ```javascript
 await signup('player@example.com', 'pass123', 'FireKing')
-// Creates auth user + profile with game_name='FireKing' + wallet_balance=500
+// Creates auth user + profile with game_name='FireKing' + wallet_balance=0
 ```
 
 ### 2. Admin Creates Tournament
@@ -228,6 +230,12 @@ await updateTournamentStatus(tournamentId, 'ongoing')
 - Browser might have localStorage disabled
 - Check browser console for auth errors
 
+### Existing users still have a 500 balance?
+The updated trigger only affects new signups. To reset existing users to zero, run this manually in Supabase SQL Editor:
+```sql
+UPDATE public.users SET wallet_balance = 0;
+```
+
 ---
 
 ## 📞 Next Steps
@@ -236,6 +244,6 @@ await updateTournamentStatus(tournamentId, 'ongoing')
 2. ✅ Enable Email/Password auth
 3. ✅ Copy `.env` to `.env.local`
 4. ✅ Run `npm install && npm run dev`
-5. 🎮 Create account and test!
+5. 🎮 Create account and test with zero starting balance!
 
 Happy gaming! 🚀
