@@ -9,10 +9,31 @@ import {
   seedSupabaseDemoData,
   createTournamentInSupabase,
   mockTournaments,
-  updateTournamentResultInSupabase
+  updateTournamentResultInSupabase,
+  createUserInSupabase,
+  updateUserProfileInSupabase
 } from './lib/supabase'
 
 const storageKey = 'clash-arena-user'
+const userStoreKey = 'clash-arena-users'
+
+const getStoredUsers = () => {
+  try {
+    const raw = localStorage.getItem(userStoreKey)
+    if (!raw) {
+      const initial = Object.values(demoUsers)
+      localStorage.setItem(userStoreKey, JSON.stringify(initial))
+      return initial
+    }
+    return JSON.parse(raw)
+  } catch (error) {
+    return Object.values(demoUsers)
+  }
+}
+
+const saveStoredUsers = (users) => {
+  localStorage.setItem(userStoreKey, JSON.stringify(users))
+}
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -23,6 +44,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [tournaments, setTournaments] = useState(mockTournaments)
   const [isLoading, setIsLoading] = useState(true)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
   const [form, setForm] = useState({
     title: '',
     game: 'Free Fire',
@@ -30,6 +53,23 @@ function App() {
     slots: '50',
     start_time: ''
   })
+  const [profileForm, setProfileForm] = useState({
+    full_name: '',
+    username: '',
+    email: '',
+    phone: ''
+  })
+
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        full_name: user.full_name || '',
+        username: user.username || '',
+        email: user.email || '',
+        phone: user.phone || ''
+      })
+    }
+  }, [user])
 
   useEffect(() => {
     const loadTournaments = async () => {
@@ -71,7 +111,8 @@ function App() {
       console.error('Supabase login failed, falling back to demo mode:', error)
     }
 
-    const foundUser = Object.values(demoUsers).find((account) => {
+    const allUsers = getStoredUsers()
+    const foundUser = [...Object.values(demoUsers), ...allUsers].find((account) => {
       const values = [
         account.username,
         account.email,
@@ -90,6 +131,59 @@ function App() {
     const loggedUser = { ...foundUser }
     localStorage.setItem(storageKey, JSON.stringify(loggedUser))
     setUser(loggedUser)
+  }
+
+  const handleSignup = async ({ full_name, username, email, phone, password }) => {
+    const trimmedName = full_name.trim()
+    const trimmedUsername = username.trim()
+    const trimmedEmail = email.trim()
+    const trimmedPhone = phone.trim()
+
+    if (!trimmedName || !trimmedUsername || !trimmedEmail || !trimmedPhone || !password) {
+      alert('Please fill in all fields.')
+      return
+    }
+
+    const users = getStoredUsers()
+    const usernameTaken = users.some((account) => account.username?.toLowerCase() === trimmedUsername.toLowerCase())
+    const emailTaken = users.some((account) => account.email?.toLowerCase() === trimmedEmail.toLowerCase())
+    const phoneTaken = users.some((account) => account.phone?.replace(/\s+/g, '') === trimmedPhone.replace(/\s+/g, ''))
+
+    if (usernameTaken || emailTaken || phoneTaken) {
+      alert('This username, email, or phone is already registered.')
+      return
+    }
+
+    const newUser = {
+      id: `user-${Date.now()}`,
+      full_name: trimmedName,
+      username: trimmedUsername,
+      email: trimmedEmail,
+      phone: trimmedPhone,
+      coins: 500,
+      role: 'user',
+      password_hash: password
+    }
+
+    try {
+      if (supabase) {
+        const remoteUser = await createUserInSupabase(newUser)
+        if (remoteUser) {
+          setUser(remoteUser)
+          localStorage.setItem(storageKey, JSON.stringify(remoteUser))
+          setAuthMode('login')
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Supabase signup failed, using local storage fallback:', error)
+    }
+
+    const updatedUsers = [...users, newUser]
+    saveStoredUsers(updatedUsers)
+    setUser(newUser)
+    localStorage.setItem(storageKey, JSON.stringify(newUser))
+    setAuthMode('login')
   }
 
   const handleLogout = () => {
@@ -170,15 +264,63 @@ function App() {
   const handleResultSubmit = async (tournamentId, winnerName) => {
     if (!winnerName.trim()) return
 
-    const updated = await updateTournamentResultInSupabase(tournamentId, winnerName)
+    try {
+      const updated = await updateTournamentResultInSupabase(tournamentId, winnerName)
 
-    if (updated) {
+      if (updated) {
+        setTournaments((current) =>
+          current.map((item) =>
+            item.id === tournamentId ? { ...item, winner: winnerName.trim(), status: 'Completed' } : item
+          )
+        )
+      } else {
+        setTournaments((current) =>
+          current.map((item) =>
+            item.id === tournamentId ? { ...item, winner: winnerName.trim(), status: 'Completed' } : item
+          )
+        )
+      }
+    } catch (error) {
+      console.error('Result update failed:', error)
       setTournaments((current) =>
         current.map((item) =>
           item.id === tournamentId ? { ...item, winner: winnerName.trim(), status: 'Completed' } : item
         )
       )
     }
+  }
+
+  const handleProfileSave = async (event) => {
+    event.preventDefault()
+
+    const updatedUser = {
+      ...user,
+      full_name: profileForm.full_name.trim(),
+      username: profileForm.username.trim(),
+      email: profileForm.email.trim(),
+      phone: profileForm.phone.trim()
+    }
+
+    try {
+      if (supabase) {
+        const backendUser = await updateUserProfileInSupabase(user.id, updatedUser)
+        if (backendUser) {
+          setUser(backendUser)
+          localStorage.setItem(storageKey, JSON.stringify(backendUser))
+        }
+      }
+    } catch (error) {
+      console.error('Profile update failed:', error)
+    }
+
+    setUser(updatedUser)
+    localStorage.setItem(storageKey, JSON.stringify(updatedUser))
+    setIsEditingProfile(false)
+
+    const allUsers = getStoredUsers().map((item) =>
+      item.id === user.id ? { ...item, ...updatedUser } : item
+    )
+    saveStoredUsers(allUsers)
   }
 
   const userStats = useMemo(
@@ -195,7 +337,7 @@ function App() {
   const totalRegistered = tournaments.reduce((sum, item) => sum + Number(item.registered || 0), 0)
 
   if (!user) {
-    return <LoginPage onLogin={handleLogin} />
+    return <AuthScreen authMode={authMode} setAuthMode={setAuthMode} onLogin={handleLogin} onSignup={handleSignup} />
   }
 
   if (isLoading && supabase) {
@@ -391,19 +533,66 @@ function App() {
                 <p className="eyebrow">Your account</p>
                 <h1>Profile</h1>
               </div>
+              {!isEditingProfile && (
+                <button className="primary-btn" onClick={() => setIsEditingProfile(true)}>
+                  Edit Profile
+                </button>
+              )}
             </div>
 
-            <div className="profile-card panel">
-              <div className="avatar">{user.full_name.charAt(0)}</div>
-              <div className="profile-info">
-                <h3>{user.full_name}</h3>
-                <p>Username: @{user.username}</p>
-                <p>Email: {user.email}</p>
-                <p>Phone: {user.phone}</p>
-                <p>Coins: {user.coins}</p>
-                <p>Role: {user.role}</p>
+            {isEditingProfile ? (
+              <form className="panel profile-form" onSubmit={handleProfileSave}>
+                <div className="form-grid">
+                  <div className="field-group">
+                    <label>Full Name</label>
+                    <input
+                      value={profileForm.full_name}
+                      onChange={(event) => setProfileForm({ ...profileForm, full_name: event.target.value })}
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label>Username</label>
+                    <input
+                      value={profileForm.username}
+                      onChange={(event) => setProfileForm({ ...profileForm, username: event.target.value })}
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={profileForm.email}
+                      onChange={(event) => setProfileForm({ ...profileForm, email: event.target.value })}
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label>Phone</label>
+                    <input
+                      value={profileForm.phone}
+                      onChange={(event) => setProfileForm({ ...profileForm, phone: event.target.value })}
+                    />
+                  </div>
+                  <div className="field-group full-width-buttons">
+                    <button type="submit" className="primary-btn">Save Profile</button>
+                    <button type="button" className="ghost-btn" onClick={() => setIsEditingProfile(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <div className="profile-card panel">
+                <div className="avatar">{user.full_name.charAt(0)}</div>
+                <div className="profile-info">
+                  <h3>{user.full_name}</h3>
+                  <p>Username: @{user.username}</p>
+                  <p>Email: {user.email}</p>
+                  <p>Phone: {user.phone}</p>
+                  <p>Coins: {user.coins}</p>
+                  <p>Role: {user.role}</p>
+                </div>
               </div>
-            </div>
+            )}
           </section>
         )}
 
@@ -502,7 +691,15 @@ function App() {
   )
 }
 
-function LoginPage({ onLogin }) {
+function AuthScreen({ authMode, setAuthMode, onLogin, onSignup }) {
+  if (authMode === 'signup') {
+    return <SignupPage onSignup={onSignup} onSwitch={() => setAuthMode('login')} />
+  }
+
+  return <LoginPage onLogin={onLogin} onSwitch={() => setAuthMode('signup')} />
+}
+
+function LoginPage({ onLogin, onSwitch }) {
   const [formData, setFormData] = useState({ login: '', password: '' })
 
   const submitForm = (event) => {
@@ -544,7 +741,99 @@ function LoginPage({ onLogin }) {
           </button>
         </form>
 
+        <div className="auth-switch-row">
+          <span>Don’t have an account?</span>
+          <button type="button" className="link-btn" onClick={onSwitch}>Create account</button>
+        </div>
+
         <p className="demo-note">Demo login: username/email/phone = demo or admin, password = 123456</p>
+      </div>
+    </div>
+  )
+}
+
+function SignupPage({ onSignup, onSwitch }) {
+  const [formData, setFormData] = useState({
+    full_name: '',
+    username: '',
+    email: '',
+    phone: '',
+    password: ''
+  })
+
+  const submitForm = (event) => {
+    event.preventDefault()
+    onSignup(formData)
+  }
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="logo-wrap">
+          <div className="brand-badge large">CA</div>
+          <h1>Sign Up</h1>
+        </div>
+
+        <form onSubmit={submitForm} className="login-form">
+          <label>
+            Full Name
+            <input
+              type="text"
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+              placeholder="Your full name"
+            />
+          </label>
+
+          <label>
+            Username
+            <input
+              type="text"
+              value={formData.username}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              placeholder="username"
+            />
+          </label>
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="you@example.com"
+            />
+          </label>
+
+          <label>
+            Phone
+            <input
+              type="text"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="+88017..."
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder="Create password"
+            />
+          </label>
+
+          <button type="submit" className="primary-btn full-width">
+            Create Account
+          </button>
+        </form>
+
+        <div className="auth-switch-row">
+          <span>Already registered?</span>
+          <button type="button" className="link-btn" onClick={onSwitch}>Back to login</button>
+        </div>
       </div>
     </div>
   )

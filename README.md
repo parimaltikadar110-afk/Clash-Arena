@@ -5,9 +5,7 @@
 :root {
   color-scheme: dark;
   --bg: #070d1a;
-  --bg-2: #101a2d;
   --panel: rgba(17, 25, 40, 0.92);
-  --panel-strong: rgba(22, 34, 52, 0.98);
   --primary: #6ee7b7;
   --primary-strong: #34d399;
   --accent: #7dd3fc;
@@ -24,11 +22,6 @@ html, body, #root {
   font-family: Inter, 'Segoe UI', sans-serif;
   background: radial-gradient(circle at top, #142341 0%, #09131f 42%, var(--bg) 100%);
   color: var(--text);
-}
-
-a {
-  color: var(--primary);
-  text-decoration: none;
 }
 
 button, input, select {
@@ -107,7 +100,8 @@ h1, h2, h3, p {
 
 .nav-btn,
 .primary-btn,
-.ghost-btn {
+.ghost-btn,
+.link-btn {
   border: none;
   border-radius: 12px;
   padding: 12px 14px;
@@ -303,6 +297,13 @@ h1, h2, h3, p {
   color: var(--text);
 }
 
+.link-btn {
+  background: transparent;
+  color: var(--primary);
+  padding: 0;
+  font-weight: 700;
+}
+
 .full-width {
   width: 100%;
 }
@@ -339,7 +340,8 @@ h1, h2, h3, p {
   padding: 20px;
 }
 
-.form-grid {
+.form-grid,
+.profile-form .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(200px, 1fr));
   gap: 16px;
@@ -366,8 +368,14 @@ h1, h2, h3, p {
   padding: 12px 14px;
 }
 
-.full-width {
+.full-width,
+.full-width-buttons {
   grid-column: 1 / -1;
+}
+
+.full-width-buttons {
+  display: flex;
+  gap: 12px;
 }
 
 .result-box {
@@ -443,6 +451,14 @@ h1, h2, h3, p {
   padding: 12px 14px;
 }
 
+.auth-switch-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--muted);
+}
+
 .demo-note {
   padding-top: 14px;
   margin-bottom: 0;
@@ -466,7 +482,8 @@ h1, h2, h3, p {
   .wallet-grid,
   .quick-grid,
   .admin-grid,
-  .form-grid {
+  .form-grid,
+  .profile-form .form-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -481,12 +498,14 @@ h1, h2, h3, p {
   .quick-grid,
   .admin-grid,
   .summary-strip,
-  .form-grid {
+  .form-grid,
+  .profile-form .form-grid {
     grid-template-columns: 1fr;
   }
 
   .profile-card,
-  .topbar {
+  .topbar,
+  .full-width-buttons {
     flex-direction: column;
     align-items: flex-start;
   }

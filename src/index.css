@@ -173,6 +173,66 @@ export async function loginWithSupabase({ login, password }) {
   }
 }
 
+export async function createUserInSupabase(user) {
+  if (!supabase) return null
+
+  const payload = {
+    id: user.id,
+    full_name: user.full_name,
+    username: user.username,
+    email: user.email,
+    phone: user.phone,
+    password_hash: user.password_hash,
+    role: user.role,
+    coins: user.coins
+  }
+
+  const { data, error } = await supabase.from('users').insert([payload]).select().single()
+
+  if (error) throw error
+
+  return {
+    id: data.id,
+    full_name: data.full_name,
+    username: data.username,
+    email: data.email,
+    phone: data.phone,
+    coins: data.coins || 0,
+    role: data.role || 'user'
+  }
+}
+
+export async function updateUserProfileInSupabase(userId, user) {
+  if (!supabase) return null
+
+  const payload = {
+    full_name: user.full_name,
+    username: user.username,
+    email: user.email,
+    phone: user.phone,
+    coins: user.coins
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .update(payload)
+    .eq('id', userId)
+    .select()
+    .single()
+
+  if (error) throw error
+
+  return {
+    id: data.id,
+    full_name: data.full_name,
+    username: data.username,
+    email: data.email,
+    phone: data.phone,
+    coins: data.coins || 0,
+    role: data.role || 'user'
+  }
+}
+
 export async function joinTournamentInSupabase(userId, tournamentId) {
   if (!supabase || !userId || !tournamentId) return
 
