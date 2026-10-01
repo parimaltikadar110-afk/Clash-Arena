@@ -120,41 +120,34 @@ function DownloadModal({ isOpen, onClose, onDownload, isLoading = false }) {
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose}>✕</button>
         <div className="modal-header">
-          <h2>📥 Download Clash Arena</h2>
+          <h2>📥 Clash Arena APK Coming Soon</h2>
         </div>
         <div className="modal-body">
           <p className="modal-text">
-            Get the official Clash Arena app for the best tournament experience!
+            Clash Arena APK will be available for direct download soon!
           </p>
           <div className="download-info">
             <div className="info-item">
+              <span className="info-icon">🌐</span>
+              <span>Use the web version seamlessly right now</span>
+            </div>
+            <div className="info-item">
               <span className="info-icon">⚡</span>
-              <span>Instant notifications for tournaments</span>
+              <span>Full access to tournaments and matches</span>
             </div>
             <div className="info-item">
-              <span className="info-icon">🎮</span>
-              <span>Optimized mobile gameplay</span>
-            </div>
-            <div className="info-item">
-              <span className="info-icon">💰</span>
-              <span>Exclusive rewards & offers</span>
+              <span className="info-icon">📲</span>
+              <span>Native mobile app available very soon</span>
             </div>
           </div>
         </div>
         <div className="modal-actions">
-          <button 
-            className="primary-btn full-width" 
-            onClick={onDownload}
-            disabled={isLoading}
-          >
-            {isLoading ? '⟳ Preparing Download...' : '⬇ Download Now'}
-          </button>
-          <button className="ghost-btn full-width" onClick={onClose}>
-            Cancel
+          <button className="primary-btn full-width" onClick={onClose}>
+            Got It
           </button>
         </div>
         <p className="modal-note">
-          ℹ APK downloads directly. Install from Settings → Security on Android devices.
+          ℹ Stay tuned for the official Android APK release. Meanwhile, enjoy Clash Arena on your mobile browser!
         </p>
       </div>
     </div>
@@ -168,9 +161,6 @@ export default function App() {
   const [user, setUser] = useState(defaultUser);
   const [otpSent, setOtpSent] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [showToast, setShowToast] = useState(false);
 
   const walletSummary = useMemo(
     () => [
@@ -213,44 +203,6 @@ export default function App() {
 
   const handleDownloadClick = () => {
     setShowDownloadModal(true);
-  };
-
-  const showNotification = (message) => {
-    setToastMessage(message);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  };
-
-  const handleDownloadConfirm = async () => {
-    setIsDownloading(true);
-    
-    try {
-      // Create a dummy APK blob (simulated file)
-      // In production, this would be an actual APK file
-      const dummyContent = 'ClashArena_APK_v1.0.0';
-      const blob = new Blob([dummyContent], { type: 'application/vnd.android.package-archive' });
-      
-      // Create a blob URL and trigger download
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = 'ClashArena.apk';
-      document.body.appendChild(link);
-      link.click();
-      
-      // Cleanup
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
-      
-      // Show success notification
-      showNotification('Downloading Clash Arena APK...');
-      setShowDownloadModal(false);
-    } catch (error) {
-      console.error('Download error:', error);
-      showNotification('Download failed. Please try again.');
-    } finally {
-      setIsDownloading(false);
-    }
   };
 
   const renderHome = () => (
@@ -541,10 +493,8 @@ export default function App() {
       <DownloadModal 
         isOpen={showDownloadModal}
         onClose={() => setShowDownloadModal(false)}
-        onDownload={handleDownloadConfirm}
-        isLoading={isDownloading}
+        onDownload={handleDownloadClick}
       />
-      <Toast message={toastMessage} isVisible={showToast} />
     </div>
   );
 }
