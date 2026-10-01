@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 const tabs = [
   { key: 'home', label: 'Home', icon: '⌂' },
@@ -161,6 +161,12 @@ export default function App() {
   const [user, setUser] = useState(defaultUser);
   const [otpSent, setOtpSent] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Ensure component mounts safely
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const walletSummary = useMemo(
     () => [
@@ -173,32 +179,37 @@ export default function App() {
   );
 
   const handleAuthSubmit = (event) => {
-    event.preventDefault();
-    const form = event.target;
-    const email = form.email?.value?.trim() || '';
-    const phone = form.phone?.value?.trim() || '';
-    const password = form.password?.value || '';
+    try {
+      event.preventDefault();
+      const form = event.target;
+      const email = form.email?.value?.trim() || '';
+      const phone = form.phone?.value?.trim() || '';
+      const password = form.password?.value || '';
 
-    if (!email && !phone) {
-      alert('Enter your email or mobile number');
-      return;
-    }
-
-    if (!password) {
-      alert('Enter your password');
-      return;
-    }
-
-    if (authMode === 'signup') {
-      const confirmPassword = form.confirmPassword?.value || '';
-      if (confirmPassword !== password) {
-        alert('Confirm password does not match');
+      if (!email && !phone) {
+        alert('Enter your email or mobile number');
         return;
       }
-    }
 
-    alert('Authentication successful!');
-    setUser(defaultUser);
+      if (!password) {
+        alert('Enter your password');
+        return;
+      }
+
+      if (authMode === 'signup') {
+        const confirmPassword = form.confirmPassword?.value || '';
+        if (confirmPassword !== password) {
+          alert('Confirm password does not match');
+          return;
+        }
+      }
+
+      alert('Authentication successful!');
+      setUser(defaultUser);
+    } catch (error) {
+      console.error('Auth error:', error);
+      alert('An error occurred. Please try again.');
+    }
   };
 
   const handleDownloadClick = () => {
@@ -427,6 +438,21 @@ export default function App() {
       ))}
     </nav>
   );
+
+  if (!mounted) {
+    return (
+      <div style={{
+        display: 'grid',
+        placeItems: 'center',
+        minHeight: '100vh',
+        background: '#060b14',
+      }}>
+        <div style={{ color: '#edf4ff', textAlign: 'center' }}>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
