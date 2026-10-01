@@ -101,7 +101,62 @@ const defaultUser = {
   coinBalance: 1820,
 };
 
-const apkDownloadUrl = 'https://github.com/parimaltikadar110-afk/Clash-Arena/releases/download/v1.0.0/Clash-Arena.apk';
+// APK Download URLs - Main and Fallback
+const APK_CONFIG = {
+  primary: 'https://github.com/parimaltikadar110-afk/Clash-Arena/releases/download/v1.0.0/Clash-Arena.apk',
+  fallback: 'https://github.com/parimaltikadar110-afk/Clash-Arena/releases',
+  fileName: 'Clash-Arena.apk',
+};
+
+// Download Modal Component
+function DownloadModal({ isOpen, onClose, onDownload, isLoading = false }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose}>✕</button>
+        <div className="modal-header">
+          <h2>📥 Download Clash Arena</h2>
+        </div>
+        <div className="modal-body">
+          <p className="modal-text">
+            Get the official Clash Arena app for the best tournament experience!
+          </p>
+          <div className="download-info">
+            <div className="info-item">
+              <span className="info-icon">⚡</span>
+              <span>Instant notifications for tournaments</span>
+            </div>
+            <div className="info-item">
+              <span className="info-icon">🎮</span>
+              <span>Optimized mobile gameplay</span>
+            </div>
+            <div className="info-item">
+              <span className="info-icon">💰</span>
+              <span>Exclusive rewards & offers</span>
+            </div>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button 
+            className="primary-btn full-width" 
+            onClick={onDownload}
+            disabled={isLoading}
+          >
+            {isLoading ? '⟳ Preparing Download...' : '⬇ Download Now'}
+          </button>
+          <button className="ghost-btn full-width" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+        <p className="modal-note">
+          ℹ APK downloads directly. Install from Settings → Security on Android devices.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [theme, setTheme] = useState('dark');
@@ -109,6 +164,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [user, setUser] = useState(defaultUser);
   const [otpSent, setOtpSent] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const walletSummary = useMemo(
     () => [
@@ -149,8 +206,42 @@ export default function App() {
     setUser(defaultUser);
   };
 
-  const handleDownloadApp = () => {
-    window.location.href = apkDownloadUrl;
+  const handleDownloadClick = () => {
+    setShowDownloadModal(true);
+  };
+
+  const handleDownloadConfirm = async () => {
+    setIsDownloading(true);
+    
+    try {
+      // Attempt primary download URL
+      const response = await fetch(APK_CONFIG.primary, { method: 'HEAD' });
+      
+      if (response.ok) {
+        // Primary URL is valid, proceed with download
+        window.location.href = APK_CONFIG.primary;
+        setShowDownloadModal(false);
+      } else {
+        // Primary URL failed, use fallback to releases page
+        handleFallbackDownload();
+      }
+    } catch (error) {
+      // Network error or CORS issue, use fallback
+      handleFallbackDownload();
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleFallbackDownload = () => {
+    // Open releases page in new tab as fallback
+    window.open(APK_CONFIG.fallback, '_blank');
+    setShowDownloadModal(false);
+    
+    // Show notification that they're being directed to releases
+    alert(
+      'Opening Releases page...\n\nIf direct APK download is unavailable, you can download the latest version from the GitHub releases page. Look for files ending in .apk'
+    );
   };
 
   const renderHome = () => (
@@ -164,7 +255,7 @@ export default function App() {
           </p>
           <div className="hero-actions">
             <button className="primary-btn">Join Free Match</button>
-            <button className="download-btn" onClick={handleDownloadApp}>
+            <button className="download-btn" onClick={handleDownloadClick}>
               📥 Download App
             </button>
           </div>
@@ -348,7 +439,7 @@ export default function App() {
       </nav>
 
       <div className="download-box">
-        <button className="download-btn large" onClick={handleDownloadApp}>
+        <button className="download-btn large" onClick={handleDownloadClick}>
           📥 Download App
         </button>
       </div>
@@ -438,6 +529,12 @@ export default function App() {
         {page === 'wallet' && renderWallet()}
       </main>
       {renderMobileNav()}
+      <DownloadModal 
+        isOpen={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        onDownload={handleDownloadConfirm}
+        isLoading={isDownloading}
+      />
     </div>
   );
 }
