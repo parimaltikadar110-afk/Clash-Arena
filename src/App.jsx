@@ -36,8 +36,8 @@ export default function App() {
       const newUser = {
         identifier,
         password,
-        role: identifier.includes('admin') ? 'super_admin' : 'user', // auto-assign admin role if identifier has 'admin'
-        balance: 0
+        role: identifier.toLowerCase().includes('admin') ? 'super_admin' : 'user', // auto-assign admin role if identifier has 'admin'
+        balance: 500
       };
       localStorage.setItem('clash_user_db', JSON.stringify(newUser));
       localStorage.setItem('clash_user', JSON.stringify(newUser));
@@ -54,7 +54,12 @@ export default function App() {
         setCurrentUser(storedUserDb);
       } else {
         // Fallback for demo login if no DB exists
-        const defaultUser = { identifier, password, role: identifier.includes('admin') ? 'super_admin' : 'user', balance: 500 };
+        const defaultUser = { 
+          identifier, 
+          password, 
+          role: identifier.toLowerCase().includes('admin') ? 'super_admin' : 'user', 
+          balance: 500 
+        };
         localStorage.setItem('clash_user', JSON.stringify(defaultUser));
         localStorage.setItem('clash_isLoggedIn', 'true');
         setIsLoggedIn(true);
@@ -68,6 +73,7 @@ export default function App() {
     localStorage.removeItem('clash_user');
     setIsLoggedIn(false);
     setCurrentUser(null);
+    window.location.reload(); // Prevents blank screen by fully reloading to login state
   };
 
   // 1. LOGIN / SIGNUP SCREEN
@@ -138,7 +144,7 @@ export default function App() {
             <div style={{ background: '#0e1726', padding: '15px', borderRadius: '12px', marginBottom: '10px', border: '1px solid #1a273b' }}>
               <h4>FREE FIRE - SOLO HUNTER</h4>
               <p style={{ color: '#a5b0c7', fontSize: '13px' }}>Prize Pool: ₹225 | Slots: 32</p>
-              <button style={{ marginTop: '10px', padding: '8px 16px', background: '#ff7a18', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 'bold' }}>Join Match</button>
+              <button style={{ marginTop: '10px', padding: '8px 16px', background: '#ff7a18', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>Join Match</button>
             </div>
           </div>
         )}
@@ -155,13 +161,14 @@ export default function App() {
             <h2>My Profile</h2>
             <p style={{ color: '#a5b0c7' }}>Username: {currentUser?.identifier}</p>
             <p style={{ color: '#a5b0c7' }}>Role: <b>{currentUser?.role}</b></p>
+            <p style={{ color: '#a5b0c7' }}>Wallet Balance: ₹{currentUser?.balance}</p>
 
             {/* Role-Based Admin Panel Access */}
             {(currentUser?.role === 'super_admin' || currentUser?.role === 'moderator') && (
               <div style={{ marginTop: '20px', padding: '15px', background: '#162238', borderRadius: '8px', border: '1px solid #ff7a18' }}>
                 <h3 style={{ color: '#ff7a18', marginBottom: '5px' }}>🛡️ Admin Panel</h3>
                 <p style={{ fontSize: '13px', color: '#a5b0c7' }}>Manage matches, verify results, and control users.</p>
-                <button style={{ marginTop: '10px', padding: '8px 16px', background: '#ff7a18', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 'bold' }}>Open Admin Dashboard</button>
+                <button style={{ marginTop: '10px', padding: '8px 16px', background: '#ff7a18', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>Open Admin Dashboard</button>
               </div>
             )}
           </div>
@@ -169,10 +176,10 @@ export default function App() {
       </div>
 
       {/* Bottom Navigation */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0e1726', display: 'flex', justifyContent: 'around', padding: '10px 0', borderTop: '1px solid #1a273b' }}>
-        <button onClick={() => setActiveTab('home')} style={{ flex: 1, background: 'none', border: 'none', color: activeTab === 'home' ? '#ff7a18' : '#a5b0c7', cursor: 'pointer' }}>Home</button>
-        <button onClick={() => setActiveTab('leaderboard')} style={{ flex: 1, background: 'none', border: 'none', color: activeTab === 'leaderboard' ? '#ff7a18' : '#a5b0c7', cursor: 'pointer' }}>Leaderboard</button>
-        <button onClick={() => setActiveTab('profile')} style={{ flex: 1, background: 'none', border: 'none', color: activeTab === 'profile' ? '#ff7a18' : '#a5b0c7', cursor: 'pointer' }}>Profile</button>
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0e1726', display: 'flex', justifyContent: 'space-around', padding: '12px 0', borderTop: '1px solid #1a273b' }}>
+        <button onClick={() => setActiveTab('home')} style={{ background: 'none', border: 'none', color: activeTab === 'home' ? '#ff7a18' : '#a5b0c7', cursor: 'pointer', fontWeight: activeTab === 'home' ? 'bold' : 'normal' }}>Home</button>
+        <button onClick={() => setActiveTab('leaderboard')} style={{ background: 'none', border: 'none', color: activeTab === 'leaderboard' ? '#ff7a18' : '#a5b0c7', cursor: 'pointer', fontWeight: activeTab === 'leaderboard' ? 'bold' : 'normal' }}>Leaderboard</button>
+        <button onClick={() => setActiveTab('profile')} style={{ background: 'none', border: 'none', color: activeTab === 'profile' ? '#ff7a18' : '#a5b0c7', cursor: 'pointer', fontWeight: activeTab === 'profile' ? 'bold' : 'normal' }}>Profile</button>
       </div>
     </div>
   );
