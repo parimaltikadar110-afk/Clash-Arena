@@ -1,310 +1,587 @@
-import { createClient } from '@supabase/supabase-js'
+:root {
+  --bg: #060b14;
+  --panel: rgba(18, 22, 34, 0.8);
+  --surface: #0f1522;
+  --surface-2: #101a2d;
+  --elevated: #141d2d;
+  --text: #edf4ff;
+  --muted: #a5b0c7;
+  --accent: #ff7a18;
+  --accent-2: #ff3b3b;
+  --primary: #ff7a18;
+  --secondary: #4ade80;
+  --border: rgba(255, 255, 255, 0.08);
+  --shadow: rgba(7, 12, 22, 0.5);
+  --success: #43d17a;
+  --warning: #fbbf24;
+  --danger: #ff5a5a;
+}
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+* {
+  box-sizing: border-box;
+}
 
-export const supabase =
-  supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(circle at top, #0b1220 0%, #080d18 42%, #04070d 100%);
+  color: var(--text);
+  font-family: Inter, 'Segoe UI', sans-serif;
+}
 
-export const demoUsers = {
-  user: {
-    id: 'local-user-1',
-    full_name: 'Demo Player',
-    username: 'demo',
-    email: 'demo@clasharena.app',
-    phone: '+8801700000000',
-    coins: 1200,
-    role: 'user'
-  },
-  admin: {
-    id: 'admin-user-1',
-    full_name: 'Admin Clash',
-    username: 'admin',
-    email: 'admin@clasharena.app',
-    phone: '+8801700000001',
-    coins: 5000,
-    role: 'admin'
+body {
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  text-decoration: none;
+}
+
+.auth-shell,
+.app-shell {
+  min-height: 100vh;
+}
+
+.auth-card,
+.panel,
+.wallet-box,
+.store-card,
+.tournament-card,
+.match-panel,
+.profile-panel,
+.hero-panel,
+.download-box,
+.user-card {
+  background: rgba(14, 19, 31, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 15px 40px var(--shadow);
+}
+
+.auth-shell {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(430px, 100%);
+  padding: 28px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #111827;
+  font-weight: 900;
+}
+
+.auth-toggle {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.auth-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 14px;
+  border-radius: 10px;
+}
+
+.auth-toggle button.active {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.field label {
+  color: var(--muted);
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.otp-box {
+  padding: 12px;
+  background: rgba(76, 222, 122, 0.1);
+  border: 1px solid rgba(76, 222, 122, 0.3);
+  border-radius: 10px;
+  color: #4cde7a;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.primary-btn,
+.download-btn,
+.join-btn,
+.ghost-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-weight: 700;
+  transition: 0.2s ease;
+}
+
+.primary-btn,
+.join-btn {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #0a0f17;
+}
+
+.download-btn {
+  background: linear-gradient(135deg, #1f2937, #1d4ed8);
+  color: white;
+}
+
+.ghost-btn {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.full-width {
+  width: 100%;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 280px;
+  padding: 24px 20px;
+  border-right: 1px solid var(--border);
+  background: rgba(9, 14, 22, 0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.nav {
+  display: grid;
+  gap: 10px;
+}
+
+.nav-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: var(--text);
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.nav-btn.active {
+  background: rgba(255, 122, 24, 0.08);
+  border-color: rgba(255, 122, 24, 0.32);
+}
+
+.main-panel {
+  flex: 1;
+  padding: 28px;
+  overflow-y: auto;
+}
+
+.page-shell {
+  display: grid;
+  gap: 24px;
+}
+
+.hero-panel {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 20px;
+  padding: 28px;
+  background: linear-gradient(135deg, rgba(255, 122, 24, 0.08), rgba(255, 59, 59, 0.08));
+}
+
+.hero-copy h1 {
+  font-size: clamp(2.6rem, 4vw, 4.2rem);
+  line-height: 1.1;
+  margin: 0 0 12px;
+}
+
+.subtitle {
+  color: var(--muted);
+  max-width: 620px;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-size: 0.72rem;
+  margin: 0;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hero-compact-card {
+  display: grid;
+  align-content: center;
+  padding: 24px;
+  background: rgba(11, 16, 25, 0.9);
+  border-radius: 18px;
+}
+
+.live-pill {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 59, 59, 0.15);
+  color: #ff8c8c;
+  font-size: 0.72rem;
+  margin-bottom: 10px;
+}
+
+.mini-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.mini-bars span {
+  display: block;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ff7a18, #ff3b3b);
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.mode-tabs button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 10px 14px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.mode-tabs button.active {
+  background: rgba(255, 122, 24, 0.14);
+  color: var(--text);
+  border-color: rgba(255, 122, 24, 0.32);
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.tournament-card,
+.match-panel,
+.store-card,
+.profile-panel,
+.wallet-box {
+  padding: 22px;
+}
+
+.card-top,
+.card-meta,
+.entry-row,
+.slots-row,
+.store-row,
+.leaderboard-row,
+.profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-meta,
+.slots-row,
+.store-row {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 122, 24, 0.15);
+  color: #ffb453;
+  font-size: 0.75rem;
+}
+
+.match-sections {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.match-item,
+.leaderboard-row {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.match-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+}
+
+.status-badge.live {
+  background: rgba(255, 59, 59, 0.15);
+  color: #ff8c8c;
+}
+.status-badge.confirmed {
+  background: rgba(61, 194, 108, 0.15);
+  color: #4ade80;
+}
+.status-badge.waiting {
+  background: rgba(255, 180, 0, 0.15);
+  color: #ffca4a;
+}
+.status-badge.won {
+  background: rgba(61, 194, 108, 0.15);
+  color: #4ade80;
+}
+.status-badge.played {
+  background: rgba(125, 211, 252, 0.15);
+  color: #7dd3fc;
+}
+
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 122, 24, 0.15);
+  color: #ffcc99;
+  font-size: 0.75rem;
+}
+
+.store-card button {
+  border: none;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+}
+
+.wallet-box h2 {
+  font-size: clamp(1.5rem, 2vw, 2.4rem);
+  margin: 4px 0 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.field input {
+  width: 100%;
+}
+
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.avatar.large {
+  width: 64px;
+  height: 64px;
+}
+
+.player-meta h4 {
+  margin: 0;
+}
+
+.player-meta p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.rank-pill {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.download-box {
+  margin-top: auto;
+}
+
+.download-box .download-btn.large {
+  display: block;
+  width: 100%;
+}
+
+.user-card {
+  padding: 16px;
+  margin-top: auto;
+}
+
+.user-card div {
+  margin-bottom: 12px;
+}
+
+.user-card p,
+.user-card small {
+  margin: 0;
+  display: block;
+}
+
+.user-card small {
+  color: var(--muted);
+}
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    display: grid;
+    grid-template-rows: 1fr auto;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    background: rgba(8, 12, 20, 0.95);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 10px 0;
+    z-index: 20;
+    gap: 0;
+  }
+
+  .mobile-bottom-nav button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 0.75rem;
+    border-radius: 0;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .mobile-bottom-nav button.active {
+    background: rgba(255, 122, 24, 0.12);
+    color: var(--accent);
+  }
+
+  .main-panel {
+    padding: 18px 18px 90px;
+  }
+
+  .hero-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 
-export const mockTournaments = [
-  {
-    id: 1,
-    title: 'Daily Clash Cup',
-    game: 'Free Fire',
-    prize: '৳1200',
-    entryFee: 'Free',
-    slots: 50,
-    registered: 32,
-    start_time: 'Today, 8:00 PM',
-    status: 'Open'
-  },
-  {
-    id: 2,
-    title: 'Weekend Arena',
-    game: 'Free Fire',
-    prize: '৳2800',
-    entryFee: 'Free',
-    slots: 100,
-    registered: 77,
-    start_time: 'Saturday, 9:00 PM',
-    status: 'Open'
-  },
-  {
-    id: 3,
-    title: 'Night Rush',
-    game: 'Free Fire',
-    prize: '৳900',
-    entryFee: 'Free',
-    slots: 25,
-    registered: 19,
-    start_time: 'Tonight, 10:30 PM',
-    status: 'Hot'
-  }
-]
-
-export const mockLeaderboard = [
-  { rank: 1, name: 'Sakib', wins: 42 },
-  { rank: 2, name: 'Rafsan', wins: 39 },
-  { rank: 3, name: 'Nabil', wins: 34 },
-  { rank: 4, name: 'Ishrak', wins: 29 }
-]
-
-export async function seedSupabaseDemoData() {
-  if (!supabase) return
-
-  try {
-    const { data: existingUsers, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .limit(1)
-
-    if (!userError && (!existingUsers || existingUsers.length === 0)) {
-      const userRows = Object.values(demoUsers).map((user) => ({
-        id: user.id,
-        full_name: user.full_name,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-        password_hash: '123456',
-        role: user.role,
-        coins: user.coins
-      }))
-
-      await supabase.from('users').insert(userRows)
-    }
-
-    const { data: existingTournaments, error: tournamentError } = await supabase
-      .from('tournaments')
-      .select('id')
-      .limit(1)
-
-    if (!tournamentError && (!existingTournaments || existingTournaments.length === 0)) {
-      const tournamentRows = mockTournaments.map((tournament, index) => ({
-        id: `tournament-${index + 1}`,
-        title: tournament.title,
-        game: tournament.game,
-        prize: tournament.prize,
-        max_slots: tournament.slots,
-        registered_count: tournament.registered,
-        start_time: new Date().toISOString(),
-        status: tournament.status.toLowerCase(),
-        created_at: new Date().toISOString()
-      }))
-
-      await supabase.from('tournaments').insert(tournamentRows)
-    }
-  } catch (error) {
-    console.error('Supabase seed failed:', error)
-  }
-}
-
-export async function fetchTournamentsFromSupabase() {
-  if (!supabase) return mockTournaments
-
-  const { data, error } = await supabase
-    .from('tournaments')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  if (error) throw error
-
-  return (data || []).map((tournament) => ({
-    id: tournament.id,
-    title: tournament.title,
-    game: tournament.game,
-    prize: tournament.prize,
-    entryFee: 'Free',
-    slots: tournament.max_slots || 0,
-    registered: tournament.registered_count || 0,
-    start_time: tournament.start_time ? new Date(tournament.start_time).toLocaleString() : 'Schedule pending',
-    status: tournament.status || 'Open',
-    winner: tournament.winner || null
-  }))
-}
-
-export async function loginWithSupabase({ login, password }) {
-  if (!supabase) return null
-
-  const lookup = login.trim().toLowerCase()
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .or(`username.ilike.%${lookup}%,email.ilike.%${lookup}%,phone.ilike.%${lookup}%,full_name.ilike.%${lookup}%`)
-    .limit(1)
-
-  if (error || !data || data.length === 0) return null
-
-  const account = data[0]
-  const passwordMatches = account.password_hash === password || account.password_hash === String(password)
-
-  if (!passwordMatches) return null
-
-  return {
-    id: account.id,
-    full_name: account.full_name,
-    username: account.username,
-    email: account.email,
-    phone: account.phone,
-    coins: account.coins || 0,
-    role: account.role || 'user'
-  }
-}
-
-export async function createUserInSupabase(user) {
-  if (!supabase) return null
-
-  const payload = {
-    id: user.id,
-    full_name: user.full_name,
-    username: user.username,
-    email: user.email,
-    phone: user.phone,
-    password_hash: user.password_hash,
-    role: user.role,
-    coins: user.coins
+@media (max-width: 480px) {
+  .main-panel {
+    padding: 14px;
   }
 
-  const { data, error } = await supabase.from('users').insert([payload]).select().single()
-
-  if (error) throw error
-
-  return {
-    id: data.id,
-    full_name: data.full_name,
-    username: data.username,
-    email: data.email,
-    phone: data.phone,
-    coins: data.coins || 0,
-    role: data.role || 'user'
-  }
-}
-
-export async function updateUserProfileInSupabase(userId, user) {
-  if (!supabase) return null
-
-  const payload = {
-    full_name: user.full_name,
-    username: user.username,
-    email: user.email,
-    phone: user.phone,
-    coins: user.coins
+  .hero-panel {
+    padding: 16px;
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .update(payload)
-    .eq('id', userId)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  return {
-    id: data.id,
-    full_name: data.full_name,
-    username: data.username,
-    email: data.email,
-    phone: data.phone,
-    coins: data.coins || 0,
-    role: data.role || 'user'
+  .cards-grid {
+    grid-template-columns: 1fr;
   }
-}
-
-export async function joinTournamentInSupabase(userId, tournamentId) {
-  if (!supabase || !userId || !tournamentId) return
-
-  const { error: registrationError } = await supabase.from('registrations').insert([
-    {
-      user_id: userId,
-      tournament_id: tournamentId,
-      registered_at: new Date().toISOString()
-    }
-  ])
-
-  if (registrationError) {
-    throw registrationError
-  }
-
-  const { data: tournament, error: tournamentError } = await supabase
-    .from('tournaments')
-    .select('registered_count')
-    .eq('id', tournamentId)
-    .single()
-
-  if (!tournamentError && tournament) {
-    await supabase
-      .from('tournaments')
-      .update({ registered_count: (tournament.registered_count || 0) + 1 })
-      .eq('id', tournamentId)
-  }
-}
-
-export async function createTournamentInSupabase({ title, game, prize, slots, start_time }) {
-  if (!supabase) return null
-
-  const payload = {
-    id: `tournament-${Date.now()}`,
-    title,
-    game,
-    prize,
-    max_slots: Number(slots) || 50,
-    registered_count: 0,
-    start_time: new Date().toISOString(),
-    status: 'open',
-    created_at: new Date().toISOString()
-  }
-
-  const { data, error } = await supabase.from('tournaments').insert([payload]).select().single()
-
-  if (error) throw error
-
-  return {
-    id: data.id,
-    title: data.title,
-    game: data.game,
-    prize: data.prize,
-    entryFee: 'Free',
-    slots: data.max_slots || 0,
-    registered: data.registered_count || 0,
-    start_time: start_time || 'Schedule pending',
-    status: data.status || 'Open'
-  }
-}
-
-export async function updateTournamentResultInSupabase(tournamentId, winnerName) {
-  if (!supabase) return null
-
-  const { data, error } = await supabase
-    .from('tournaments')
-    .update({ winner: winnerName, status: 'completed' })
-    .eq('id', tournamentId)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  return data
 }
