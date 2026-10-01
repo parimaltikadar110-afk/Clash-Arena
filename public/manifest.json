@@ -1,0 +1,73 @@
+{
+  "name": "Clash Arena - Free Fire Tournament",
+  "short_name": "Clash Arena",
+  "description": "Free Fire Tournament App - Premium Gaming Platform",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#070d1a",
+  "background_color": "#070d1a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%236ee7b7' width='192' height='192' rx='45'/><text x='96' y='120' font-size='100' font-weight='900' text-anchor='middle' fill='%23061320' font-family='Arial'>CA</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%236ee7b7' width='192' height='192' rx='45'/><text x='96' y='120' font-size='100' font-weight='900' text-anchor='middle' fill='%23061320' font-family='Arial'>CA</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect fill='%236ee7b7' width='512' height='512' rx='120'/><text x='256' y='330' font-size='280' font-weight='900' text-anchor='middle' fill='%23061320' font-family='Arial'>CA</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%23070d1a' width='540' height='720'/><text x='270' y='360' font-size='48' text-anchor='middle' fill='%236ee7b7' font-family='Arial'>Clash Arena</text></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 720'><rect fill='%23070d1a' width='1280' height='720'/><text x='640' y='360' font-size='48' text-anchor='middle' fill='%236ee7b7' font-family='Arial'>Clash Arena - Premium Gaming</text></svg>",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide"
+    }
+  ],
+  "categories": ["games", "sports"],
+  "shortcuts": [
+    {
+      "name": "Tournaments",
+      "short_name": "Tournaments",
+      "description": "Browse available tournaments",
+      "url": "/tournaments",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%236ee7b7' width='192' height='192' rx='45'/><text x='96' y='120' font-size='100' font-weight='900' text-anchor='middle' fill='%23061320' font-family='Arial'>🏆</text></svg>",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "My Matches",
+      "short_name": "My Matches",
+      "description": "View your matches",
+      "url": "/my-matches",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%237dd3fc' width='192' height='192' rx='45'/><text x='96' y='120' font-size='100' font-weight='900' text-anchor='middle' fill='%23061320' font-family='Arial'>⚡</text></svg>",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}
