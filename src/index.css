@@ -511,6 +511,109 @@ a {
   color: var(--muted);
 }
 
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: rgba(14, 19, 31, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  width: min(500px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1.2rem;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.modal-header {
+  padding: 28px 28px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.modal-body {
+  padding: 24px 28px;
+}
+
+.modal-text {
+  color: var(--muted);
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.download-info {
+  display: grid;
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+}
+
+.info-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.modal-actions {
+  padding: 16px 28px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 12px;
+}
+
+.modal-actions button {
+  flex: 1;
+}
+
+.modal-note {
+  padding: 0 28px 28px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+}
+
 .mobile-bottom-nav {
   display: none;
 }
@@ -583,5 +686,9 @@ a {
 
   .cards-grid {
     grid-template-columns: 1fr;
+  }
+
+  .modal-content {
+    width: 100%;
   }
 }
