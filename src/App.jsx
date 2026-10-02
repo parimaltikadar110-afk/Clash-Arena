@@ -6,13 +6,13 @@ import {
   mockLeaderboard,
   supabase,
   joinTournamentInSupabase,
-  seedSupabaseDemoData,
   createTournamentInSupabase,
   mockTournaments,
   updateTournamentResultInSupabase,
   createUserInSupabase,
   updateUserProfileInSupabase
 } from './lib/supabase.js'
+
 
 const storageKey = 'clash-arena-user'
 
