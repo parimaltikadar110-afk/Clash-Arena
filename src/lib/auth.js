@@ -119,10 +119,10 @@ export const getCurrentUser = async () => {
 }
 
 /**
- * Listen to auth state changes
+ * Listen to auth state changes safely
  */
 export const onAuthStateChange = (callback) => {
-  if (!supabase) return
+  if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } }
 
   return supabase.auth.onAuthStateChange((event, session) => {
     callback(session)
