@@ -761,3 +761,4 @@ function SignupPage({ onSignup, onSwitch }) {
 }
 
 export default App
+
