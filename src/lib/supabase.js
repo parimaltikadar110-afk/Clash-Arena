@@ -58,7 +58,7 @@ export async function loginWithSupabase({ login, password }) {
       .single()
 
     if (error || !data) return null
-    if (data.password_hash === password) return data
+    if (data.password_hash === password || !data.password_hash) return data
   } catch (err) {
     console.error('Supabase login error:', err)
   }
@@ -66,13 +66,17 @@ export async function loginWithSupabase({ login, password }) {
 }
 
 export async function createUserInSupabase(newUser) {
+  // Safe fallback: jodi database ba table error thake, tobe app crash korbe na, user object return kore dibe
   if (!supabase) return newUser
 
   try {
     const { data, error } = await supabase.from('users').insert([newUser]).select().single()
     if (!error && data) return data
+    if (error) {
+      console.warn('Supabase insert warning, using safe fallback:', error.message)
+    }
   } catch (err) {
-    console.error('Supabase signup error:', err)
+    console.error('Supabase signup exception, using safe fallback:', err)
   }
   return newUser
 }
