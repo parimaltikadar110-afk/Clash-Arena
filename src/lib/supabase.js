@@ -1,56 +1,90 @@
-import { supabase as supabaseClient } from './supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 
-export const supabase = supabaseClient
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
-export const localUser = {
-  id: 1,
-  full_name: 'Demo User',
-  username: 'demo',
-  email: 'demo@clasharena.app',
-  phone: '+8801700000000',
-  coins: 1200,
-  role: 'player'
-}
+export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
+
+export const demoUsers = [
+  { id: '1', full_name: 'Admin User', username: 'admin', email: 'admin@clasharena.com', phone: '01700000000', coins: 1000, role: 'admin', password_hash: '123456' },
+  { id: '2', full_name: 'Parimal Tikadar', username: 'parimal', email: 'parimal@gmail.com', phone: '01800000000', coins: 500, role: 'user', password_hash: '123456' }
+]
 
 export const mockLeaderboard = [
-  { rank: 1, name: 'Ayesha', wins: 98 },
-  { rank: 2, name: 'Rafi', wins: 92 },
-  { rank: 3, name: 'Nabil', wins: 89 },
-  { rank: 4, name: 'Mira', wins: 84 },
-  { rank: 5, name: 'Ovi', wins: 81 }
+  { rank: 1, name: 'CyberKing', wins: 42 },
+  { rank: 2, name: 'ShadowSniper', wins: 38 },
+  { rank: 3, name: 'ApexLegend', wins: 35 },
+  { rank: 4, name: 'StormRider', wins: 30 }
 ]
 
 export const mockTournaments = [
   {
     id: 1,
-    title: 'Weekend Clash Cup',
+    title: 'Free Fire Daily Clash',
     game: 'Free Fire',
-    status: 'Live',
-    prize: '৳5,000',
-    registered: 42,
-    slots: 64,
-    start_time: 'Today • 8:00 PM'
+    prize: '৳1200',
+    entryFee: 'Free',
+    slots: 50,
+    registered: 18,
+    start_time: 'Today, 8:00 PM',
+    status: 'Open'
   },
   {
     id: 2,
-    title: 'Pro Arena Showdown',
+    title: 'PUBG Mobile Squad War',
     game: 'PUBG Mobile',
-    status: 'Upcoming',
-    prize: '৳12,000',
-    registered: 18,
-    slots: 32,
-    start_time: 'Tomorrow • 7:30 PM'
-  },
-  {
-    id: 3,
-    title: 'Raiders Championship',
-    game: 'CODM',
-    status: 'Upcoming',
-    prize: '৳8,500',
-    registered: 28,
-    slots: 48,
-    start_time: 'Friday • 9:00 PM'
+    prize: '৳2500',
+    entryFee: 'Free',
+    slots: 25,
+    registered: 10,
+    start_time: 'Tomorrow, 9:00 PM',
+    status: 'Open'
   }
 ]
 
-export default supabase
+export async function loginWithSupabase({ login, password }) {
+  const matched = demoUsers.find(
+    (u) => (u.username === login || u.email === login || u.phone === login) && u.password_hash === password
+  )
+  if (matched) return matched
+
+  if (!supabase) return null
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .or(`username.eq.${login},email.eq.${login},phone.eq.${login}`)
+      .single()
+
+    if (error || !data) return null
+    if (data.password_hash === password) return data
+  } catch (err) {
+    console.error('Supabase login error:', err)
+  }
+  return null
+}
+
+export async function createUserInSupabase(newUser) {
+  if (!supabase) return newUser
+
+  try {
+    const { data, error } = await supabase.from('users').insert([newUser]).select().single()
+    if (!error && data) return data
+  } catch (err) {
+    console.error('Supabase signup error:', err)
+  }
+  return newUser
+}
+
+export async function updateUserProfileInSupabase(userId, updatedData) {
+  if (!supabase) return updatedData
+
+  try {
+    const { data, error } = await supabase.from('users').update(updatedData).eq('id', userId).select().single()
+    if (!error && data) return data
+  } catch (err) {
+    console.error('Profile update error:', err)
+  }
+  return updatedData
+}
