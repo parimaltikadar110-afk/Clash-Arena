@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   demoUsers,
-  fetchTournamentsFromSupabase,
   loginWithSupabase,
   mockLeaderboard,
   supabase,
-  joinTournamentInSupabase,
-  createTournamentInSupabase,
   mockTournaments,
-  updateTournamentResultInSupabase,
   createUserInSupabase,
   updateUserProfileInSupabase
 } from './lib/supabase.js'
