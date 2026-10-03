@@ -42,53 +42,72 @@ export const mockTournaments = [
   }
 ]
 
+// Pure Supabase Login Function (No fake fallback)
 export async function loginWithSupabase({ login, password }) {
-  const matched = demoUsers.find(
-    (u) => (u.username === login || u.email === login || u.phone === login) && u.password_hash === password
+  // Check demo admin first
+  const demo = demoUsers.find(
+    (u) => (u.username === login || u.email === login || u.phone === login) && String(u.password_hash) === String(password)
   )
-  if (matched) return matched
+  if (demo) return demo
 
-  if (!supabase) return null
-
-  try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .or(`username.eq.${login},email.eq.${login},phone.eq.${login}`)
-      .single()
-
-    if (error || !data) return null
-    if (data.password_hash === password || !data.password_hash) return data
-  } catch (err) {
-    console.error('Supabase login error:', err)
+  if (!supabase) {
+    throw new Error('Supabase client is not initialized.')
   }
-  return null
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .or(`username.eq.${login},email.eq.${login},phone.eq.${login}`)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  if (!data) {
+    throw new Error('User not found with this credential.')
+  }
+
+  if (String(data.password_hash) !== String(password)) {
+    throw new Error('Incorrect password.')
+  }
+
+  return data
 }
 
+// Pure Supabase Create User Function (Directly saves to Supabase)
 export async function createUserInSupabase(newUser) {
-  // Safe fallback: jodi database ba table error thake, tobe app crash korbe na, user object return kore dibe
-  if (!supabase) return newUser
-
-  try {
-    const { data, error } = await supabase.from('users').insert([newUser]).select().single()
-    if (!error && data) return data
-    if (error) {
-      console.warn('Supabase insert warning, using safe fallback:', error.message)
-    }
-  } catch (err) {
-    console.error('Supabase signup exception, using safe fallback:', err)
+  if (!supabase) {
+    throw new Error('Supabase client is not initialized.')
   }
-  return newUser
+
+  const { data, error } = await supabase
+    .from('users')
+    .insert([newUser])
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return data
 }
 
+// Update profile in Supabase
 export async function updateUserProfileInSupabase(userId, updatedData) {
   if (!supabase) return updatedData
 
-  try {
-    const { data, error } = await supabase.from('users').update(updatedData).eq('id', userId).select().single()
-    if (!error && data) return data
-  } catch (err) {
-    console.error('Profile update error:', err)
+  const { data, error } = await supabase
+    .from('users')
+    .update(updatedData)
+    .eq('id', userId)
+    .select()
+    .single()
+
+  if (error) {
+    throw error
   }
-  return updatedData
+
+  return data
 }
