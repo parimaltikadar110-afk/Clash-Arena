@@ -5,13 +5,45 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
+// Mock Tournaments & Leaderboard (App-এর UI ঠিক রাখার জন্য জরুরি)
+export const mockLeaderboard = [
+  { rank: 1, name: 'CyberKing', wins: 42 },
+  { rank: 2, name: 'ShadowSniper', wins: 38 },
+  { rank: 3, name: 'ApexLegend', wins: 35 },
+  { rank: 4, name: 'StormRider', wins: 30 }
+]
+
+export const mockTournaments = [
+  {
+    id: 1,
+    title: 'Free Fire Daily Clash',
+    game: 'Free Fire',
+    prize: '৳1200',
+    entryFee: 'Free',
+    slots: 50,
+    registered: 18,
+    start_time: 'Today, 8:00 PM',
+    status: 'Open'
+  },
+  {
+    id: 2,
+    title: 'PUBG Mobile Squad War',
+    game: 'PUBG Mobile',
+    prize: '৳2500',
+    entryFee: 'Free',
+    slots: 25,
+    registered: 10,
+    start_time: 'Tomorrow, 9:00 PM',
+    status: 'Open'
+  }
+]
+
 // ১. Supabase Auth দিয়ে সাইন-আপ এবং public.users-এ প্রোফাইল ডাটা সেভ করা
 export async function signUpWithSupabase({ email, password, game_name }) {
   if (!supabase) {
     throw new Error('Supabase client is not initialized.')
   }
 
-  // ক. Supabase Auth-এ অ্যাকাউন্ট তৈরি
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
     password,
@@ -23,7 +55,6 @@ export async function signUpWithSupabase({ email, password, game_name }) {
 
   const user = authData.user
   if (user) {
-    // খ. public.users টেবিলে প্রয়োজনীয় প্রোফাইল ডাটা ইনসার্ট করা
     const { error: profileError } = await supabase
       .from('users')
       .insert([
@@ -58,7 +89,6 @@ export async function loginWithSupabase({ email, password }) {
     throw new Error(authError.message)
   }
 
-  // public.users টেবিল থেকে ইউজারের অতিরিক্ত তথ্য (যেমন wallet_balance, role, game_name) নিয়ে আসা
   const { data: profileData, error: profileError } = await supabase
     .from('users')
     .select('*')
