@@ -39,7 +39,7 @@ export const mockTournaments = [
   }
 ]
 
-// Supabase Auth Signup & public.users insert
+// Supabase Auth Signup (Database trigger will handle public.users profile creation)
 export async function signUpWithSupabase({ email, password, game_name }) {
   if (!supabase) {
     throw new Error('Supabase client is not initialized.')
@@ -48,28 +48,15 @@ export async function signUpWithSupabase({ email, password, game_name }) {
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
     password,
+    options: {
+      data: {
+        game_name: game_name || 'Player'
+      }
+    }
   })
 
   if (authError) {
     throw new Error(authError.message)
-  }
-
-  const user = authData.user
-  if (user) {
-    const { error: profileError } = await supabase
-      .from('users')
-      .insert([
-        {
-          id: user.id,
-          game_name: game_name || 'Player',
-          wallet_balance: 0,
-          role: 'player'
-        }
-      ])
-
-    if (profileError) {
-      throw new Error(`Profile creation failed: ${profileError.message}`)
-    }
   }
 
   return authData
