@@ -5,7 +5,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
-// Mock Tournaments & Leaderboard
+// Mock Leaderboard
 export const mockLeaderboard = [
   { rank: 1, name: 'CyberKing', wins: 42 },
   { rank: 2, name: 'ShadowSniper', wins: 38 },
@@ -13,6 +13,7 @@ export const mockLeaderboard = [
   { rank: 4, name: 'StormRider', wins: 30 }
 ]
 
+// Mock Tournaments
 export const mockTournaments = [
   {
     id: 1,
@@ -38,8 +39,8 @@ export const mockTournaments = [
   }
 ]
 
-// Supabase Auth Signup (App.jsx এর চাহিদা অনুযায়ী দুটি নামই এক্সপোর্ট করা হলো)
-export async function signUpWithSupabase({ email, password, game_name, username }) {
+// Supabase Auth Signup & public.users insert
+export async function signUpWithSupabase({ email, password, game_name }) {
   if (!supabase) {
     throw new Error('Supabase client is not initialized.')
   }
@@ -60,7 +61,7 @@ export async function signUpWithSupabase({ email, password, game_name, username 
       .insert([
         {
           id: user.id,
-          game_name: game_name || username || 'Player',
+          game_name: game_name || 'Player',
           wallet_balance: 0,
           role: 'player'
         }
@@ -74,20 +75,16 @@ export async function signUpWithSupabase({ email, password, game_name, username 
   return authData
 }
 
-// App.jsx থেকে createUserInSupabase ডাকলে যেন এটি কাজ করে
 export const createUserInSupabase = signUpWithSupabase
 
 // Supabase Login Function
-export async function loginWithSupabase({ login, email, password }) {
+export async function loginWithSupabase({ email, password }) {
   if (!supabase) {
     throw new Error('Supabase client is not initialized.')
   }
 
-  // যদি login ফিল্ডে ইমেইল বা ইউজারনেম থাকে
-  const userEmail = email || login
-
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email: userEmail,
+    email,
     password,
   })
 
