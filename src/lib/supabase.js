@@ -5,7 +5,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 
-// Mock Tournaments & Leaderboard (App-এর UI ঠিক রাখার জন্য জরুরি)
+// Mock Tournaments & Leaderboard
 export const mockLeaderboard = [
   { rank: 1, name: 'CyberKing', wins: 42 },
   { rank: 2, name: 'ShadowSniper', wins: 38 },
@@ -38,8 +38,8 @@ export const mockTournaments = [
   }
 ]
 
-// ১. Supabase Auth দিয়ে সাইন-আপ এবং public.users-এ প্রোফাইল ডাটা সেভ করা
-export async function signUpWithSupabase({ email, password, game_name }) {
+// Supabase Auth Signup (App.jsx এর চাহিদা অনুযায়ী দুটি নামই এক্সপোর্ট করা হলো)
+export async function signUpWithSupabase({ email, password, game_name, username }) {
   if (!supabase) {
     throw new Error('Supabase client is not initialized.')
   }
@@ -60,7 +60,7 @@ export async function signUpWithSupabase({ email, password, game_name }) {
       .insert([
         {
           id: user.id,
-          game_name: game_name || 'Player',
+          game_name: game_name || username || 'Player',
           wallet_balance: 0,
           role: 'player'
         }
@@ -74,14 +74,20 @@ export async function signUpWithSupabase({ email, password, game_name }) {
   return authData
 }
 
-// ২. Supabase Auth দিয়ে লগইন করা এবং প্রোফাইল ডাটা ফেচ করা
-export async function loginWithSupabase({ email, password }) {
+// App.jsx থেকে createUserInSupabase ডাকলে যেন এটি কাজ করে
+export const createUserInSupabase = signUpWithSupabase
+
+// Supabase Login Function
+export async function loginWithSupabase({ login, email, password }) {
   if (!supabase) {
     throw new Error('Supabase client is not initialized.')
   }
 
+  // যদি login ফিল্ডে ইমেইল বা ইউজারনেম থাকে
+  const userEmail = email || login
+
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email,
+    email: userEmail,
     password,
   })
 
@@ -105,7 +111,7 @@ export async function loginWithSupabase({ email, password }) {
   }
 }
 
-// ৩. ইউজার প্রোফাইল আপডেট করার ফাংশন
+// Update Profile
 export async function updateUserProfileInSupabase(userId, updatedData) {
   if (!supabase) return updatedData
 
