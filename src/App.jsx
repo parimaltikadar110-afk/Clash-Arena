@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  demoUsers,
   loginWithSupabase,
   mockLeaderboard,
   supabase,
@@ -9,8 +8,7 @@ import {
   updateUserProfileInSupabase
 } from './lib/supabase.js'
 
-
-const storageKey = 'clash-arena-user'
+const storageKey = 'clashx7-user'
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -20,7 +18,7 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard')
   const [tournaments, setTournaments] = useState(mockTournaments)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [authMode, setAuthMode] = useState('login')
   const [form, setForm] = useState({
@@ -31,53 +29,33 @@ function App() {
     start_time: ''
   })
   const [profileForm, setProfileForm] = useState({
-    full_name: '',
-    username: '',
+    game_name: '',
     email: '',
-    phone: ''
+    wallet_balance: 0
   })
 
   useEffect(() => {
     if (user) {
       setProfileForm({
-        full_name: user.full_name || '',
-        username: user.username || '',
+        game_name: user.game_name || '',
         email: user.email || '',
-        phone: user.phone || ''
+        wallet_balance: user.wallet_balance || 0
       })
     }
   }, [user])
 
-  useEffect(() => {
-    const loadTournaments = async () => {
-      if (!supabase) {
-        setTournaments(mockTournaments)
-        setIsLoading(false)
-        return
-      }
-
-      try {
-        await seedSupabaseDemoData()
-        const rows = await fetchTournamentsFromSupabase()
-        setTournaments(rows.length ? rows : mockTournaments)
-      } catch (error) {
-        console.error('Error loading tournaments:', error)
-        setTournaments(mockTournaments)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadTournaments()
-  }, [])
-
   const handleLogin = async (formData) => {
-    const loginValue = formData.login.trim().toLowerCase().replace(/\s+/g, '')
+    const email = formData.login.trim()
     const password = formData.password
+
+    if (!email || !password) {
+      alert('Please fill in all fields.')
+      return
+    }
 
     try {
       if (supabase) {
-        const supabaseUser = await loginWithSupabase({ login: loginValue, password })
+        const supabaseUser = await loginWithSupabase({ email, password })
         if (supabaseUser) {
           localStorage.setItem(storageKey, JSON.stringify(supabaseUser))
           setUser(supabaseUser)
@@ -86,45 +64,34 @@ function App() {
       }
     } catch (error) {
       console.error('Supabase login failed:', error)
+      alert(error.message)
     }
-    alert('Supabase login failed. Please check your credentials.')
   }
 
-  const handleSignup = async ({ full_name, username, email, phone, password }) => {
-    const trimmedName = full_name.trim()
-    const trimmedUsername = username.trim()
+  const handleSignup = async ({ game_name, email, password }) => {
+    const trimmedGameName = game_name.trim()
     const trimmedEmail = email.trim()
-    const trimmedPhone = phone.trim()
 
-    if (!trimmedName || !trimmedUsername || !trimmedEmail || !trimmedPhone || !password) {
+    if (!trimmedGameName || !trimmedEmail || !password) {
       alert('Please fill in all fields.')
       return
     }
 
-    const newUser = {
-      id: `user-${Date.now()}`,
-      full_name: trimmedName,
-      username: trimmedUsername,
-      email: trimmedEmail,
-      phone: trimmedPhone,
-      coins: 500,
-      role: 'user',
-      password_hash: password
-    }
-
     try {
       if (supabase) {
-        const remoteUser = await createUserInSupabase(newUser)
+        const remoteUser = await createUserInSupabase({
+          email: trimmedEmail,
+          password,
+          game_name: trimmedGameName
+        })
         if (remoteUser) {
-          setUser(remoteUser)
-          localStorage.setItem(storageKey, JSON.stringify(remoteUser))
+          alert('Account created successfully! Please login.')
           setAuthMode('login')
-          return
         }
       }
     } catch (error) {
       console.error('Supabase signup failed:', error)
-      alert('Signup failed via Supabase.')
+      alert(error.message)
     }
   }
 
@@ -136,14 +103,6 @@ function App() {
   const handleJoinTournament = async (tournamentId) => {
     if (!user) return
 
-    try {
-      if (supabase) {
-        await joinTournamentInSupabase(user.id, tournamentId)
-      }
-    } catch (error) {
-      console.error('Tournament join failed:', error)
-    }
-
     setTournaments((current) =>
       current.map((tournament) =>
         tournament.id === tournamentId
@@ -152,8 +111,8 @@ function App() {
       )
     )
 
-    const nextCoins = Number(user.coins || 0) + 50
-    const updatedUser = { ...user, coins: nextCoins }
+    const nextBalance = Number(user.wallet_balance || 0) + 50
+    const updatedUser = { ...user, wallet_balance: nextBalance }
     setUser(updatedUser)
     localStorage.setItem(storageKey, JSON.stringify(updatedUser))
   }
@@ -178,71 +137,32 @@ function App() {
       status: 'Open'
     }
 
-    try {
-      if (supabase) {
-        const inserted = await createTournamentInSupabase({
-          title: generatedTournament.title,
-          game: generatedTournament.game,
-          prize: generatedTournament.prize,
-          slots: generatedTournament.slots,
-          start_time: generatedTournament.start_time
-        })
-
-        if (inserted) {
-          setTournaments((current) => [inserted, ...current])
-        }
-      } else {
-        setTournaments((current) => [generatedTournament, ...current])
-      }
-    } catch (error) {
-      console.error('Create tournament failed:', error)
-      setTournaments((current) => [generatedTournament, ...current])
-    }
-
+    setTournaments((current) => [generatedTournament, ...current])
     setForm({ title: '', game: 'Free Fire', prize: '৳1200', slots: '50', start_time: '' })
     setActiveTab('tournaments')
-  }
-
-  const handleResultSubmit = async (tournamentId, winnerName) => {
-    if (!winnerName.trim()) return
-
-    try {
-      await updateTournamentResultInSupabase(tournamentId, winnerName)
-      setTournaments((current) =>
-        current.map((item) =>
-          item.id === tournamentId ? { ...item, winner: winnerName.trim(), status: 'Completed' } : item
-        )
-      )
-    } catch (error) {
-      console.error('Result update failed:', error)
-    }
   }
 
   const handleProfileSave = async (event) => {
     event.preventDefault()
 
-    const updatedUser = {
-      ...user,
-      full_name: profileForm.full_name.trim(),
-      username: profileForm.username.trim(),
-      email: profileForm.email.trim(),
-      phone: profileForm.phone.trim()
+    const updatedData = {
+      game_name: profileForm.game_name.trim()
     }
 
     try {
       if (supabase) {
-        const backendUser = await updateUserProfileInSupabase(user.id, updatedUser)
+        const backendUser = await updateUserProfileInSupabase(user.id, updatedData)
         if (backendUser) {
-          setUser(backendUser)
-          localStorage.setItem(storageKey, JSON.stringify(backendUser))
+          const mergedUser = { ...user, ...backendUser }
+          setUser(mergedUser)
+          localStorage.setItem(storageKey, JSON.stringify(mergedUser))
         }
       }
     } catch (error) {
       console.error('Profile update failed:', error)
+      alert(error.message)
     }
 
-    setUser(updatedUser)
-    localStorage.setItem(storageKey, JSON.stringify(updatedUser))
     setIsEditingProfile(false)
   }
 
@@ -250,8 +170,8 @@ function App() {
     () => [
       { label: 'Tournament Played', value: '12' },
       { label: 'Win Rate', value: '58%' },
-      { label: 'Coins', value: `${user?.coins ?? 0}` },
-      { label: 'Rank', value: user?.role === 'admin' ? 'Admin' : '#18' }
+      { label: 'Wallet Balance', value: `৳${user?.wallet_balance ?? 0}` },
+      { label: 'Role', value: user?.role === 'admin' ? 'Admin' : 'Player' }
     ],
     [user]
   )
@@ -264,7 +184,7 @@ function App() {
   }
 
   if (isLoading && supabase) {
-    return <div className="loading-screen">Loading Clash Arena...</div>
+    return <div className="loading-screen">Loading ClashX7...</div>
   }
 
   const isAdmin = user.role === 'admin'
@@ -273,10 +193,10 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-box">
-          <div className="brand-badge">CA</div>
+          <div className="brand-badge">CX7</div>
           <div>
             <p className="eyebrow">Game Arena</p>
-            <h2>Clash Arena</h2>
+            <h2>ClashX7</h2>
           </div>
         </div>
 
@@ -301,8 +221,8 @@ function App() {
         </nav>
 
         <div className="user-card">
-          <p>{user.full_name}</p>
-          <small>@{user.username}</small>
+          <p>{user.game_name}</p>
+          <small>{user.email}</small>
           <span className="badge-role">{user.role}</span>
           <button className="ghost-btn" onClick={handleLogout}>Logout</button>
         </div>
@@ -403,21 +323,6 @@ function App() {
                     <button className="primary-btn" onClick={() => handleJoinTournament(tournament.id)}>
                       Join Tournament
                     </button>
-
-                    {isAdmin && (
-                      <div className="result-box">
-                        <input
-                          type="text"
-                          placeholder="Winner name"
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              handleResultSubmit(tournament.id, event.target.value)
-                              event.target.value = ''
-                            }
-                          }}
-                        />
-                      </div>
-                    )}
                   </div>
                 ))
               )}
@@ -436,14 +341,9 @@ function App() {
 
             <div className="wallet-grid">
               <div className="panel wallet-box">
-                <small>Available Coins</small>
-                <h2>{user.coins}</h2>
-                <p>Earn coins by joining tournaments and winning matches.</p>
-              </div>
-              <div className="panel wallet-box">
-                <small>Rewards</small>
-                <h2>৳0</h2>
-                <p>Daily prize pool and bonus rewards are shown here.</p>
+                <small>Wallet Balance</small>
+                <h2>৳{user.wallet_balance || 0}</h2>
+                <p>Earn rewards by joining tournaments and winning matches.</p>
               </div>
             </div>
           </section>
@@ -467,32 +367,10 @@ function App() {
               <form className="panel profile-form" onSubmit={handleProfileSave}>
                 <div className="form-grid">
                   <div className="field-group">
-                    <label>Full Name</label>
+                    <label>Game Name</label>
                     <input
-                      value={profileForm.full_name}
-                      onChange={(event) => setProfileForm({ ...profileForm, full_name: event.target.value })}
-                    />
-                  </div>
-                  <div className="field-group">
-                    <label>Username</label>
-                    <input
-                      value={profileForm.username}
-                      onChange={(event) => setProfileForm({ ...profileForm, username: event.target.value })}
-                    />
-                  </div>
-                  <div className="field-group">
-                    <label>Email</label>
-                    <input
-                      type="email"
-                      value={profileForm.email}
-                      onChange={(event) => setProfileForm({ ...profileForm, email: event.target.value })}
-                    />
-                  </div>
-                  <div className="field-group">
-                    <label>Phone</label>
-                    <input
-                      value={profileForm.phone}
-                      onChange={(event) => setProfileForm({ ...profileForm, phone: event.target.value })}
+                      value={profileForm.game_name}
+                      onChange={(event) => setProfileForm({ ...profileForm, game_name: event.target.value })}
                     />
                   </div>
                   <div className="field-group full-width-buttons">
@@ -505,13 +383,11 @@ function App() {
               </form>
             ) : (
               <div className="profile-card panel">
-                <div className="avatar">{user.full_name.charAt(0)}</div>
+                <div className="avatar">{user.game_name ? user.game_name.charAt(0) : 'U'}</div>
                 <div className="profile-info">
-                  <h3>{user.full_name}</h3>
-                  <p>Username: @{user.username}</p>
+                  <h3>{user.game_name}</h3>
                   <p>Email: {user.email}</p>
-                  <p>Phone: {user.phone}</p>
-                  <p>Coins: {user.coins}</p>
+                  <p>Wallet Balance: ৳{user.wallet_balance || 0}</p>
                   <p>Role: {user.role}</p>
                 </div>
               </div>
@@ -525,25 +401,6 @@ function App() {
               <div>
                 <p className="eyebrow">Management</p>
                 <h1>Admin Panel</h1>
-              </div>
-            </div>
-
-            <div className="panel admin-grid">
-              <div className="admin-box">
-                <h3>Active Matches</h3>
-                <p>{tournaments.length} tournaments running</p>
-              </div>
-              <div className="admin-box">
-                <h3>Players</h3>
-                <p>8,420 registered users</p>
-              </div>
-              <div className="admin-box">
-                <h3>Transactions</h3>
-                <p>৳14,500 processed</p>
-              </div>
-              <div className="admin-box">
-                <h3>Reports</h3>
-                <p>3 new issues</p>
               </div>
             </div>
 
@@ -634,18 +491,18 @@ function LoginPage({ onLogin, onSwitch }) {
     <div className="login-screen">
       <div className="login-card">
         <div className="logo-wrap">
-          <div className="brand-badge large">CA</div>
-          <h1>Clash Arena</h1>
+          <div className="brand-badge large">CX7</div>
+          <h1>ClashX7 Login</h1>
         </div>
 
         <form onSubmit={submitForm} className="login-form">
           <label>
-            Username / Email / Phone
+            Email
             <input
-              type="text"
+              type="email"
               value={formData.login}
               onChange={(e) => setFormData({ ...formData, login: e.target.value })}
-              placeholder="demo / email / phone"
+              placeholder="you@example.com"
             />
           </label>
 
@@ -675,10 +532,8 @@ function LoginPage({ onLogin, onSwitch }) {
 
 function SignupPage({ onSignup, onSwitch }) {
   const [formData, setFormData] = useState({
-    full_name: '',
-    username: '',
+    game_name: '',
     email: '',
-    phone: '',
     password: ''
   })
 
@@ -691,28 +546,18 @@ function SignupPage({ onSignup, onSwitch }) {
     <div className="login-screen">
       <div className="login-card">
         <div className="logo-wrap">
-          <div className="brand-badge large">CA</div>
+          <div className="brand-badge large">CX7</div>
           <h1>Sign Up</h1>
         </div>
 
         <form onSubmit={submitForm} className="login-form">
           <label>
-            Full Name
+            Game Name
             <input
               type="text"
-              value={formData.full_name}
-              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              placeholder="Your full name"
-            />
-          </label>
-
-          <label>
-            Username
-            <input
-              type="text"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              placeholder="username"
+              value={formData.game_name}
+              onChange={(e) => setFormData({ ...formData, game_name: e.target.value })}
+              placeholder="Your Free Fire name"
             />
           </label>
 
@@ -723,16 +568,6 @@ function SignupPage({ onSignup, onSwitch }) {
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               placeholder="you@example.com"
-            />
-          </label>
-
-          <label>
-            Phone
-            <input
-              type="text"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+88017..."
             />
           </label>
 
@@ -753,7 +588,7 @@ function SignupPage({ onSignup, onSwitch }) {
 
         <div className="auth-switch-row">
           <span>Already registered?</span>
-          <button type="button" className="link-dev" onClick={onSwitch}>Back to login</button>
+          <button type="button" className="link-btn" onClick={onSwitch}>Back to login</button>
         </div>
       </div>
     </div>
@@ -761,4 +596,3 @@ function SignupPage({ onSignup, onSwitch }) {
 }
 
 export default App
-
