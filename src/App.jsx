@@ -17,10 +17,12 @@ function App() {
   })
 
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [matchCategory, setMatchCategory] = useState('SOLO BR')
   const [tournaments, setTournaments] = useState(mockTournaments)
   const [isLoading, setIsLoading] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [authMode, setAuthMode] = useState('login')
+  const [walletInput, setWalletInput] = useState('10')
   const [form, setForm] = useState({
     title: '',
     game: 'Free Fire',
@@ -117,6 +119,20 @@ function App() {
     localStorage.setItem(storageKey, JSON.stringify(updatedUser))
   }
 
+  const handleAddWallet = (e) => {
+    e.preventDefault()
+    const amount = Number(walletInput)
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount')
+      return
+    }
+    const nextBalance = Number(user.wallet_balance || 0) + amount
+    const updatedUser = { ...user, wallet_balance: nextBalance }
+    setUser(updatedUser)
+    localStorage.setItem(storageKey, JSON.stringify(updatedUser))
+    alert(`Successfully added ৳${amount} to your wallet!`)
+  }
+
   const handleCreateTournament = async (event) => {
     event.preventDefault()
 
@@ -190,55 +206,33 @@ function App() {
   const isAdmin = user.role === 'admin'
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-box">
-          <div className="brand-badge">CX7</div>
-          <div>
-            <p className="eyebrow">Game Arena</p>
-            <h2>ClashX7</h2>
-          </div>
+    <div className="app-shell clash-x-theme">
+      {/* Top Header like Clash X 24 */}
+      <header className="top-header">
+        <div className="user-profile-mini" onClick={() => setActiveTab('profile')}>
+          <div className="avatar-circle">{user.game_name ? user.game_name.charAt(0).toUpperCase() : 'U'}</div>
         </div>
-
-        <nav className="nav">
-          {[
-            ['dashboard', 'Dashboard'],
-            ['tournaments', 'Tournaments'],
-            ['wallet', 'Wallet'],
-            ['profile', 'Profile'],
-            isAdmin ? ['admin', 'Admin Panel'] : null
-          ]
-            .filter(Boolean)
-            .map(([key, label]) => (
-              <button
-                key={key}
-                className={activeTab === key ? 'nav-btn active' : 'nav-btn'}
-                onClick={() => setActiveTab(key)}
-              >
-                {label}
-              </button>
-            ))}
-        </nav>
-
-        <div className="user-card">
-          <p>{user.game_name}</p>
-          <small>{user.email}</small>
-          <span className="badge-role">{user.role}</span>
-          <button className="ghost-btn" onClick={handleLogout}>Logout</button>
+        <div className="header-wallet" onClick={() => setActiveTab('wallet')}>
+          <span className="wallet-icon">👛</span>
+          <span>৳{user.wallet_balance || 0}</span>
+          <span className="dropdown-arrow">▼</span>
         </div>
-      </aside>
+      </header>
 
+      {/* Main Content Panel */}
       <main className="main-panel">
         {activeTab === 'dashboard' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Welcome back</p>
-                <h1>Dashboard</h1>
-              </div>
-              <button className="primary-btn" onClick={() => setActiveTab('tournaments')}>
-                View Matches
-              </button>
+          <section className="home-section">
+            <div className="category-scroll">
+              {['SOLO BR', 'DUO BR', 'DUO PR KILL', 'SOLO PER KILL', 'LONE WOLF', 'CLASH SQUAD'].map((cat) => (
+                <button
+                  key={cat}
+                  className={matchCategory === cat ? 'cat-pill active' : 'cat-pill'}
+                  onClick={() => setMatchCategory(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
 
             <div className="stats-grid">
@@ -331,7 +325,7 @@ function App() {
         )}
 
         {activeTab === 'wallet' && (
-          <section>
+          <section className="section-padded wallet-screen">
             <div className="topbar">
               <div>
                 <p className="eyebrow">Balance</p>
@@ -344,6 +338,19 @@ function App() {
                 <small>Wallet Balance</small>
                 <h2>৳{user.wallet_balance || 0}</h2>
                 <p>Earn rewards by joining tournaments and winning matches.</p>
+              </div>
+
+              <div className="panel wallet-box-modern" style={{ marginTop: '15px' }}>
+                <form onSubmit={handleAddWallet} className="add-money-form">
+                  <label>Enter amount to add</label>
+                  <input
+                    type="number"
+                    value={walletInput}
+                    onChange={(e) => setWalletInput(e.target.value)}
+                    min="1"
+                  />
+                  <button type="submit" className="primary-btn" style={{ marginTop: '10px' }}>Add ৳{walletInput}</button>
+                </form>
               </div>
             </div>
           </section>
@@ -389,6 +396,7 @@ function App() {
                   <p>Email: {user.email}</p>
                   <p>Wallet Balance: ৳{user.wallet_balance || 0}</p>
                   <p>Role: {user.role}</p>
+                  <button className="danger-btn" onClick={handleLogout} style={{ marginTop: '15px' }}>Logout</button>
                 </div>
               </div>
             )}
@@ -467,6 +475,47 @@ function App() {
           </section>
         )}
       </main>
+
+      {/* Bottom Navigation Bar like Clash X 24 */}
+      <nav className="bottom-nav-bar">
+        <button
+          className={activeTab === 'dashboard' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          <span className="nav-icon">🏠</span>
+          <span>Home</span>
+        </button>
+        <button
+          className={activeTab === 'tournaments' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('tournaments')}
+        >
+          <span className="nav-icon">🏆</span>
+          <span>Matches</span>
+        </button>
+        <button
+          className={activeTab === 'wallet' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('wallet')}
+        >
+          <span className="nav-icon">👛</span>
+          <span>Wallet</span>
+        </button>
+        <button
+          className={activeTab === 'profile' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('profile')}
+        >
+          <span className="nav-icon">👤</span>
+          <span>Profile</span>
+        </button>
+        {isAdmin && (
+          <button
+            className={activeTab === 'admin' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+            onClick={() => setActiveTab('admin')}
+          >
+            <span className="nav-icon">⚙️</span>
+            <span>Admin</span>
+          </button>
+        )}
+      </nav>
     </div>
   )
 }
