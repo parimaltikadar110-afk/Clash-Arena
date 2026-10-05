@@ -16,13 +16,14 @@ function App() {
     return stored ? JSON.parse(stored) : null
   })
 
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState('home')
   const [matchCategory, setMatchCategory] = useState('SOLO BR')
   const [tournaments, setTournaments] = useState(mockTournaments)
   const [isLoading, setIsLoading] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [authMode, setAuthMode] = useState('login')
-  const [walletInput, setWalletInput] = useState('10')
+  const [walletInput, setWalletInput] = useState('50')
+  const [selectedGateway, setSelectedGateway] = useState('Zap UPI')
   const [form, setForm] = useState({
     title: '',
     game: 'Free Fire',
@@ -102,8 +103,23 @@ function App() {
     setUser(null)
   }
 
-  const handleJoinTournament = async (tournamentId) => {
+  // Match join validation logic (Checks user wallet balance)
+  const handleJoinTournament = async (tournamentId, entryFeeText) => {
     if (!user) return
+
+    // Extract entry fee number (e.g. "₹8 JOIN" or "FREE JOIN" -> 8 or 0)
+    let fee = 0
+    if (entryFeeText && entryFeeText.includes('₹')) {
+      fee = Number(entryFeeText.replace(/[^0-9]/g, '')) || 0
+    }
+
+    const currentBalance = Number(user.wallet_balance || 0)
+
+    if (currentBalance < fee) {
+      alert(`Insufficient balance! You need ₹${fee} to join this match. Please add money to your wallet.`)
+      setActiveTab('wallet')
+      return
+    }
 
     setTournaments((current) =>
       current.map((tournament) =>
@@ -113,24 +129,32 @@ function App() {
       )
     )
 
-    const nextBalance = Number(user.wallet_balance || 0) + 50
+    const nextBalance = currentBalance - fee
     const updatedUser = { ...user, wallet_balance: nextBalance }
     setUser(updatedUser)
     localStorage.setItem(storageKey, JSON.stringify(updatedUser))
+    alert('Successfully joined the tournament!')
   }
 
-  const handleAddWallet = (e) => {
+  // Gateway integration flow for adding money
+  const handleAddWalletGateway = (e) => {
     e.preventDefault()
     const amount = Number(walletInput)
     if (isNaN(amount) || amount <= 0) {
       alert('Please enter a valid amount')
       return
     }
-    const nextBalance = Number(user.wallet_balance || 0) + amount
-    const updatedUser = { ...user, wallet_balance: nextBalance }
-    setUser(updatedUser)
-    localStorage.setItem(storageKey, JSON.stringify(updatedUser))
-    alert(`Successfully added ৳${amount} to your wallet!`)
+
+    // Simulating Gateway Redirect (Zap UPI / TrendUPI / Cashfree)
+    alert(`Redirecting to ${selectedGateway} payment gateway for ₹${amount}... Please complete payment.`)
+
+    setTimeout(() => {
+      const nextBalance = Number(user.wallet_balance || 0) + amount
+      const updatedUser = { ...user, wallet_balance: nextBalance }
+      setUser(updatedUser)
+      localStorage.setItem(storageKey, JSON.stringify(updatedUser))
+      alert(`Payment successful via ${selectedGateway}! Added ₹${amount} to your wallet.`)
+    }, 1000)
   }
 
   const handleCreateTournament = async (event) => {
@@ -146,16 +170,16 @@ function App() {
       title: form.title.trim(),
       game: form.game,
       prize: form.prize || '৳1200',
-      entryFee: 'Free',
-      slots: Number(form.slots) || 50,
+      entryFee: '₹8 JOIN',
+      slots: Number(form.slots) || 32,
       registered: 0,
-      start_time: form.start_time || 'Tomorrow, 8:00 PM',
+      start_time: form.start_time || '26 Sep 12:30 PM',
       status: 'Open'
     }
 
     setTournaments((current) => [generatedTournament, ...current])
     setForm({ title: '', game: 'Free Fire', prize: '৳1200', slots: '50', start_time: '' })
-    setActiveTab('tournaments')
+    setActiveTab('home')
   }
 
   const handleProfileSave = async (event) => {
@@ -186,14 +210,11 @@ function App() {
     () => [
       { label: 'Tournament Played', value: '12' },
       { label: 'Win Rate', value: '58%' },
-      { label: 'Wallet Balance', value: `৳${user?.wallet_balance ?? 0}` },
+      { label: 'Wallet Balance', value: `₹${user?.wallet_balance ?? 0}` },
       { label: 'Role', value: user?.role === 'admin' ? 'Admin' : 'Player' }
     ],
     [user]
   )
-
-  const totalSlots = tournaments.reduce((sum, item) => sum + Number(item.slots || 0), 0)
-  const totalRegistered = tournaments.reduce((sum, item) => sum + Number(item.registered || 0), 0)
 
   if (!user) {
     return <AuthScreen authMode={authMode} setAuthMode={setAuthMode} onLogin={handleLogin} onSignup={handleSignup} />
@@ -206,315 +227,302 @@ function App() {
   const isAdmin = user.role === 'admin'
 
   return (
-    <div className="app-shell clash-x-theme">
-      {/* Top Header like Clash X 24 */}
-      <header className="top-header">
-        <div className="user-profile-mini" onClick={() => setActiveTab('profile')}>
-          <div className="avatar-circle">{user.game_name ? user.game_name.charAt(0).toUpperCase() : 'U'}</div>
+    <div className="app-shell clash-x-theme" style={{ background: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px' }}>
+      
+      {/* Top Header */}
+      <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#fff', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div className="user-profile-mini" onClick={() => setActiveTab('profile')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+          <div className="avatar-circle" style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+            {user.game_name ? user.game_name.charAt(0).toUpperCase() : 'U'}
+          </div>
         </div>
-        <div className="header-wallet" onClick={() => setActiveTab('wallet')}>
+        <div className="header-wallet" onClick={() => setActiveTab('wallet')} style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', padding: '6px 12px', borderRadius: '20px', cursor: 'pointer', gap: '6px' }}>
           <span className="wallet-icon">👛</span>
-          <span>৳{user.wallet_balance || 0}</span>
-          <span className="dropdown-arrow">▼</span>
+          <span style={{ fontWeight: 'bold', color: '#10b981' }}>₹{user.wallet_balance || 0}</span>
+          <span className="dropdown-arrow" style={{ fontSize: '10px', color: '#64748b' }}>▼</span>
         </div>
       </header>
 
-      {/* Main Content Panel */}
+      {/* Main Panel */}
       <main className="main-panel">
-        {activeTab === 'dashboard' && (
+        
+        {/* HOME / MATCHES TAB (Clash X 24 Style) */}
+        {activeTab === 'home' && (
           <section className="home-section">
-            <div className="category-scroll">
-              {['SOLO BR', 'DUO BR', 'DUO PR KILL', 'SOLO PER KILL', 'LONE WOLF', 'CLASH SQUAD'].map((cat) => (
+            <div className="category-scroll" style={{ display: 'flex', overflowX: 'auto', gap: '8px', padding: '12px 16px', background: '#fff', whiteSpace: 'nowrap', borderBottom: '1px solid #eee' }}>
+              {['SOLO BR', 'DUO BR', 'DUO PR KILL', 'SOLO PER KILL', 'LONE WOLF', 'CS CHALLENGERS', 'CLASH SQUAD', 'CS HEADSHOT', 'LOSS TO WIN'].map((cat) => (
                 <button
                   key={cat}
                   className={matchCategory === cat ? 'cat-pill active' : 'cat-pill'}
                   onClick={() => setMatchCategory(cat)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: matchCategory === cat ? '#dc2626' : '#f1f5f9',
+                    color: matchCategory === cat ? '#fff' : '#475569',
+                    fontWeight: 'bold',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
                 >
                   {cat}
                 </button>
               ))}
             </div>
 
-            <div className="stats-grid">
-              {userStats.map((item) => (
-                <div key={item.label} className="stat-card">
-                  <small>{item.label}</small>
-                  <h3>{item.value}</h3>
+            <div className="tournament-list-container" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {tournaments.map((tournament) => (
+                <div key={tournament.id} className="match-card-modern" style={{ background: '#fff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                  <div className="match-card-top" style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                    <span className="match-badge" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>SOLO</span>
+                    <span className="match-badge" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>BERMUDA</span>
+                    <span className="match-badge" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>{tournament.slots || 32} SLOTS</span>
+                  </div>
+
+                  <div className="match-card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="match-info">
+                      <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>{tournament.title}</h3>
+                      <p className="prize-text" style={{ color: '#dc2626', fontSize: '13px', fontWeight: 'bold', margin: 0 }}>Prize Pool - {tournament.prize || '₹225'}</p>
+                    </div>
+                    <div className="match-thumbnail" style={{ width: '70px', height: '50px', background: '#cbd5e1', borderRadius: '6px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '20px' }}>🎮</span>
+                    </div>
+                  </div>
+
+                  <div className="match-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+                    <span className="match-id-text" style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>MATCH ID</span>
+                    <span className="spots-left-text" style={{ fontSize: '12px', color: '#64748b' }}>{tournament.slots - (tournament.registered || 0)} spots left</span>
+                    <button 
+                      className="join-match-btn" 
+                      onClick={() => handleJoinTournament(tournament.id, tournament.entryFee || '₹8 JOIN')}
+                      style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      {tournament.entryFee || '₹8 JOIN'}
+                    </button>
+                  </div>
+                  <div className="match-time-row" style={{ marginTop: '6px', fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
+                    <span>{tournament.start_time || '26 Sep 12:30 PM'}</span>
+                  </div>
                 </div>
               ))}
             </div>
+          </section>
+        )}
 
-            <div className="quick-grid">
-              <div className="panel spotlight-card">
-                <p className="eyebrow">Current event</p>
-                <h3>Daily Clash Cup</h3>
-                <p>Free entry • 25 players • 6 squads • Winner gets prize pool</p>
-                <button className="primary-btn" onClick={() => setActiveTab('tournaments')}>
-                  Join Now
-                </button>
+        {/* MY MATCHES TAB */}
+        {activeTab === 'matches' && (
+          <section className="section-padded" style={{ padding: '16px' }}>
+            <h2>My Matches</h2>
+            <div className="panel empty-state" style={{ background: '#fff', padding: '20px', textAlign: 'center', borderRadius: '8px', marginTop: '10px', color: '#64748b' }}>
+              You haven't joined any matches yet.
+            </div>
+          </section>
+        )}
+
+        {/* CLASH STORE TAB */}
+        {activeTab === 'store' && (
+          <section className="section-padded" style={{ padding: '16px' }}>
+            <h2>Clash Store</h2>
+            <div className="panel empty-state" style={{ background: '#fff', padding: '20px', textAlign: 'center', borderRadius: '8px', marginTop: '10px', color: '#64748b' }}>
+              Store items will appear soon.
+            </div>
+          </section>
+        )}
+
+        {/* WALLET TAB WITH GATEWAY INTEGRATION (Zap UPI / TrendUPI / Cashfree) */}
+        {activeTab === 'wallet' && (
+          <section className="section-padded wallet-screen" style={{ padding: '16px' }}>
+            <h2 style={{ marginBottom: '15px' }}>Wallet</h2>
+            <div className="panel wallet-box-modern" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div className="balance-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', fontSize: '18px' }}>
+                <span style={{ color: '#64748b' }}>Current Balance</span>
+                <strong style={{ color: '#10b981' }}>₹{user.wallet_balance || 0}</strong>
               </div>
 
-              <div className="panel">
-                <div className="section-header">
-                  <h3>Leaderboard</h3>
-                </div>
-                <div className="leaderboard-list">
-                  {mockLeaderboard.map((player) => (
-                    <div key={player.rank} className="leaderboard-row">
-                      <span>#{player.rank}</span>
-                      <strong>{player.name}</strong>
-                      <span>{player.wins} Wins</span>
-                    </div>
+              <form onSubmit={handleAddWalletGateway} className="add-money-form">
+                <label style={{ display: 'block', fontSize: '13px', color: '#475569', marginBottom: '6px' }}>Enter amount to add</label>
+                <input
+                  type="number"
+                  value={walletInput}
+                  onChange={(e) => setWalletInput(e.target.value)}
+                  min="1"
+                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '15px', fontSize: '15px' }}
+                />
+
+                <label style={{ display: 'block', fontSize: '13px', color: '#475569', marginBottom: '6px' }}>Select Payment Gateway</label>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                  {['Zap UPI', 'TrendUPI', 'Cashfree'].map((gateway) => (
+                    <button
+                      type="button"
+                      key={gateway}
+                      onClick={() => setSelectedGateway(gateway)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: selectedGateway === gateway ? '2px solid #10b981' : '1px solid #cbd5e1',
+                        background: selectedGateway === gateway ? '#f0fdf4' : '#fff',
+                        color: selectedGateway === gateway ? '#10b981' : '#334155',
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {gateway}
+                    </button>
                   ))}
                 </div>
-              </div>
-            </div>
-          </section>
-        )}
 
-        {activeTab === 'tournaments' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Daily events</p>
-                <h1>Available Tournaments</h1>
-              </div>
-            </div>
-
-            <div className="summary-strip">
-              <div className="mini-stat">
-                <small>Total slots</small>
-                <strong>{totalSlots}</strong>
-              </div>
-              <div className="mini-stat">
-                <small>Players joined</small>
-                <strong>{totalRegistered}</strong>
-              </div>
-              <div className="mini-stat">
-                <small>Entry fee</small>
-                <strong>Free</strong>
-              </div>
-            </div>
-
-            <div className="card-grid">
-              {tournaments.length === 0 ? (
-                <div className="panel empty-state">No tournaments available yet.</div>
-              ) : (
-                tournaments.map((tournament) => (
-                  <div key={tournament.id} className="tournament-card">
-                    <div className="card-header">
-                      <span className="pill">{tournament.status || 'Open'}</span>
-                      <span>{tournament.game}</span>
-                    </div>
-                    <h3>{tournament.title}</h3>
-                    <div className="meta">
-                      <span>Prize: {tournament.prize}</span>
-                      <span>Entry: {tournament.entryFee || 'Free'}</span>
-                      <span>{tournament.registered || 0}/{tournament.slots || 0} joined</span>
-                    </div>
-                    <p>{tournament.start_time}</p>
-                    {tournament.winner && <p className="winner-tag">Winner: {tournament.winner}</p>}
-                    <button className="primary-btn" onClick={() => handleJoinTournament(tournament.id)}>
-                      Join Tournament
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'wallet' && (
-          <section className="section-padded wallet-screen">
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Balance</p>
-                <h1>Wallet</h1>
-              </div>
-            </div>
-
-            <div className="wallet-grid">
-              <div className="panel wallet-box">
-                <small>Wallet Balance</small>
-                <h2>৳{user.wallet_balance || 0}</h2>
-                <p>Earn rewards by joining tournaments and winning matches.</p>
-              </div>
-
-              <div className="panel wallet-box-modern" style={{ marginTop: '15px' }}>
-                <form onSubmit={handleAddWallet} className="add-money-form">
-                  <label>Enter amount to add</label>
-                  <input
-                    type="number"
-                    value={walletInput}
-                    onChange={(e) => setWalletInput(e.target.value)}
-                    min="1"
-                  />
-                  <button type="submit" className="primary-btn" style={{ marginTop: '10px' }}>Add ৳{walletInput}</button>
-                </form>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'profile' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Your account</p>
-                <h1>Profile</h1>
-              </div>
-              {!isEditingProfile && (
-                <button className="primary-btn" onClick={() => setIsEditingProfile(true)}>
-                  Edit Profile
+                <button type="submit" className="success-btn" style={{ width: '100%', background: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  Pay ₹{walletInput} via {selectedGateway}
                 </button>
-              )}
+              </form>
+            </div>
+          </section>
+        )}
+
+        {/* LEADERBOARD TAB */}
+        {activeTab === 'leaderboard' && (
+          <section className="section-padded" style={{ padding: '16px' }}>
+            <h2>Leaderboard</h2>
+            <div className="panel leaderboard-panel" style={{ background: '#fff', borderRadius: '8px', padding: '10px', marginTop: '10px' }}>
+              {mockLeaderboard.map((player) => (
+                <div key={player.rank} className="leaderboard-row" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ fontWeight: 'bold', color: '#f97316' }}>#{player.rank}</span>
+                  <strong style={{ color: '#1e293b' }}>{player.name}</strong>
+                  <span style={{ color: '#64748b' }}>{player.wins} Wins</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* PROFILE TAB (Clash X 24 Profile Style matching screenshot 16473_2.jpg) */}
+        {activeTab === 'profile' && (
+          <section className="section-padded profile-screen" style={{ padding: '16px', background: '#f8f9fa', minHeight: '80vh' }}>
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div className="avatar-large" style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#7c3aed', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', margin: '0 auto 10px auto', fontWeight: 'bold' }}>
+                {user.game_name ? user.game_name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>{user.game_name}</h3>
+              <p style={{ color: '#64748b', fontSize: '13px', cursor: 'pointer' }} onClick={() => setIsEditingProfile(true)}>View Profile</p>
             </div>
 
             {isEditingProfile ? (
-              <form className="panel profile-form" onSubmit={handleProfileSave}>
-                <div className="form-grid">
-                  <div className="field-group">
-                    <label>Game Name</label>
-                    <input
-                      value={profileForm.game_name}
-                      onChange={(event) => setProfileForm({ ...profileForm, game_name: event.target.value })}
-                    />
-                  </div>
-                  <div className="field-group full-width-buttons">
-                    <button type="submit" className="primary-btn">Save Profile</button>
-                    <button type="button" className="ghost-btn" onClick={() => setIsEditingProfile(false)}>
-                      Cancel
-                    </button>
-                  </div>
+              <form className="panel profile-form" onSubmit={handleProfileSave} style={{ background: '#fff', padding: '15px', borderRadius: '8px', marginBottom: '15px' }}>
+                <div className="field-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '12px', color: '#64748b' }}>Game Name</label>
+                  <input
+                    value={profileForm.game_name}
+                    onChange={(event) => setProfileForm({ ...profileForm, game_name: event.target.value })}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', marginTop: '4px' }}
+                  />
+                </div>
+                <div className="field-group full-width-buttons" style={{ display: 'flex', gap: '10px' }}>
+                  <button type="submit" className="primary-btn" style={{ flex: 1, background: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
+                  <button type="button" className="ghost-btn" onClick={() => setIsEditingProfile(false)} style={{ flex: 1, background: '#e2e8f0', border: 'none', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
                 </div>
               </form>
-            ) : (
-              <div className="profile-card panel">
-                <div className="avatar">{user.game_name ? user.game_name.charAt(0) : 'U'}</div>
-                <div className="profile-info">
-                  <h3>{user.game_name}</h3>
-                  <p>Email: {user.email}</p>
-                  <p>Wallet Balance: ৳{user.wallet_balance || 0}</p>
-                  <p>Role: {user.role}</p>
-                  <button className="danger-btn" onClick={handleLogout} style={{ marginTop: '15px' }}>Logout</button>
-                </div>
+            ) : null}
+
+            {/* Menu List matching screenshot */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div onClick={() => setIsEditingProfile(true)} style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '14px', color: '#334155' }}>👤 Account Settings</span>
+                <span style={{ color: '#94a3b8' }}>›</span>
+              </div>
+              <div style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '14px', color: '#334155' }}>🏆 Join Private Tournament</span>
+                <span style={{ color: '#94a3b8' }}>›</span>
+              </div>
+              <div onClick={() => setActiveTab('wallet')} style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '14px', color: '#334155' }}>💳 Withdrawals</span>
+                <span style={{ color: '#94a3b8' }}>›</span>
+              </div>
+              <div onClick={() => setActiveTab('wallet')} style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '14px', color: '#334155' }}>📋 Transactions</span>
+                <span style={{ color: '#94a3b8' }}>›</span>
+              </div>
+              <div style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                <span style={{ fontSize: '14px', color: '#334155' }}>❓ Customer Support</span>
+                <span style={{ color: '#94a3b8' }}>›</span>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <button className="danger-btn" onClick={handleLogout} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>Logout</button>
+              <small style={{ display: 'block', color: '#94a3b8', marginTop: '10px', fontSize: '11px' }}>Version 1.0.3</small>
+            </div>
+
+            {isAdmin && (
+              <div className="panel admin-create-box" style={{ marginTop: '20px', background: '#fff', padding: '15px', borderRadius: '8px' }}>
+                <h3>Create Tournament (Admin)</h3>
+                <form onSubmit={handleCreateTournament} className="form-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                  <input
+                    type="text"
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder="Tournament Name"
+                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                  />
+                  <input
+                    type="text"
+                    value={form.prize}
+                    onChange={(e) => setForm({ ...form, prize: e.target.value })}
+                    placeholder="Prize Pool"
+                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                  />
+                  <button type="submit" className="primary-btn" style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}>Publish</button>
+                </form>
               </div>
             )}
           </section>
         )}
-
-        {isAdmin && activeTab === 'admin' && (
-          <section>
-            <div className="topbar">
-              <div>
-                <p className="eyebrow">Management</p>
-                <h1>Admin Panel</h1>
-              </div>
-            </div>
-
-            <div className="panel tournament-form-panel">
-              <h3>Create Tournament</h3>
-              <form onSubmit={handleCreateTournament} className="form-grid">
-                <div className="field-group">
-                  <label>Tournament Name</label>
-                  <input
-                    type="text"
-                    value={form.title}
-                    onChange={(event) => setForm({ ...form, title: event.target.value })}
-                    placeholder="Example: Royal Arena Cup"
-                  />
-                </div>
-
-                <div className="field-group">
-                  <label>Game</label>
-                  <select
-                    value={form.game}
-                    onChange={(event) => setForm({ ...form, game: event.target.value })}
-                  >
-                    <option value="Free Fire">Free Fire</option>
-                    <option value="PUBG Mobile">PUBG Mobile</option>
-                    <option value="BGMI">BGMI</option>
-                  </select>
-                </div>
-
-                <div className="field-group">
-                  <label>Prize</label>
-                  <input
-                    type="text"
-                    value={form.prize}
-                    onChange={(event) => setForm({ ...form, prize: event.target.value })}
-                    placeholder="৳1200"
-                  />
-                </div>
-
-                <div className="field-group">
-                  <label>Slots</label>
-                  <input
-                    type="number"
-                    min="10"
-                    value={form.slots}
-                    onChange={(event) => setForm({ ...form, slots: event.target.value })}
-                  />
-                </div>
-
-                <div className="field-group full-width">
-                  <label>Start Time</label>
-                  <input
-                    type="text"
-                    value={form.start_time}
-                    onChange={(event) => setForm({ ...form, start_time: event.target.value })}
-                    placeholder="Tomorrow, 8:00 PM"
-                  />
-                </div>
-
-                <button type="submit" className="primary-btn full-width">
-                  Publish Tournament
-                </button>
-              </form>
-            </div>
-          </section>
-        )}
       </main>
 
-      {/* Bottom Navigation Bar like Clash X 24 */}
-      <nav className="bottom-nav-bar">
+      {/* Bottom Navigation Bar */}
+      <nav className="bottom-nav-bar" style={{ display: 'flex', justifyContent: 'space-around', background: '#fff', position: 'fixed', bottom: 0, left: 0, right: 0, borderTop: '1px solid #e2e8f0', padding: '8px 0', zIndex: 1000 }}>
         <button
-          className={activeTab === 'dashboard' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('dashboard')}
+          className={activeTab === 'home' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('home')}
+          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'home' ? '#dc2626' : '#64748b', fontSize: '11px' }}
         >
-          <span className="nav-icon">🏠</span>
+          <span className="nav-icon" style={{ fontSize: '18px' }}>🏠</span>
           <span>Home</span>
         </button>
         <button
-          className={activeTab === 'tournaments' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('tournaments')}
+          className={activeTab === 'matches' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('matches')}
+          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'matches' ? '#dc2626' : '#64748b', fontSize: '11px' }}
         >
-          <span className="nav-icon">🏆</span>
-          <span>Matches</span>
+          <span className="nav-icon" style={{ fontSize: '18px' }}>🏆</span>
+          <span>My Matches</span>
         </button>
         <button
-          className={activeTab === 'wallet' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('wallet')}
+          className={activeTab === 'store' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('store')}
+          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'store' ? '#dc2626' : '#64748b', fontSize: '11px' }}
         >
-          <span className="nav-icon">👛</span>
-          <span>Wallet</span>
+          <span className="nav-icon" style={{ fontSize: '18px' }}>🪙</span>
+          <span>Clash Store</span>
+        </button>
+        <button
+          className={activeTab === 'leaderboard' ? 'bottom-nav-item active' : 'bottom-nav-item'}
+          onClick={() => setActiveTab('leaderboard')}
+          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'leaderboard' ? '#dc2626' : '#64748b', fontSize: '11px' }}
+        >
+          <span className="nav-icon" style={{ fontSize: '18px' }}>📊</span>
+          <span>Leaderboard</span>
         </button>
         <button
           className={activeTab === 'profile' ? 'bottom-nav-item active' : 'bottom-nav-item'}
           onClick={() => setActiveTab('profile')}
+          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'profile' ? '#dc2626' : '#64748b', fontSize: '11px' }}
         >
-          <span className="nav-icon">👤</span>
+          <span className="nav-icon" style={{ fontSize: '18px' }}>👤</span>
           <span>Profile</span>
         </button>
-        {isAdmin && (
-          <button
-            className={activeTab === 'admin' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-            onClick={() => setActiveTab('admin')}
-          >
-            <span className="nav-icon">⚙️</span>
-            <span>Admin</span>
-          </button>
-        )}
       </nav>
     </div>
   )
@@ -524,55 +532,27 @@ function AuthScreen({ authMode, setAuthMode, onLogin, onSignup }) {
   if (authMode === 'signup') {
     return <SignupPage onSignup={onSignup} onSwitch={() => setAuthMode('login')} />
   }
-
   return <LoginPage onLogin={onLogin} onSwitch={() => setAuthMode('signup')} />
 }
 
 function LoginPage({ onLogin, onSwitch }) {
   const [formData, setFormData] = useState({ login: '', password: '' })
-
-  const submitForm = (event) => {
-    event.preventDefault()
+  const submitForm = (e) => {
+    e.preventDefault()
     onLogin(formData)
   }
-
   return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="logo-wrap">
-          <div className="brand-badge large">CX7</div>
-          <h1>ClashX7 Login</h1>
-        </div>
-
-        <form onSubmit={submitForm} className="login-form">
-          <label>
-            Email
-            <input
-              type="email"
-              value={formData.login}
-              onChange={(e) => setFormData({ ...formData, login: e.target.value })}
-              placeholder="you@example.com"
-            />
-          </label>
-
-          <label>
-            Password
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Enter password"
-            />
-          </label>
-
-          <button type="submit" className="primary-btn full-width">
-            Login
-          </button>
+    <div className="login-screen" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8f9fa' }}>
+      <div className="login-card" style={{ background: '#fff', padding: '30px', borderRadius: '8px', width: '320px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+        <h1 style={{ fontSize: '20px', marginBottom: '20px', textAlign: 'center' }}>ClashX7 Login</h1>
+        <form onSubmit={submitForm} className="login-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <label style={{ fontSize: '13px', color: '#475569' }}>Email <input type="email" value={formData.login} onChange={(e) => setFormData({ ...formData, login: e.target.value })} placeholder="you@example.com" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
+          <label style={{ fontSize: '13px', color: '#475569' }}>Password <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Password" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
+          <button type="submit" className="primary-btn full-width" style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Login</button>
         </form>
-
-        <div className="auth-switch-row">
+        <div className="auth-switch-row" style={{ marginTop: '15px', textAlign: 'center', fontSize: '13px' }}>
           <span>Don’t have an account?</span>
-          <button type="button" className="link-btn" onClick={onSwitch}>Create account</button>
+          <button type="button" className="link-btn" onClick={onSwitch} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', marginLeft: '5px' }}>Create account</button>
         </div>
       </div>
     </div>
@@ -580,64 +560,24 @@ function LoginPage({ onLogin, onSwitch }) {
 }
 
 function SignupPage({ onSignup, onSwitch }) {
-  const [formData, setFormData] = useState({
-    game_name: '',
-    email: '',
-    password: ''
-  })
-
-  const submitForm = (event) => {
-    event.preventDefault()
+  const [formData, setFormData] = useState({ game_name: '', email: '', password: '' })
+  const submitForm = (e) => {
+    e.preventDefault()
     onSignup(formData)
   }
-
   return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="logo-wrap">
-          <div className="brand-badge large">CX7</div>
-          <h1>Sign Up</h1>
-        </div>
-
-        <form onSubmit={submitForm} className="login-form">
-          <label>
-            Game Name
-            <input
-              type="text"
-              value={formData.game_name}
-              onChange={(e) => setFormData({ ...formData, game_name: e.target.value })}
-              placeholder="Your Free Fire name"
-            />
-          </label>
-
-          <label>
-            Email
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="you@example.com"
-            />
-          </label>
-
-          <label>
-            Password
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Create password"
-            />
-          </label>
-
-          <button type="submit" className="primary-btn full-width">
-            Create Account
-          </button>
+    <div className="login-screen" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8f9fa' }}>
+      <div className="login-card" style={{ background: '#fff', padding: '30px', borderRadius: '8px', width: '320px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+        <h1 style={{ fontSize: '20px', marginBottom: '20px', textAlign: 'center' }}>ClashX7 Sign Up</h1>
+        <form onSubmit={submitForm} className="login-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <label style={{ fontSize: '13px', color: '#475569' }}>Game Name <input type="text" value={formData.game_name} onChange={(e) => setFormData({ ...formData, game_name: e.target.value })} placeholder="Your Free Fire Name" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
+          <label style={{ fontSize: '13px', color: '#475569' }}>Email <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="you@example.com" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
+          <label style={{ fontSize: '13px', color: '#475569' }}>Password <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Password" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
+          <button type="submit" className="primary-btn full-width" style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Create Account</button>
         </form>
-
-        <div className="auth-switch-row">
+        <div className="auth-switch-row" style={{ marginTop: '15px', textAlign: 'center', fontSize: '13px' }}>
           <span>Already registered?</span>
-          <button type="button" className="link-btn" onClick={onSwitch}>Back to login</button>
+          <button type="button" className="link-btn" onClick={onSwitch} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', marginLeft: '5px' }}>Back to login</button>
         </div>
       </div>
     </div>
