@@ -1,587 +1,1580 @@
-import { useEffect, useMemo, useState } from 'react'
-import {
-  loginWithSupabase,
-  mockLeaderboard,
-  supabase,
-  mockTournaments,
-  createUserInSupabase,
-  updateUserProfileInSupabase
-} from './lib/supabase.js'
-
-const storageKey = 'clashx7-user'
-
-function App() {
-  const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem(storageKey)
-    return stored ? JSON.parse(stored) : null
-  })
-
-  const [activeTab, setActiveTab] = useState('home')
-  const [matchCategory, setMatchCategory] = useState('SOLO BR')
-  const [tournaments, setTournaments] = useState(mockTournaments)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isEditingProfile, setIsEditingProfile] = useState(false)
-  const [authMode, setAuthMode] = useState('login')
-  const [walletInput, setWalletInput] = useState('50')
-  const [selectedGateway, setSelectedGateway] = useState('Zap UPI')
-  const [form, setForm] = useState({
-    title: '',
-    game: 'Free Fire',
-    prize: '৳1200',
-    slots: '50',
-    start_time: ''
-  })
-  const [profileForm, setProfileForm] = useState({
-    game_name: '',
-    email: '',
-    wallet_balance: 0
-  })
-
-  useEffect(() => {
-    if (user) {
-      setProfileForm({
-        game_name: user.game_name || '',
-        email: user.email || '',
-        wallet_balance: user.wallet_balance || 0
-      })
-    }
-  }, [user])
-
-  const handleLogin = async (formData) => {
-    const email = formData.login.trim()
-    const password = formData.password
-
-    if (!email || !password) {
-      alert('Please fill in all fields.')
-      return
-    }
-
-    try {
-      if (supabase) {
-        const supabaseUser = await loginWithSupabase({ email, password })
-        if (supabaseUser) {
-          localStorage.setItem(storageKey, JSON.stringify(supabaseUser))
-          setUser(supabaseUser)
-          return
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clash X 24 - Free Fire Tournaments</title>
+    <style>
+        :root {
+            --primary-color: #d32f2f;
+            --secondary-color: #121212;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --border-color: #e0e0e0;
         }
-      }
-    } catch (error) {
-      console.error('Supabase login failed:', error)
-      alert(error.message)
-    }
-  }
-
-  const handleSignup = async ({ game_name, email, password }) => {
-    const trimmedGameName = game_name.trim()
-    const trimmedEmail = email.trim()
-
-    if (!trimmedGameName || !trimmedEmail || !password) {
-      alert('Please fill in all fields.')
-      return
-    }
-
-    try {
-      if (supabase) {
-        const remoteUser = await createUserInSupabase({
-          email: trimmedEmail,
-          password,
-          game_name: trimmedGameName
-        })
-        if (remoteUser) {
-          alert('Account created successfully! Please login.')
-          setAuthMode('login')
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-      }
-    } catch (error) {
-      console.error('Supabase signup failed:', error)
-      alert(error.message)
-    }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem(storageKey)
-    setUser(null)
-  }
-
-  // Match join validation logic (Checks user wallet balance)
-  const handleJoinTournament = async (tournamentId, entryFeeText) => {
-    if (!user) return
-
-    // Extract entry fee number (e.g. "₹8 JOIN" or "FREE JOIN" -> 8 or 0)
-    let fee = 0
-    if (entryFeeText && entryFeeText.includes('₹')) {
-      fee = Number(entryFeeText.replace(/[^0-9]/g, '')) || 0
-    }
-
-    const currentBalance = Number(user.wallet_balance || 0)
-
-    if (currentBalance < fee) {
-      alert(`Insufficient balance! You need ₹${fee} to join this match. Please add money to your wallet.`)
-      setActiveTab('wallet')
-      return
-    }
-
-    setTournaments((current) =>
-      current.map((tournament) =>
-        tournament.id === tournamentId
-          ? { ...tournament, registered: Number(tournament.registered || 0) + 1 }
-          : tournament
-      )
-    )
-
-    const nextBalance = currentBalance - fee
-    const updatedUser = { ...user, wallet_balance: nextBalance }
-    setUser(updatedUser)
-    localStorage.setItem(storageKey, JSON.stringify(updatedUser))
-    alert('Successfully joined the tournament!')
-  }
-
-  // Gateway integration flow for adding money
-  const handleAddWalletGateway = (e) => {
-    e.preventDefault()
-    const amount = Number(walletInput)
-    if (isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid amount')
-      return
-    }
-
-    // Simulating Gateway Redirect (Zap UPI / TrendUPI / Cashfree)
-    alert(`Redirecting to ${selectedGateway} payment gateway for ₹${amount}... Please complete payment.`)
-
-    setTimeout(() => {
-      const nextBalance = Number(user.wallet_balance || 0) + amount
-      const updatedUser = { ...user, wallet_balance: nextBalance }
-      setUser(updatedUser)
-      localStorage.setItem(storageKey, JSON.stringify(updatedUser))
-      alert(`Payment successful via ${selectedGateway}! Added ₹${amount} to your wallet.`)
-    }, 1000)
-  }
-
-  const handleCreateTournament = async (event) => {
-    event.preventDefault()
-
-    if (!form.title.trim()) {
-      alert('Tournament title is required')
-      return
-    }
-
-    const generatedTournament = {
-      id: Date.now(),
-      title: form.title.trim(),
-      game: form.game,
-      prize: form.prize || '৳1200',
-      entryFee: '₹8 JOIN',
-      slots: Number(form.slots) || 32,
-      registered: 0,
-      start_time: form.start_time || '26 Sep 12:30 PM',
-      status: 'Open'
-    }
-
-    setTournaments((current) => [generatedTournament, ...current])
-    setForm({ title: '', game: 'Free Fire', prize: '৳1200', slots: '50', start_time: '' })
-    setActiveTab('home')
-  }
-
-  const handleProfileSave = async (event) => {
-    event.preventDefault()
-
-    const updatedData = {
-      game_name: profileForm.game_name.trim()
-    }
-
-    try {
-      if (supabase) {
-        const backendUser = await updateUserProfileInSupabase(user.id, updatedData)
-        if (backendUser) {
-          const mergedUser = { ...user, ...backendUser }
-          setUser(mergedUser)
-          localStorage.setItem(storageKey, JSON.stringify(mergedUser))
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-bottom: 70px;
         }
-      }
-    } catch (error) {
-      console.error('Profile update failed:', error)
-      alert(error.message)
-    }
+        /* Top Header Bar */
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .user-profile-icon {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background-color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        .wallet-badge {
+            display: flex;
+            align-items: center;
+            background: #fff;
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            font-weight: 600;
+            font-size: 14px;
+        }
+        /* Game Category Tabs */
+        .category-scroll {
+            display: flex;
+            overflow-x: auto;
+            background: var(--card-bg);
+            padding: 10px 16px;
+            gap: 15px;
+            white-space: nowrap;
+            border-bottom: 1px solid var(--border-color);
+            scrollbar-width: none;
+        }
+        .category-scroll::-webkit-scrollbar {
+            display: none;
+        }
+        .cat-tab {
+            font-size: 13px;
+            font-weight: 700;
+            color: #666;
+            text-transform: uppercase;
+            cursor: pointer;
+            padding-bottom: 5px;
+        }
+        .cat-tab.active {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+        }
+        /* Match Cards Container */
+        .match-container {
+            padding: 16px;
+        }
+        .match-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+        .match-tags {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .tag {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            color: #555;
+            background: #fafafa;
+        }
+        .match-body {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .match-info h3 {
+            font-size: 15px;
+            font-weight: 800;
+            color: #111;
+            margin-bottom: 6px;
+        }
+        .prize-pool {
+            font-size: 13px;
+            color: var(--primary-color);
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .match-status-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #888;
+            border-top: 1px dashed var(--border-color);
+            padding-top: 8px;
+            margin-top: 6px;
+        }
+        .match-banner {
+            width: 85px;
+            height: 75px;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+        .match-banner img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .time-badge {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            font-size: 9px;
+            text-align: center;
+            padding: 2px 0;
+        }
+        .join-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        /* Bottom Navigation Bar */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: var(--card-bg);
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            border-top: 1px solid var(--border-color);
+            z-index: 1000;
+        }
+        .nav-item {
+            text-align: center;
+            font-size: 11px;
+            color: #777;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .nav-item.active {
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
 
-    setIsEditingProfile(false)
-  }
+    <!-- Header Section -->
+    <div class="app-header">
+        <div class="user-profile-icon">D</div>
+        <div class="wallet-badge">₹ 0 ⌵</div>
+    </div>
 
-  const userStats = useMemo(
-    () => [
-      { label: 'Tournament Played', value: '12' },
-      { label: 'Win Rate', value: '58%' },
-      { label: 'Wallet Balance', value: `₹${user?.wallet_balance ?? 0}` },
-      { label: 'Role', value: user?.role === 'admin' ? 'Admin' : 'Player' }
-    ],
-    [user]
-  )
+    <!-- Mode Selector Tabs -->
+    <div class="category-scroll">
+        <div class="cat-tab active">SOLO BR</div>
+        <div class="cat-tab">DUO BR</div>
+        <div class="cat-tab">SQUAD BR</div>
+        <div class="cat-tab">LONE WOLF</div>
+        <div class="cat-tab">CS CHALLENGERS</div>
+        <div class="cat-tab">CS HEADSHOT</div>
+    </div>
 
-  if (!user) {
-    return <AuthScreen authMode={authMode} setAuthMode={setAuthMode} onLogin={handleLogin} onSignup={handleSignup} />
-  }
-
-  if (isLoading && supabase) {
-    return <div className="loading-screen">Loading ClashX7...</div>
-  }
-
-  const isAdmin = user.role === 'admin'
-
-  return (
-    <div className="app-shell clash-x-theme" style={{ background: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px' }}>
-      
-      {/* Top Header */}
-      <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#fff', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div className="user-profile-mini" onClick={() => setActiveTab('profile')} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-          <div className="avatar-circle" style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-            {user.game_name ? user.game_name.charAt(0).toUpperCase() : 'U'}
-          </div>
-        </div>
-        <div className="header-wallet" onClick={() => setActiveTab('wallet')} style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', padding: '6px 12px', borderRadius: '20px', cursor: 'pointer', gap: '6px' }}>
-          <span className="wallet-icon">👛</span>
-          <span style={{ fontWeight: 'bold', color: '#10b981' }}>₹{user.wallet_balance || 0}</span>
-          <span className="dropdown-arrow" style={{ fontSize: '10px', color: '#64748b' }}>▼</span>
-        </div>
-      </header>
-
-      {/* Main Panel */}
-      <main className="main-panel">
-        
-        {/* HOME / MATCHES TAB (Clash X 24 Style) */}
-        {activeTab === 'home' && (
-          <section className="home-section">
-            <div className="category-scroll" style={{ display: 'flex', overflowX: 'auto', gap: '8px', padding: '12px 16px', background: '#fff', whiteSpace: 'nowrap', borderBottom: '1px solid #eee' }}>
-              {['SOLO BR', 'DUO BR', 'DUO PR KILL', 'SOLO PER KILL', 'LONE WOLF', 'CS CHALLENGERS', 'CLASH SQUAD', 'CS HEADSHOT', 'LOSS TO WIN'].map((cat) => (
-                <button
-                  key={cat}
-                  className={matchCategory === cat ? 'cat-pill active' : 'cat-pill'}
-                  onClick={() => setMatchCategory(cat)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: matchCategory === cat ? '#dc2626' : '#f1f5f9',
-                    color: matchCategory === cat ? '#fff' : '#475569',
-                    fontWeight: 'bold',
-                    fontSize: '12px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {cat}
-                </button>
-              ))}
+    <!-- Match List Section (Controlled via Admin Panel) -->
+    <div class="match-container" id="adminMatchList">
+        <div class="match-card">
+            <div class="match-tags">
+                <span class="tag">SOLO</span>
+                <span class="tag">BERMUDA</span>
+                <span class="tag">32 SLOTS</span>
             </div>
-
-            <div className="tournament-list-container" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {tournaments.map((tournament) => (
-                <div key={tournament.id} className="match-card-modern" style={{ background: '#fff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                  <div className="match-card-top" style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                    <span className="match-badge" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>SOLO</span>
-                    <span className="match-badge" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>BERMUDA</span>
-                    <span className="match-badge" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>{tournament.slots || 32} SLOTS</span>
-                  </div>
-
-                  <div className="match-card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div className="match-info">
-                      <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>{tournament.title}</h3>
-                      <p className="prize-text" style={{ color: '#dc2626', fontSize: '13px', fontWeight: 'bold', margin: 0 }}>Prize Pool - {tournament.prize || '₹225'}</p>
+            <div class="match-body">
+                <div class="match-info">
+                    <h3>FREE FIRE - SOLO HUNTER</h3>
+                    <div class="prize-pool">Prize Pool - ₹225</div>
+                    <div class="match-status-row">
+                        <span>MATCH ID</span>
+                        <span style="color:var(--primary-color); font-weight:700;">0 spots left</span>
                     </div>
-                    <div className="match-thumbnail" style={{ width: '70px', height: '50px', background: '#cbd5e1', borderRadius: '6px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: '20px' }}>🎮</span>
+                </div>
+                <div>
+                    <div class="match-banner">
+                        <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e" alt="game">
+                        <div class="time-badge">26 Sep 12:30 PM</div>
                     </div>
-                  </div>
-
-                  <div className="match-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
-                    <span className="match-id-text" style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>MATCH ID</span>
-                    <span className="spots-left-text" style={{ fontSize: '12px', color: '#64748b' }}>{tournament.slots - (tournament.registered || 0)} spots left</span>
-                    <button 
-                      className="join-match-btn" 
-                      onClick={() => handleJoinTournament(tournament.id, tournament.entryFee || '₹8 JOIN')}
-                      style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
-                    >
-                      {tournament.entryFee || '₹8 JOIN'}
-                    </button>
-                  </div>
-                  <div className="match-time-row" style={{ marginTop: '6px', fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
-                    <span>{tournament.start_time || '26 Sep 12:30 PM'}</span>
-                  </div>
+                    <button class="join-btn" style="margin-top:6px; width:100%;">₹8 JOIN</button>
                 </div>
-              ))}
             </div>
-          </section>
-        )}
+        </div>
+    </div>
 
-        {/* MY MATCHES TAB */}
-        {activeTab === 'matches' && (
-          <section className="section-padded" style={{ padding: '16px' }}>
-            <h2>My Matches</h2>
-            <div className="panel empty-state" style={{ background: '#fff', padding: '20px', textAlign: 'center', borderRadius: '8px', marginTop: '10px', color: '#64748b' }}>
-              You haven't joined any matches yet.
-            </div>
-          </section>
-        )}
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <a href="#" class="nav-item active">Home</a>
+        <a href="#" class="nav-item">My Matches</a>
+        <a href="#" class="nav-item">Leaderboard</a>
+    </div>
 
-        {/* CLASH STORE TAB */}
-        {activeTab === 'store' && (
-          <section className="section-padded" style={{ padding: '16px' }}>
-            <h2>Clash Store</h2>
-            <div className="panel empty-state" style={{ background: '#fff', padding: '20px', textAlign: 'center', borderRadius: '8px', marginTop: '10px', color: '#64748b' }}>
-              Store items will appear soon.
-            </div>
-          </section>
-        )}
+</body>
+</html>
+// Part 2: Admin Panel, Wallet & My Matches Component
+import React, { useState } from 'react';
 
-        {/* WALLET TAB WITH GATEWAY INTEGRATION (Zap UPI / TrendUPI / Cashfree) */}
-        {activeTab === 'wallet' && (
-          <section className="section-padded wallet-screen" style={{ padding: '16px' }}>
-            <h2 style={{ marginBottom: '15px' }}>Wallet</h2>
-            <div className="panel wallet-box-modern" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <div className="balance-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', fontSize: '18px' }}>
-                <span style={{ color: '#64748b' }}>Current Balance</span>
-                <strong style={{ color: '#10b981' }}>₹{user.wallet_balance || 0}</strong>
-              </div>
+const AdminAndWalletModule = () => {
+    const [activeTab, setActiveTab] = useState('home');
+    const [walletBalance, setWalletBalance] = useState(0);
+    const [depositAmount, setDepositAmount] = useState(10);
+    const [matches, setMatches] = useState([]); // Matches will be created from admin panel
+    
+    // Super Admin Credentials Check
+    const superAdminEmail = "parimaltikadar110@gmail.com";
+    const [currentUser, setCurrentUser] = useState({
+        email: "parimaltikadar110@gmail.com",
+        role: "Super Admin",
+        balance: 0
+    });
 
-              <form onSubmit={handleAddWalletGateway} className="add-money-form">
-                <label style={{ display: 'block', fontSize: '13px', color: '#475569', marginBottom: '6px' }}>Enter amount to add</label>
-                <input
-                  type="number"
-                  value={walletInput}
-                  onChange={(e) => setWalletInput(e.target.value)}
-                  min="1"
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '15px', fontSize: '15px' }}
-                />
+    // Admin match creation state
+    const [matchTitle, setMatchTitle] = useState('');
+    const [prizePool, setPrizePool] = useState('');
+    const [entryFee, setEntryFee] = useState('');
+    const [matchTime, setMatchTime] = useState('');
 
-                <label style={{ display: 'block', fontSize: '13px', color: '#475569', marginBottom: '6px' }}>Select Payment Gateway</label>
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                  {['Zap UPI', 'TrendUPI', 'Cashfree'].map((gateway) => (
-                    <button
-                      type="button"
-                      key={gateway}
-                      onClick={() => setSelectedGateway(gateway)}
-                      style={{
-                        flex: 1,
-                        padding: '8px',
-                        borderRadius: '6px',
-                        border: selectedGateway === gateway ? '2px solid #10b981' : '1px solid #cbd5e1',
-                        background: selectedGateway === gateway ? '#f0fdf4' : '#fff',
-                        color: selectedGateway === gateway ? '#10b981' : '#334155',
-                        fontWeight: 'bold',
-                        fontSize: '12px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {gateway}
-                    </button>
-                  ))}
+    const handleCreateMatch = (e) => {
+        e.preventDefault();
+        if (currentUser.email !== superAdminEmail) {
+            alert("Only Super Admin can create matches!");
+            return;
+        }
+        const newMatch = {
+            id: Date.now(),
+            title: matchTitle,
+            prize: prizePool,
+            fee: entryFee,
+            time: matchTime,
+            spots: 32
+        };
+        setMatches([...matches, newMatch]);
+        setMatchTitle('');
+        setPrizePool('');
+        setEntryFee('');
+        setMatchTime('');
+    };
+
+    const handleAddBalance = () => {
+        setWalletBalance(walletBalance + Number(depositAmount));
+        alert(`Successfully added ₹${depositAmount} via UPI Gateway!`);
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '80px' }}>
+            {/* Top Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px', background: '#fff', borderBottom: '1px solid #ddd' }}>
+                <div style={{ fontWeight: 'bold', color: '#d32f2f' }}>Clash X 24 - Admin Control</div>
+                <div style={{ background: '#eee', padding: '5px 12px', borderRadius: '15px', fontWeight: '600' }}>
+                    ₹ {walletBalance} ⌵
                 </div>
-
-                <button type="submit" className="success-btn" style={{ width: '100%', background: '#10b981', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  Pay ₹{walletInput} via {selectedGateway}
-                </button>
-              </form>
             </div>
-          </section>
-        )}
 
-        {/* LEADERBOARD TAB */}
-        {activeTab === 'leaderboard' && (
-          <section className="section-padded" style={{ padding: '16px' }}>
-            <h2>Leaderboard</h2>
-            <div className="panel leaderboard-panel" style={{ background: '#fff', borderRadius: '8px', padding: '10px', marginTop: '10px' }}>
-              {mockLeaderboard.map((player) => (
-                <div key={player.rank} className="leaderboard-row" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #f1f5f9' }}>
-                  <span style={{ fontWeight: 'bold', color: '#f97316' }}>#{player.rank}</span>
-                  <strong style={{ color: '#1e293b' }}>{player.name}</strong>
-                  <span style={{ color: '#64748b' }}>{player.wins} Wins</span>
+            {/* Super Admin Control Panel Section (Only for parimaltikadar110@gmail.com) */}
+            {currentUser.email === superAdminEmail && (
+                <div style={{ margin: '15px', background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ffcdd2' }}>
+                    <h3 style={{ color: '#d32f2f', marginBottom: '10px' }}>⚡ Super Admin Control Panel</h3>
+                    <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                        Logged in as Super Admin: <b>{currentUser.email}</b> (Full Access: Create Matches, Manage Users, Add Balance, Set UPI Gateway)
+                    </p>
+                    
+                    <form onSubmit={handleCreateMatch} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <input 
+                            type="text" 
+                            placeholder="Match Title (e.g. FREE FIRE - SOLO HUNTER)" 
+                            value={matchTitle} 
+                            onChange={(e) => setMatchTitle(e.target.value)} 
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            required 
+                        />
+                        <input 
+                            type="text" 
+                            placeholder="Prize Pool (e.g. ₹225)" 
+                            value={prizePool} 
+                            onChange={(e) => setPrizePool(e.target.value)} 
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            required 
+                        />
+                        <input 
+                            type="text" 
+                            placeholder="Entry Fee (e.g. ₹8)" 
+                            value={entryFee} 
+                            onChange={(e) => setEntryFee(e.target.value)} 
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            required 
+                        />
+                        <input 
+                            type="text" 
+                            placeholder="Match Time (e.g. 26 Sep 12:30 PM)" 
+                            value={matchTime} 
+                            onChange={(e) => setMatchTime(e.target.value)} 
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            required 
+                        />
+                        <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                            Create Match (Admin Only)
+                        </button>
+                    </form>
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* PROFILE TAB (Clash X 24 Profile Style matching screenshot 16473_2.jpg) */}
-        {activeTab === 'profile' && (
-          <section className="section-padded profile-screen" style={{ padding: '16px', background: '#f8f9fa', minHeight: '80vh' }}>
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div className="avatar-large" style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#7c3aed', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', margin: '0 auto 10px auto', fontWeight: 'bold' }}>
-                {user.game_name ? user.game_name.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>{user.game_name}</h3>
-              <p style={{ color: '#64748b', fontSize: '13px', cursor: 'pointer' }} onClick={() => setIsEditingProfile(true)}>View Profile</p>
-            </div>
-
-            {isEditingProfile ? (
-              <form className="panel profile-form" onSubmit={handleProfileSave} style={{ background: '#fff', padding: '15px', borderRadius: '8px', marginBottom: '15px' }}>
-                <div className="field-group" style={{ marginBottom: '10px' }}>
-                  <label style={{ fontSize: '12px', color: '#64748b' }}>Game Name</label>
-                  <input
-                    value={profileForm.game_name}
-                    onChange={(event) => setProfileForm({ ...profileForm, game_name: event.target.value })}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', marginTop: '4px' }}
-                  />
-                </div>
-                <div className="field-group full-width-buttons" style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" className="primary-btn" style={{ flex: 1, background: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
-                  <button type="button" className="ghost-btn" onClick={() => setIsEditingProfile(false)} style={{ flex: 1, background: '#e2e8f0', border: 'none', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                </div>
-              </form>
-            ) : null}
-
-            {/* Menu List matching screenshot */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div onClick={() => setIsEditingProfile(true)} style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                <span style={{ fontSize: '14px', color: '#334155' }}>👤 Account Settings</span>
-                <span style={{ color: '#94a3b8' }}>›</span>
-              </div>
-              <div style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                <span style={{ fontSize: '14px', color: '#334155' }}>🏆 Join Private Tournament</span>
-                <span style={{ color: '#94a3b8' }}>›</span>
-              </div>
-              <div onClick={() => setActiveTab('wallet')} style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                <span style={{ fontSize: '14px', color: '#334155' }}>💳 Withdrawals</span>
-                <span style={{ color: '#94a3b8' }}>›</span>
-              </div>
-              <div onClick={() => setActiveTab('wallet')} style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                <span style={{ fontSize: '14px', color: '#334155' }}>📋 Transactions</span>
-                <span style={{ color: '#94a3b8' }}>›</span>
-              </div>
-              <div style={{ background: '#fff', padding: '14px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                <span style={{ fontSize: '14px', color: '#334155' }}>❓ Customer Support</span>
-                <span style={{ color: '#94a3b8' }}>›</span>
-              </div>
-            </div>
-
-            <div style={{ textAlign: 'center', marginTop: '20px' }}>
-              <button className="danger-btn" onClick={handleLogout} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}>Logout</button>
-              <small style={{ display: 'block', color: '#94a3b8', marginTop: '10px', fontSize: '11px' }}>Version 1.0.3</small>
-            </div>
-
-            {isAdmin && (
-              <div className="panel admin-create-box" style={{ marginTop: '20px', background: '#fff', padding: '15px', borderRadius: '8px' }}>
-                <h3>Create Tournament (Admin)</h3>
-                <form onSubmit={handleCreateTournament} className="form-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                  <input
-                    type="text"
-                    value={form.title}
-                    onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    placeholder="Tournament Name"
-                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                  />
-                  <input
-                    type="text"
-                    value={form.prize}
-                    onChange={(e) => setForm({ ...form, prize: e.target.value })}
-                    placeholder="Prize Pool"
-                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                  />
-                  <button type="submit" className="primary-btn" style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', cursor: 'pointer' }}>Publish</button>
-                </form>
-              </div>
             )}
-          </section>
-        )}
-      </main>
 
-      {/* Bottom Navigation Bar */}
-      <nav className="bottom-nav-bar" style={{ display: 'flex', justifyContent: 'space-around', background: '#fff', position: 'fixed', bottom: 0, left: 0, right: 0, borderTop: '1px solid #e2e8f0', padding: '8px 0', zIndex: 1000 }}>
-        <button
-          className={activeTab === 'home' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('home')}
-          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'home' ? '#dc2626' : '#64748b', fontSize: '11px' }}
-        >
-          <span className="nav-icon" style={{ fontSize: '18px' }}>🏠</span>
-          <span>Home</span>
-        </button>
-        <button
-          className={activeTab === 'matches' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('matches')}
-          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'matches' ? '#dc2626' : '#64748b', fontSize: '11px' }}
-        >
-          <span className="nav-icon" style={{ fontSize: '18px' }}>🏆</span>
-          <span>My Matches</span>
-        </button>
-        <button
-          className={activeTab === 'store' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('store')}
-          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'store' ? '#dc2626' : '#64748b', fontSize: '11px' }}
-        >
-          <span className="nav-icon" style={{ fontSize: '18px' }}>🪙</span>
-          <span>Clash Store</span>
-        </button>
-        <button
-          className={activeTab === 'leaderboard' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('leaderboard')}
-          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'leaderboard' ? '#dc2626' : '#64748b', fontSize: '11px' }}
-        >
-          <span className="nav-icon" style={{ fontSize: '18px' }}>📊</span>
-          <span>Leaderboard</span>
-        </button>
-        <button
-          className={activeTab === 'profile' ? 'bottom-nav-item active' : 'bottom-nav-item'}
-          onClick={() => setActiveTab('profile')}
-          style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', color: activeTab === 'profile' ? '#dc2626' : '#64748b', fontSize: '11px' }}
-        >
-          <span className="nav-icon" style={{ fontSize: '18px' }}>👤</span>
-          <span>Profile</span>
-        </button>
-      </nav>
-    </div>
-  )
-}
+            {/* UPI Deposit Gateway Section */}
+            <div style={{ margin: '15px', background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                <h4 style={{ marginBottom: '10px' }}>Add Funds via UPI Gateway</h4>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <input 
+                        type="number" 
+                        value={depositAmount} 
+                        onChange={(e) => setDepositAmount(e.target.value)} 
+                        style={{ padding: '8px', width: '100px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                    />
+                    <button onClick={handleAddBalance} style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '8px 15px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                        Add ₹{depositAmount}
+                    </button>
+                </div>
+            </div>
 
-function AuthScreen({ authMode, setAuthMode, onLogin, onSignup }) {
-  if (authMode === 'signup') {
-    return <SignupPage onSignup={onSignup} onSwitch={() => setAuthMode('login')} />
-  }
-  return <LoginPage onLogin={onLogin} onSwitch={() => setAuthMode('signup')} />
-}
+            {/* My Matches Section (Upcoming & Ongoing) */}
+            <div style={{ margin: '15px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', borderBottom: '1px solid #ddd', paddingBottom: '5px' }}>
+                    <span style={{ fontWeight: 'bold', color: '#d32f2f', cursor: 'pointer' }}>Upcoming</span>
+                    <span style={{ fontWeight: 'bold', color: '#777', cursor: 'pointer' }}>Ongoing</span>
+                    <span style={{ fontWeight: 'bold', color: '#777', cursor: 'pointer' }}>Completed</span>
+                </div>
+                {matches.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#777', marginTop: '40px' }}>
+                        No matches now. Join upcoming! (Create matches from admin panel)
+                    </div>
+                ) : (
+                    matches.map((m) => (
+                        <div key={m.id} style={{ background: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '10px', border: '1px solid #ddd' }}>
+                            <h4 style={{ color: '#111' }}>{m.title}</h4>
+                            <p style={{ fontSize: '13px', color: '#d32f2f' }}>Prize Pool: {m.prize} | Fee: {m.fee}</p>
+                            <p style={{ fontSize: '11px', color: '#555' }}>Time: {m.time}</p>
+                        </div>
+                    ))
+                )}
+            </div>
 
-function LoginPage({ onLogin, onSwitch }) {
-  const [formData, setFormData] = useState({ login: '', password: '' })
-  const submitForm = (e) => {
-    e.preventDefault()
-    onLogin(formData)
-  }
-  return (
-    <div className="login-screen" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8f9fa' }}>
-      <div className="login-card" style={{ background: '#fff', padding: '30px', borderRadius: '8px', width: '320px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-        <h1 style={{ fontSize: '20px', marginBottom: '20px', textAlign: 'center' }}>ClashX7 Login</h1>
-        <form onSubmit={submitForm} className="login-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <label style={{ fontSize: '13px', color: '#475569' }}>Email <input type="email" value={formData.login} onChange={(e) => setFormData({ ...formData, login: e.target.value })} placeholder="you@example.com" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
-          <label style={{ fontSize: '13px', color: '#475569' }}>Password <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Password" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
-          <button type="submit" className="primary-btn full-width" style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Login</button>
-        </form>
-        <div className="auth-switch-row" style={{ marginTop: '15px', textAlign: 'center', fontSize: '13px' }}>
-          <span>Don’t have an account?</span>
-          <button type="button" className="link-btn" onClick={onSwitch} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', marginLeft: '5px' }}>Create account</button>
+            {/* Bottom Nav */}
+            <div style={{ position: 'fixed', bottom: 0, width: '100%', background: '#fff', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #ddd' }}>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#d32f2f', fontWeight: 'bold' }}>Home</div>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>My Matches</div>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>Leaderboard</div>
+            </div>
         </div>
-      </div>
-    </div>
-  )
-}
+    );
+};
 
-function SignupPage({ onSignup, onSwitch }) {
-  const [formData, setFormData] = useState({ game_name: '', email: '', password: '' })
-  const submitForm = (e) => {
-    e.preventDefault()
-    onSignup(formData)
-  }
-  return (
-    <div className="login-screen" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8f9fa' }}>
-      <div className="login-card" style={{ background: '#fff', padding: '30px', borderRadius: '8px', width: '320px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-        <h1 style={{ fontSize: '20px', marginBottom: '20px', textAlign: 'center' }}>ClashX7 Sign Up</h1>
-        <form onSubmit={submitForm} className="login-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <label style={{ fontSize: '13px', color: '#475569' }}>Game Name <input type="text" value={formData.game_name} onChange={(e) => setFormData({ ...formData, game_name: e.target.value })} placeholder="Your Free Fire Name" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
-          <label style={{ fontSize: '13px', color: '#475569' }}>Email <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="you@example.com" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
-          <label style={{ fontSize: '13px', color: '#475569' }}>Password <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Password" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></label>
-          <button type="submit" className="primary-btn full-width" style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Create Account</button>
-        </form>
-        <div className="auth-switch-row" style={{ marginTop: '15px', textAlign: 'center', fontSize: '13px' }}>
-          <span>Already registered?</span>
-          <button type="button" className="link-btn" onClick={onSwitch} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', marginLeft: '5px' }}>Back to login</button>
+export default AdminAndWalletModule;
+// Part 3: Leaderboard & Moderator Management Module (Updated)
+import React, { useState } from 'react';
+
+const LeaderboardAndModeratorModule = () => {
+    const superAdminEmail = "parimaltikadar110@gmail.com";
+    
+    // Dynamic users state (No pre-added mock players, purely controlled via Admin)
+    const [users, setUsers] = useState([
+        { id: 1, name: "Debraj (Super Admin)", email: "parimaltikadar110@gmail.com", role: "Super Admin", balance: 0 }
+    ]);
+
+    // Function for Super Admin to assign/remove Moderator role
+    const handleToggleModerator = (id) => {
+        setUsers(users.map(user => {
+            if (user.id === id) {
+                const newRole = user.role === "Moderator" ? "Player" : "Moderator";
+                return { ...user, role: newRole };
+            }
+            return user;
+        }));
+        alert("User role updated successfully by Super Admin!");
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '80px', padding: '15px' }}>
+            <h3 style={{ color: '#d32f2f', marginBottom: '15px' }}>🏆 Leaderboard & User Management</h3>
+
+            {/* Moderator Assignment Section (Super Admin Only Power) */}
+            <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>
+                <h4 style={{ marginBottom: '10px', color: '#333' }}>Assign Moderators (Admin Panel Power)</h4>
+                <p style={{ fontSize: '11px', color: '#666', marginBottom: '10px' }}>
+                    As Super Admin ({superAdminEmail}), you can promote any registered user to Moderator status.
+                </p>
+                {users.map(u => (
+                    <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                        <div>
+                            <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{u.name}</div>
+                            <div style={{ fontSize: '11px', color: '#888' }}>{u.role} - ₹{u.balance}</div>
+                        </div>
+                        {u.email !== superAdminEmail && (
+                            <button 
+                                onClick={() => handleToggleModerator(u.id)}
+                                style={{ background: u.role === 'Moderator' ? '#d32f2f' : '#1976d2', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
+                            >
+                                {u.role === 'Moderator' ? 'Remove Mod' : 'Make Moderator'}
+                            </button>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {/* Leaderboard Section */}
+            <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                <h4 style={{ marginBottom: '15px', color: '#333' }}>Top Earners Leaderboard</h4>
+                {users.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#777', padding: '20px' }}>No users on leaderboard yet.</div>
+                ) : (
+                    users.sort((a, b) => b.balance - a.balance).map((user, index) => (
+                        <div key={user.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px' }}>
+                                    {user.name.charAt(0)}
+                                </div>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{user.name}</div>
+                                    <div style={{ fontSize: '11px', color: '#2e7d32', fontWeight: '600' }}>₹{user.balance}</div>
+                                </div>
+                            </div>
+                            <div style={{ fontWeight: 'bold', color: '#555', fontSize: '14px' }}>
+                                #{index + 1}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* Bottom Nav */}
+            <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#fff', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #ddd' }}>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>Home</div>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>My Matches</div>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#d32f2f', fontWeight: 'bold' }}>Leaderboard</div>
+            </div>
         </div>
-      </div>
-    </div>
-  )
-}
+    );
+};
 
-export default App
+export default LeaderboardAndModeratorModule;
+// Part 4: Profile, Notifications & Final App Integration Component
+import React, { useState } from 'react';
+
+const ProfileAndNotificationModule = () => {
+    const superAdminEmail = "parimaltikadar110@gmail.com";
+    
+    // Admin Notification State
+    const [notifications, setNotifications] = useState([]);
+    const [msgTitle, setMsgTitle] = useState('');
+    const [msgBody, setMsgBody] = useState('');
+
+    // Send Notification (Super Admin Only)
+    const handleSendNotification = (e) => {
+        e.preventDefault();
+        const newNotif = {
+            id: Date.now(),
+            title: msgTitle,
+            body: msgBody,
+            time: new Date().toLocaleTimeString()
+        };
+        setNotifications([newNotif, ...notifications]);
+        setMsgTitle('');
+        setMsgBody('');
+        alert("Notification sent successfully to all users!");
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '80px', padding: '15px' }}>
+            <h3 style={{ color: '#d32f2f', marginBottom: '15px' }}>👤 Profile & Notifications</h3>
+
+            {/* Profile Section */}
+            <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd', textAlign: 'center' }}>
+                <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#d32f2f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 'bold', margin: '0 auto 10px auto' }}>
+                    P
+                </div>
+                <h4 style={{ color: '#111' }}>Parimal Tikadar</h4>
+                <p style={{ fontSize: '12px', color: '#666' }}>{superAdminEmail}</p>
+                <div style={{ display: 'inline-block', background: '#e8f5e9', color: '#2e7d32', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', marginTop: '8px' }}>
+                    Super Admin (Full Access)
+                </div>
+            </div>
+
+            {/* Super Admin Notification Broadcaster */}
+            <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ffcdd2' }}>
+                <h4 style={{ color: '#d32f2f', marginBottom: '10px' }}>📢 Broadcast Notification (Admin Power)</h4>
+                <form onSubmit={handleSendNotification} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <input 
+                        type="text" 
+                        placeholder="Notification Title" 
+                        value={msgTitle} 
+                        onChange={(e) => setMsgTitle(e.target.value)} 
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                        required 
+                    />
+                    <textarea 
+                        placeholder="Notification Message" 
+                        value={msgBody} 
+                        onChange={(e) => setMsgBody(e.target.value)} 
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', resize: 'none', height: '60px' }} 
+                        required 
+                    />
+                    <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                        Send Notification to All
+                    </button>
+                </form>
+            </div>
+
+            {/* Notifications Display Feed */}
+            <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                <h4 style={{ marginBottom: '10px' }}>Recent Notifications</h4>
+                {notifications.length === 0 ? (
+                    <p style={{ fontSize: '12px', color: '#777' }}>No new notifications.</p>
+                ) : (
+                    notifications.map(n => (
+                        <div key={n.id} style={{ padding: '8px 0', borderBottom: '1px solid #eee' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#d32f2f' }}>{n.title}</div>
+                            <div style={{ fontSize: '12px', color: '#333' }}>{n.body}</div>
+                            <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>{n.time}</div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* Bottom Nav */}
+            <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#fff', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #ddd' }}>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>Home</div>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>My Matches</div>
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#777' }}>Leaderboard</div>
+            </div>
+        </div>
+    );
+};
+
+export default ProfileAndNotificationModule;
+// Part 5: Main App Integration & Navigation Router (Clash X 24 Structure)
+import React, { useState } from 'react';
+
+const ClashX24App = () => {
+    // Current logged-in user state (Super Admin Account)
+    const [currentUser] = useState({
+        name: "Parimal Tikadar",
+        email: "parimaltikadar110@gmail.com",
+        role: "Super Admin",
+        balance: 0
+    });
+
+    // Active bottom navigation tab state ('home', 'matches', 'leaderboard', 'profile', 'admin')
+    const [currentTab, setCurrentTab] = useState('home');
+
+    // App Data States (Controlled entirely via Admin / User actions, no fake placeholders)
+    const [matches, setMatches] = useState([]);
+    const [myJoinedMatches, setMyJoinedMatches] = useState([]);
+    const [walletBalance, setWalletBalance] = useState(0);
+    const [depositAmount, setDepositAmount] = useState(10);
+    
+    // Admin match creation form states
+    const [matchTitle, setMatchTitle] = useState('');
+    const [prizePool, setPrizePool] = useState('');
+    const [entryFee, setEntryFee] = useState('');
+    const [matchTime, setMatchTime] = useState('');
+
+    // Users list for Moderator Assignment (Super Admin Power)
+    const [usersList, setUsersList] = useState([
+        { id: 1, name: "Parimal Tikadar", email: "parimaltikadar110@gmail.com", role: "Super Admin", balance: 0 }
+    ]);
+
+    // Notifications state
+    const [notifications, setNotifications] = useState([]);
+    const [notifTitle, setNotifTitle] = useState('');
+    const [notifBody, setNotifBody] = useState('');
+
+    // Handle Match Creation (Super Admin Only)
+    const handleCreateMatch = (e) => {
+        e.preventDefault();
+        if (currentUser.email !== "parimaltikadar110@gmail.com") {
+            alert("Only Super Admin can create matches!");
+            return;
+        }
+        const newMatch = {
+            id: Date.now(),
+            title: matchTitle,
+            prize: prizePool,
+            fee: entryFee,
+            time: matchTime,
+            status: 'Upcoming'
+        };
+        setMatches([newMatch, ...matches]);
+        setMatchTitle('');
+        setPrizePool('');
+        setEntryFee('');
+        setMatchTime('');
+        alert("Match created successfully from Admin Panel!");
+    };
+
+    // Handle UPI Deposit Gateway
+    const handleAddBalanceViaUPI = () => {
+        setWalletBalance(walletBalance + Number(depositAmount));
+        alert(`Successfully added ₹${depositAmount} via UPI Gateway!`);
+    };
+
+    // Handle Moderator Toggle (Super Admin Power)
+    const handleToggleModerator = (userId) => {
+        setUsersList(usersList.map(u => {
+            if (u.id === userId) {
+                const updatedRole = u.role === 'Moderator' ? 'Player' : 'Moderator';
+                return { ...u, role: updatedRole };
+            }
+            return u;
+        }));
+        alert("User role updated successfully!");
+    };
+
+    // Handle Broadcast Notification (Super Admin Power)
+    const handleSendNotification = (e) => {
+        e.preventDefault();
+        const newNotif = {
+            id: Date.now(),
+            title: notifTitle,
+            body: notifBody,
+            time: new Date().toLocaleTimeString()
+        };
+        setNotifications([newNotif, ...notifications]);
+        setNotifTitle('');
+        setNotifBody('');
+        alert("Notification broadcasted to all users!");
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', border: '1px solid #e0e0e0' }}>
+            
+            {/* Top App Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#ffffff', borderBottom: '1px solid #e0e0e0', position: 'sticky', top: 0, zIndex: 1000 }}>
+                <div style={{ fontWeight: '800', color: '#d32f2f', fontSize: '16px' }}>CLASH X 24</div>
+                <div 
+                    onClick={() => setCurrentTab('wallet')}
+                    style={{ background: '#f1f1f1', padding: '6px 12px', borderRadius: '20px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}
+                >
+                    ₹ {walletBalance} ⌵
+                </div>
+            </div>
+
+            {/* TAB 1: HOME (Free Fire Tournaments List created by Admin) */}
+            {currentTab === 'home' && (
+                <div style={{ padding: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <h3 style={{ fontSize: '15px', color: '#111' }}>Free Fire Tournaments</h3>
+                        {currentUser.email === "parimaltikadar110@gmail.com" && (
+                            <button 
+                                onClick={() => setCurrentTab('admin')}
+                                style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                            >
+                                ⚡ Admin Panel
+                            </button>
+                        )}
+                    </div>
+
+                    {matches.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: '#777', padding: '40px 20px', background: '#fff', borderRadius: '8px', border: '1px solid #ddd' }}>
+                            <p style={{ fontSize: '13px', fontWeight: '600' }}>No matches available right now.</p>
+                            <p style={{ fontSize: '11px', color: '#999', marginTop: '5px' }}>Create matches from your Super Admin panel.</p>
+                        </div>
+                    ) : (
+                        matches.map(m => (
+                            <div key={m.id} style={{ background: '#fff', borderRadius: '8px', padding: '12px', marginBottom: '12px', border: '1px solid #ddd' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#111', marginBottom: '4px' }}>{m.title}</div>
+                                <div style={{ fontSize: '12px', color: '#d32f2f', fontWeight: '700', marginBottom: '8px' }}>Prize Pool: {m.prize}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #eee', paddingTop: '8px' }}>
+                                    <span style={{ fontSize: '11px', color: '#666' }}>Time: {m.time}</span>
+                                    <button 
+                                        onClick={() => {
+                                            setMyJoinedMatches([...myJoinedMatches, m]);
+                                            alert("Successfully joined match!");
+                                        }}
+                                        style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                                    >
+                                        {m.fee} JOIN
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {/* TAB 2: MY MATCHES (Upcoming & Ongoing Sections) */}
+            {currentTab === 'matches' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '15px', color: '#111', marginBottom: '12px' }}>My Matches</h3>
+                    <div style={{ display: 'flex', gap: '15px', borderBottom: '1px solid #ddd', paddingBottom: '8px', marginBottom: '15px', fontSize: '13px', fontWeight: 'bold' }}>
+                        <span style={{ color: '#d32f2f', borderBottom: '2px solid #d32f2f', paddingBottom: '6px' }}>Upcoming</span>
+                        <span style={{ color: '#777' }}>Ongoing</span>
+                    </div>
+                    {myJoinedMatches.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: '#777', padding: '40px 0' }}>You haven't joined any matches yet.</div>
+                    ) : (
+                        myJoinedMatches.map(jm => (
+                            <div key={jm.id} style={{ background: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '10px', border: '1px solid #ddd' }}>
+                                <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{jm.title}</div>
+                                <div style={{ fontSize: '11px', color: '#d32f2f', marginTop: '4px' }}>Status: Registered (Upcoming)</div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {/* TAB 3: LEADERBOARD */}
+            {currentTab === 'leaderboard' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '15px', color: '#111', marginBottom: '12px' }}>Leaderboard</h3>
+                    <div style={{ background: '#fff', borderRadius: '8px', padding: '12px', border: '1px solid #ddd' }}>
+                        {usersList.map((u, idx) => (
+                            <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #eee', fontSize: '13px' }}>
+                                <div><b>{u.name}</b> ({u.role})</div>
+                                <div style={{ color: '#2e7d32', fontWeight: 'bold' }}>₹{u.balance}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 4: PROFILE & NOTIFICATIONS */}
+            {currentTab === 'profile' && (
+                <div style={{ padding: '15px' }}>
+                    <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', textAlign: 'center', border: '1px solid #ddd', marginBottom: '15px' }}>
+                        <div style={{ width: '50px', height: '50px', background: '#d32f2f', color: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 'bold', margin: '0 auto 8px auto' }}>P</div>
+                        <h4 style={{ fontSize: '14px' }}>{currentUser.name}</h4>
+                        <p style={{ fontSize: '11px', color: '#666' }}>{currentUser.email}</p>
+                        <span style={{ display: 'inline-block', background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', marginTop: '6px' }}>Super Admin</span>
+                    </div>
+
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                        <h4 style={{ fontSize: '13px', marginBottom: '8px' }}>Notifications Feed</h4>
+                        {notifications.length === 0 ? (
+                            <p style={{ fontSize: '11px', color: '#777' }}>No notifications found.</p>
+                        ) : (
+                            notifications.map(n => (
+                                <div key={n.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#d32f2f' }}>{n.title}</div>
+                                    <div style={{ fontSize: '11px', color: '#333' }}>{n.body}</div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 5: ADMIN PANEL (Exclusive for parimaltikadar110@gmail.com) */}
+            {currentTab === 'admin' && currentUser.email === "parimaltikadar110@gmail.com" && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '15px', color: '#d32f2f', marginBottom: '12px' }}>⚡ Super Admin Control Panel</h3>
+                    
+                    {/* Create Match Form */}
+                    <form onSubmit={handleCreateMatch} style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ffcdd2', marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <h4 style={{ fontSize: '13px', color: '#333' }}>Create New Match</h4>
+                        <input type="text" placeholder="Match Title" value={matchTitle} onChange={(e) => setMatchTitle(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Prize Pool (e.g. ₹225)" value={prizePool} onChange={(e) => setPrizePool(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Entry Fee (e.g. ₹8)" value={entryFee} onChange={(e) => setEntryFee(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Match Time" value={matchTime} onChange={(e) => setMatchTime(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Publish Match</button>
+                    </form>
+
+                    {/* Broadcast Notification Form */}
+                    <form onSubmit={handleSendNotification} style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <h4 style={{ fontSize: '13px', color: '#333' }}>Broadcast Notification</h4>
+                        <input type="text" placeholder="Title" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <textarea placeholder="Message" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc', resize: 'none', height: '40px' }} required />
+                        <button type="submit" style={{ background: '#333', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Send Notification</button>
+                    </form>
+                </div>
+            )}
+
+            {/* WALLET / UPI GATEWAY VIEW */}
+            {currentTab === 'wallet' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '15px', color: '#111', marginBottom: '12px' }}>Wallet & UPI Deposit</h3>
+                    <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                        <p style={{ fontSize: '13px', marginBottom: '10px' }}>Current Balance: <b>₹{walletBalance}</b></p>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} style={{ padding: '6px', width: '90px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                            <button onClick={handleAddBalanceViaUPI} style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Add via UPI</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bottom Navigation Bar */}
+            <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: '#ffffff', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #e0e0e0', zIndex: 1000 }}>
+                <div onClick={() => setCurrentTab('home')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'home' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>Home</div>
+                <div onClick={() => setCurrentTab('matches')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'matches' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>My Matches</div>
+                <div onClick={() => setCurrentTab('leaderboard')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'leaderboard' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>Leaderboard</div>
+                <div onClick={() => setCurrentTab('profile')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'profile' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>Profile</div>
+            </div>
+
+        </div>
+    );
+};
+
+export default ClashX24App;
+// Part 6: Admin Moderator Management & Support Module
+import React, { useState } from 'react';
+
+const ModeratorAndSupportModule = () => {
+    const superAdminEmail = "parimaltikadar110@gmail.com";
+    
+    // Dynamic Registered Users list (Controlled by Admin)
+    const [appUsers, setAppUsers] = useState([
+        { id: 1, name: "Parimal Tikadar", email: "parimaltikadar110@gmail.com", role: "Super Admin" },
+        { id: 2, name: "Rahul Gamer", email: "rahul@gmail.com", role: "Player" },
+        { id: 3, name: "Amit FF", email: "amit@gmail.com", role: "Player" }
+    ]);
+
+    // Support ticket messages state
+    const [supportMsg, setSupportMsg] = useState('');
+    const [tickets, setTickets] = useState([]);
+
+    // Toggle Moderator Role (Super Admin Exclusive Power)
+    const handleToggleRole = (userId) => {
+        setAppUsers(appUsers.map(user => {
+            if (user.id === userId) {
+                if (user.email === superAdminEmail) {
+                    alert("Super Admin role cannot be changed!");
+                    return user;
+                }
+                const newRole = user.role === "Moderator" ? "Player" : "Moderator";
+                return { ...user, role: newRole };
+            }
+            return user;
+        }));
+        alert("User role updated successfully by Super Admin!");
+    };
+
+    // Submit Support Ticket
+    const handleTicketSubmit = (e) => {
+        e.preventDefault();
+        const newTicket = {
+            id: Date.now(),
+            message: supportMsg,
+            status: 'Pending',
+            time: new Date().toLocaleTimeString()
+        };
+        setTickets([newTicket, ...tickets]);
+        setSupportMsg('');
+        alert("Support ticket submitted successfully! Admin will review soon.");
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', border: '1px solid #e0e0e0', padding: '15px' }}>
+            
+            <h3 style={{ fontSize: '15px', color: '#d32f2f', marginBottom: '15px' }}>🛡️ Admin & Support Center</h3>
+
+            {/* Moderator Control Section (Super Admin Only) */}
+            <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '15px' }}>
+                <h4 style={{ fontSize: '13px', marginBottom: '8px', color: '#111' }}>Manage User Roles (Moderators)</h4>
+                <p style={{ fontSize: '11px', color: '#666', marginBottom: '10px' }}>
+                    Only Super Admin ({superAdminEmail}) can promote players to Moderator.
+                </p>
+
+                {appUsers.map(user => (
+                    <div key={user.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #eee' }}>
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{user.name}</div>
+                            <div style={{ fontSize: '10px', color: '#888' }}>{user.email} - <b>{user.role}</b></div>
+                        </div>
+                        {user.email !== superAdminEmail && (
+                            <button 
+                                onClick={() => handleToggleRole(user.id)}
+                                style={{ background: user.role === 'Moderator' ? '#d32f2f' : '#1976d2', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                                {user.role === 'Moderator' ? 'Remove Mod' : 'Make Mod'}
+                            </button>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {/* 24/7 Help & Support Section */}
+            <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                <h4 style={{ fontSize: '13px', marginBottom: '8px', color: '#111' }}>24/7 Customer Support</h4>
+                <form onSubmit={handleTicketSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <textarea 
+                        placeholder="Write your issue or query here..." 
+                        value={supportMsg} 
+                        onChange={(e) => setSupportMsg(e.target.value)} 
+                        style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc', resize: 'none', height: '60px' }} 
+                        required 
+                    />
+                    <button type="submit" style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                        Submit Ticket to Admin
+                    </button>
+                </form>
+
+                {tickets.length > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                        <h5 style={{ fontSize: '12px', marginBottom: '5px', color: '#333' }}>Your Tickets:</h5>
+                        {tickets.map(t => (
+                            <div key={t.id} style={{ background: '#f9f9f9', padding: '6px', borderRadius: '4px', marginBottom: '5px', fontSize: '11px', border: '1px solid #eee' }}>
+                                <div>{t.message}</div>
+                                <div style={{ color: '#d32f2f', fontWeight: 'bold', marginTop: '2px' }}>Status: {t.status}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+        </div>
+    );
+};
+
+export default ModeratorAndSupportModule;
+// Part 7: Match Results & Winner Announcement Module
+import React, { useState } from 'react';
+
+const MatchResultModule = () => {
+    const superAdminEmail = "parimaltikadar110@gmail.com";
+
+    // Winner declaration state (Controlled by Admin)
+    const [matchId, setMatchId] = useState('');
+    const [winnerName, setWinnerName] = useState('');
+    const [prizeAmount, setPrizeAmount] = useState('');
+    const [announcedResults, setAnnouncedResults] = useState([]);
+
+    const handlePublishResult = (e) => {
+        e.preventDefault();
+        const resultItem = {
+            id: Date.now(),
+            match: matchId,
+            winner: winnerName,
+            prize: prizeAmount,
+            time: new Date().toLocaleTimeString()
+        };
+        setAnnouncedResults([resultItem, ...announcedResults]);
+        setMatchId('');
+        setWinnerName('');
+        setPrizeAmount('');
+        alert("Match winner result published successfully by Super Admin!");
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', border: '1px solid #e0e0e0', padding: '15px' }}>
+            
+            <h3 style={{ fontSize: '15px', color: '#d32f2f', marginBottom: '15px' }}>🏆 Match Results & Winners</h3>
+
+            {/* Admin Result Declaration Box */}
+            <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ffcdd2', marginBottom: '15px' }}>
+                <h4 style={{ fontSize: '13px', color: '#333', marginBottom: '8px' }}>Declare Match Winner (Admin Power)</h4>
+                <form onSubmit={handlePublishResult} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <input 
+                        type="text" 
+                        placeholder="Match Name / ID (e.g. Free Fire Solo #1)" 
+                        value={matchId} 
+                        onChange={(e) => setMatchId(e.target.value)} 
+                        style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                        required 
+                    />
+                    <input 
+                        type="text" 
+                        placeholder="Winner Player Name" 
+                        value={winnerName} 
+                        onChange={(e) => setWinnerName(e.target.value)} 
+                        style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                        required 
+                    />
+                    <input 
+                        type="text" 
+                        placeholder="Prize Won (e.g. ₹225)" 
+                        value={prizeAmount} 
+                        onChange={(e) => setPrizeAmount(e.target.value)} 
+                        style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                        required 
+                    />
+                    <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                        Publish Winner Result
+                    </button>
+                </form>
+            </div>
+
+            {/* Display Announced Results */}
+            <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                <h4 style={{ fontSize: '13px', marginBottom: '10px', color: '#111' }}>Recent Winner Announcements</h4>
+                {announcedResults.length === 0 ? (
+                    <p style={{ fontSize: '11px', color: '#777' }}>No results declared yet.</p>
+                ) : (
+                    announcedResults.map(res => (
+                        <div key={res.id} style={{ background: '#fcfcfc', padding: '8px', borderRadius: '4px', marginBottom: '8px', border: '1px solid #eee', fontSize: '12px' }}>
+                            <div style={{ fontWeight: 'bold', color: '#111' }}>{res.match}</div>
+                            <div style={{ color: '#2e7d32', marginTop: '2px' }}>Winner: <b>{res.winner}</b></div>
+                            <div style={{ color: '#d32f2f', fontWeight: 'bold', marginTop: '2px' }}>Prize: {res.prize}</div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+        </div>
+    );
+};
+
+export default MatchResultModule;
+// Part 8: Transaction History & Wallet Ledger Module
+import React, { useState } from 'react';
+
+const TransactionHistoryModule = () => {
+    // Transaction logs state
+    const [transactions, setTransactions] = useState([
+        { id: 1, type: "UPI Deposit", amount: "+₹100", status: "Success", time: "05 Oct 2026, 11:30 AM" }
+    ]);
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', border: '1px solid #e0e0e0', padding: '15px' }}>
+            
+            <h3 style={{ fontSize: '15px', color: '#d32f2f', marginBottom: '15px' }}>💳 Transaction History & Ledger</h3>
+
+            {/* Transaction List Box */}
+            <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                <h4 style={{ fontSize: '13px', color: '#111', marginBottom: '10px' }}>Recent Wallet Activities</h4>
+                {transactions.length === 0 ? (
+                    <p style={{ fontSize: '11px', color: '#777' }}>No transactions recorded yet.</p>
+                ) : (
+                    transactions.map(tx => (
+                        <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                            <div>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#333' }}>{tx.type}</div>
+                                <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>{tx.time}</div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: tx.amount.includes('+') ? '#2e7d32' : '#d32f2f' }}>
+                                    {tx.amount}
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#2e7d32', fontWeight: '600' }}>{tx.status}</div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+        </div>
+    );
+};
+
+export default TransactionHistoryModule;
+// Part 9: User Authentication & Login/Signup Module
+import React, { useState } from 'react';
+
+const AuthModule = () => {
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [name, setName] = useState('');
+
+    const handleAuthSubmit = (e) => {
+        e.preventDefault();
+        if (email === "parimaltikadar110@gmail.com") {
+            alert("Logged in successfully as Super Admin!");
+        } else {
+            alert(isLogin ? "Logged in successfully!" : "Account created successfully!");
+        }
+    };
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', border: '1px solid #e0e0e0', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            
+            <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <h3 style={{ fontSize: '18px', color: '#d32f2f', textAlign: 'center', marginBottom: '15px' }}>
+                    {isLogin ? 'Clash X 24 Login' : 'Create Account'}
+                </h3>
+
+                <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {!isLogin && (
+                        <input 
+                            type="text" 
+                            placeholder="Full Name" 
+                            value={name} 
+                            onChange={(e) => setName(e.target.value)} 
+                            style={{ padding: '10px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                            required 
+                        />
+                    )}
+                    <input 
+                        type="email" 
+                        placeholder="Email Address (Super Admin: parimaltikadar110@gmail.com)" 
+                        value={email} 
+                        onChange={(e) => setEmail(e.target.value)} 
+                        style={{ padding: '10px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                        required 
+                    />
+                    <input 
+                        type="password" 
+                        placeholder="Password" 
+                        value={password} 
+                        onChange={(e) => setPassword(e.target.value)} 
+                        style={{ padding: '10px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }} 
+                        required 
+                    />
+                    <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                        {isLogin ? 'Login to App' : 'Sign Up'}
+                    </button>
+                </form>
+
+                <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '12px', color: '#666', cursor: 'pointer' }} onClick={() => setIsLogin(!isLogin)}>
+                    {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
+                </div>
+            </div>
+
+        </div>
+    );
+};
+
+export default AuthModule;
+// Part 10: Final Integrated Clash X 24 Master Application
+import React, { useState } from 'react';
+
+const ClashX24MasterApp = () => {
+    // Auth States
+    const [isLoggedIn, setIsLoggedIn] = useState(true);
+    const [email, setEmail] = useState("parimaltikadar110@gmail.com");
+    const [password, setPassword] = useState("");
+    const [name, setName] = useState("Parimal Tikadar");
+
+    // Navigation Tab State ('home', 'matches', 'leaderboard', 'profile', 'admin', 'wallet', 'support', 'results', 'transactions')
+    const [currentTab, setCurrentTab] = useState('home');
+
+    // App Data States (Controlled entirely via Super Admin / User)
+    const [walletBalance, setWalletBalance] = useState(0);
+    const [depositAmount, setDepositAmount] = useState(50);
+    const [matches, setMatches] = useState([]);
+    const [myJoinedMatches, setMyJoinedMatches] = useState([]);
+    const [transactions, setTransactions] = useState([]);
+    const [notifications, setNotifications] = useState([]);
+    const [supportTickets, setSupportTickets] = useState([]);
+    const [announcedResults, setAnnouncedResults] = useState([]);
+    
+    // Users List (Super Admin can assign/remove Moderators)
+    const [appUsers, setAppUsers] = useState([
+        { id: 1, name: "Parimal Tikadar", email: "parimaltikadar110@gmail.com", role: "Super Admin", balance: 0 },
+        { id: 2, name: "Rahul Gamer", email: "rahul@gmail.com", role: "Player", balance: 0 }
+    ]);
+
+    // Admin Form States
+    const [matchTitle, setMatchTitle] = useState('');
+    const [prizePool, setPrizePool] = useState('');
+    const [entryFee, setEntryFee] = useState('');
+    const [matchTime, setMatchTime] = useState('');
+    
+    // Notification Form
+    const [notifTitle, setNotifTitle] = useState('');
+    const [notifBody, setNotifBody] = useState('');
+
+    // Result Form
+    const [resMatch, setResMatch] = useState('');
+    const [resWinner, setResWinner] = useState('');
+    const [resPrize, setResPrize] = useState('');
+
+    // Support Form
+    const [supportMsg, setSupportMsg] = useState('');
+
+    // Login Handler
+    const handleLogin = (e) => {
+        e.preventDefault();
+        setIsLoggedIn(true);
+        alert("Logged in successfully!");
+    };
+
+    // Create Match (Super Admin Only)
+    const handleCreateMatch = (e) => {
+        e.preventDefault();
+        if (email !== "parimaltikadar110@gmail.com") {
+            alert("Access Denied! Only Super Admin can create matches.");
+            return;
+        }
+        const newMatch = {
+            id: Date.now(),
+            title: matchTitle,
+            prize: prizePool,
+            fee: entryFee,
+            time: matchTime,
+            status: 'Upcoming'
+        };
+        setMatches([newMatch, ...matches]);
+        setMatchTitle('');
+        setPrizePool('');
+        setEntryFee('');
+        setMatchTime('');
+        alert("Match created successfully from Admin Panel!");
+    };
+
+    // Join Match
+    const handleJoinMatch = (match) => {
+        setMyJoinedMatches([...myJoinedMatches, match]);
+        const newTx = {
+            id: Date.now(),
+            type: `Joined Match: ${match.title}`,
+            amount: `-${match.fee}`,
+            status: "Success",
+            time: new Date().toLocaleTimeString()
+        };
+        setTransactions([newTx, ...transactions]);
+        alert("Successfully joined the match!");
+    };
+
+    // UPI Deposit
+    const handleDeposit = () => {
+        const amt = Number(depositAmount);
+        setWalletBalance(walletBalance + amt);
+        const newTx = {
+            id: Date.now(),
+            type: "UPI Deposit",
+            amount: `+₹${amt}`,
+            status: "Success",
+            time: new Date().toLocaleTimeString()
+        };
+        setTransactions([newTx, ...transactions]);
+        alert(`Successfully added ₹${amt} via UPI Gateway!`);
+    };
+
+    // Toggle Moderator Role (Super Admin Only)
+    const handleToggleRole = (userId) => {
+        if (email !== "parimaltikadar110@gmail.com") {
+            alert("Only Super Admin can manage roles!");
+            return;
+        }
+        setAppUsers(appUsers.map(u => {
+            if (u.id === userId) {
+                if (u.email === "parimaltikadar110@gmail.com") return u;
+                const nextRole = u.role === 'Moderator' ? 'Player' : 'Moderator';
+                return { ...u, role: nextRole };
+            }
+            return u;
+        }));
+        alert("User role updated successfully!");
+    };
+
+    // Send Broadcast Notification
+    const handleSendNotification = (e) => {
+        e.preventDefault();
+        const newNotif = {
+            id: Date.now(),
+            title: notifTitle,
+            body: notifBody,
+            time: new Date().toLocaleTimeString()
+        };
+        setNotifications([newNotif, ...notifications]);
+        setNotifTitle('');
+        setNotifBody('');
+        alert("Notification broadcasted to all users!");
+    };
+
+    // Publish Match Result
+    const handlePublishResult = (e) => {
+        e.preventDefault();
+        const resObj = {
+            id: Date.now(),
+            match: resMatch,
+            winner: resWinner,
+            prize: resPrize,
+            time: new Date().toLocaleTimeString()
+        };
+        setAnnouncedResults([resObj, ...announcedResults]);
+        setResMatch('');
+        setResWinner('');
+        setResPrize('');
+        alert("Match winner published successfully!");
+    };
+
+    // Submit Support Ticket
+    const handleSupportSubmit = (e) => {
+        e.preventDefault();
+        const ticket = {
+            id: Date.now(),
+            message: supportMsg,
+            status: 'Pending',
+            time: new Date().toLocaleTimeString()
+        };
+        setSupportTickets([ticket, ...supportTickets]);
+        setSupportMsg('');
+        alert("Support ticket submitted to admin!");
+    };
+
+    // If not logged in, show Auth View
+    if (!isLoggedIn) {
+        return (
+            <div style={{ fontFamily: 'Segoe UI', backgroundColor: '#f8f9fa', minHeight: '100vh', maxWidth: '480px', margin: '0 auto', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                    <h3 style={{ fontSize: '18px', color: '#d32f2f', textAlign: 'center', marginBottom: '15px' }}>Clash X 24 Login</h3>
+                    <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <input type="email" placeholder="Email (parimaltikadar110@gmail.com)" value={email} onChange={(e) => setEmail(e.target.value)} style={{ padding: '10px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ padding: '10px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>Login</button>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', border: '1px solid #e0e0e0', position: 'relative' }}>
+            
+            {/* Top App Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#ffffff', borderBottom: '1px solid #e0e0e0', position: 'sticky', top: 0, zIndex: 1000 }}>
+                <div style={{ fontWeight: '800', color: '#d32f2f', fontSize: '16px', cursor: 'pointer' }} onClick={() => setCurrentTab('home')}>CLASH X 24</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div onClick={() => setCurrentTab('wallet')} style={{ background: '#f1f1f1', padding: '5px 10px', borderRadius: '20px', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}>
+                        ₹ {walletBalance} ⌵
+                    </div>
+                    {email === "parimaltikadar110@gmail.com" && (
+                        <button onClick={() => setCurrentTab('admin')} style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>Admin</button>
+                    )}
+                </div>
+            </div>
+
+            {/* TAB: HOME */}
+            {currentTab === 'home' && (
+                <div style={{ padding: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
+                        <h3 style={{ fontSize: '14px', color: '#111' }}>Free Fire Tournaments</h3>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => setCurrentTab('results')} style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>Results</button>
+                            <button onClick={() => setCurrentTab('support')} style={{ background: '#1976d2', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>Support</button>
+                        </div>
+                    </div>
+
+                    {matches.length === 0 ? (
+                        <div style={{ textAlign: 'center', color: '#777', padding: '30px', background: '#fff', borderRadius: '8px', border: '1px solid #ddd' }}>
+                            <p style={{ fontSize: '12px' }}>No matches live right now.</p>
+                            <p style={{ fontSize: '10px', color: '#999', marginTop: '4px' }}>Admin can create matches from the Admin panel.</p>
+                        </div>
+                    ) : (
+                        matches.map(m => (
+                            <div key={m.id} style={{ background: '#fff', borderRadius: '8px', padding: '12px', marginBottom: '10px', border: '1px solid #ddd' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#111' }}>{m.title}</div>
+                                <div style={{ fontSize: '11px', color: '#d32f2f', fontWeight: '700', margin: '3px 0' }}>Prize Pool: {m.prize}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #eee', paddingTop: '6px', fontSize: '11px', color: '#666' }}>
+                                    <span>Time: {m.time}</span>
+                                    <button onClick={() => handleJoinMatch(m)} style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                                        {m.fee} JOIN
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {/* TAB: MY MATCHES */}
+            {currentTab === 'matches' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '14px', color: '#111', marginBottom: '10px' }}>My Joined Matches</h3>
+                    {myJoinedMatches.length === 0 ? (
+                        <p style={{ fontSize: '12px', color: '#777' }}>You haven't joined any matches yet.</p>
+                    ) : (
+                        myJoinedMatches.map(jm => (
+                            <div key={jm.id} style={{ background: '#fff', padding: '10px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #ddd', fontSize: '12px' }}>
+                                <div style={{ fontWeight: 'bold' }}>{jm.title}</div>
+                                <div style={{ color: '#d32f2f', fontSize: '10px', marginTop: '2px' }}>Status: Registered (Upcoming)</div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {/* TAB: LEADERBOARD */}
+            {currentTab === 'leaderboard' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '14px', color: '#111', marginBottom: '10px' }}>Top Earners Leaderboard</h3>
+                    <div style={{ background: '#fff', borderRadius: '8px', padding: '10px', border: '1px solid #ddd' }}>
+                        {appUsers.map((u, idx) => (
+                            <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #eee', fontSize: '12px' }}>
+                                <div><b>{u.name}</b> <span style={{ fontSize: '10px', color: '#666' }}>({u.role})</span></div>
+                                <div style={{ color: '#2e7d32', fontWeight: 'bold' }}>₹{u.balance}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: PROFILE */}
+            {currentTab === 'profile' && (
+                <div style={{ padding: '15px' }}>
+                    <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', textAlign: 'center', border: '1px solid #ddd', marginBottom: '12px' }}>
+                        <div style={{ width: '45px', height: '45px', background: '#d32f2f', color: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 'bold', margin: '0 auto 6px auto' }}>P</div>
+                        <h4 style={{ fontSize: '13px' }}>{name}</h4>
+                        <p style={{ fontSize: '10px', color: '#666' }}>{email}</p>
+                        <span style={{ display: 'inline-block', background: '#e8f5e9', color: '#2e7d32', padding: '2px 6px', borderRadius: '8px', fontSize: '9px', fontWeight: 'bold', marginTop: '4px' }}>Super Admin</span>
+                    </div>
+
+                    <div style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '10px' }}>
+                        <h4 style={{ fontSize: '12px', marginBottom: '6px' }}>Notifications</h4>
+                        {notifications.length === 0 ? (
+                            <p style={{ fontSize: '10px', color: '#777' }}>No notifications.</p>
+                        ) : (
+                            notifications.map(n => (
+                                <div key={n.id} style={{ padding: '5px 0', borderBottom: '1px solid #eee', fontSize: '11px' }}>
+                                    <div style={{ fontWeight: 'bold', color: '#d32f2f' }}>{n.title}</div>
+                                    <div>{n.body}</div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: ADMIN PANEL */}
+            {currentTab === 'admin' && email === "parimaltikadar110@gmail.com" && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '14px', color: '#d32f2f', marginBottom: '10px' }}>⚡ Super Admin Panel</h3>
+                    
+                    {/* Create Match */}
+                    <form onSubmit={handleCreateMatch} style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #ffcdd2', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <h4 style={{ fontSize: '12px', color: '#333' }}>Create Match</h4>
+                        <input type="text" placeholder="Match Title" value={matchTitle} onChange={(e) => setMatchTitle(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Prize Pool (e.g. ₹225)" value={prizePool} onChange={(e) => setPrizePool(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Entry Fee (e.g. ₹8)" value={entryFee} onChange={(e) => setEntryFee(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Match Time" value={matchTime} onChange={(e) => setMatchTime(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>Publish Match</button>
+                    </form>
+
+                    {/* Broadcast Notification */}
+                    <form onSubmit={handleSendNotification} style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <h4 style={{ fontSize: '12px', color: '#333' }}>Broadcast Notification</h4>
+                        <input type="text" placeholder="Title" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <textarea placeholder="Message" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc', resize: 'none', height: '35px' }} required />
+                        <button type="submit" style={{ background: '#333', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>Send Notification</button>
+                    </form>
+
+                    {/* Publish Winner Result */}
+                    <form onSubmit={handlePublishResult} style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <h4 style={{ fontSize: '12px', color: '#333' }}>Declare Winner</h4>
+                        <input type="text" placeholder="Match Name" value={resMatch} onChange={(e) => setResMatch(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Winner Name" value={resWinner} onChange={(e) => setResWinner(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <input type="text" placeholder="Prize Won" value={resPrize} onChange={(e) => setResPrize(e.target.value)} style={{ padding: '5px', fontSize: '11px', borderRadius: '4px', border: '1px solid #ccc' }} required />
+                        <button type="submit" style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '6px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>Publish Winner</button>
+                    </form>
+
+                    {/* Moderator Assignment */}
+                    <div style={{ background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                        <h4 style={{ fontSize: '12px', marginBottom: '6px' }}>Manage Moderators</h4>
+                        {appUsers.map(u => (
+                            <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #eee', fontSize: '11px' }}>
+                                <div>{u.name} ({u.role})</div>
+                                {u.email !== "parimaltikadar110@gmail.com" && (
+                                    <button onClick={() => handleToggleRole(u.id)} style={{ background: u.role === 'Moderator' ? '#d32f2f' : '#1976d2', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '3px', fontSize: '9px', cursor: 'pointer' }}>
+                                        {u.role === 'Moderator' ? 'Remove Mod' : 'Make Mod'}
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: WALLET & DEPOSIT */}
+            {currentTab === 'wallet' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '14px', color: '#111', marginBottom: '10px' }}>Wallet & UPI Deposit</h3>
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '12px' }}>
+                        <p style={{ fontSize: '12px', marginBottom: '8px' }}>Balance: <b>₹{walletBalance}</b></p>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} style={{ padding: '5px', width: '80px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '12px' }} />
+                            <button onClick={handleDeposit} style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>Add via UPI</button>
+                        </div>
+                    </div>
+
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                        <h4 style={{ fontSize: '12px', marginBottom: '8px' }}>Transaction History</h4>
+                        {transactions.length === 0 ? (
+                            <p style={{ fontSize: '10px', color: '#777' }}>No transactions yet.</p>
+                        ) : (
+                            transactions.map(tx => (
+                                <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #eee', fontSize: '11px' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 'bold' }}>{tx.type}</div>
+                                        <div style={{ fontSize: '9px', color: '#888' }}>{tx.time}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontWeight: 'bold', color: tx.amount.includes('+') ? '#2e7d32' : '#d32f2f' }}>{tx.amount}</div>
+                                        <div style={{ fontSize: '9px', color: '#2e7d32' }}>{tx.status}</div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: SUPPORT */}
+            {currentTab === 'support' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '14px', color: '#111', marginBottom: '10px' }}>24/7 Customer Support</h3>
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                        <form onSubmit={handleSupportSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <textarea placeholder="Describe your query..." value={supportMsg} onChange={(e) => setSupportMsg(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc', resize: 'none', height: '50px' }} required />
+                            <button type="submit" style={{ background: '#1976d2', color: '#fff', border: 'none', padding: '7px', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>Submit Ticket</button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: RESULTS */}
+            {currentTab === 'results' && (
+                <div style={{ padding: '15px' }}>
+                    <h3 style={{ fontSize: '14px', color: '#111', marginBottom: '10px' }}>Match Results & Winners</h3>
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}>
+                        {announcedResults.length === 0 ? (
+                            <p style={{ fontSize: '10px', color: '#777' }}>No results announced yet.</p>
+                        ) : (
+                            announcedResults.map(res => (
+                                <div key={res.id} style={{ background: '#fcfcfc', padding: '8px', borderRadius: '4px', marginBottom: '6px', border: '1px solid #eee', fontSize: '11px' }}>
+                                    <div style={{ fontWeight: 'bold' }}>{res.match}</div>
+                                    <div style={{ color: '#2e7d32', marginTop: '2px' }}>Winner: <b>{res.winner}</b></div>
+                                    <div style={{ color: '#d32f2f', fontWeight: 'bold' }}>Prize: {res.prize}</div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Bottom Navigation Bar */}
+            <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: '#ffffff', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #e0e0e0', zIndex: 1000 }}>
+                <div onClick={() => setCurrentTab('home')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'home' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>Home</div>
+                <div onClick={() => setCurrentTab('matches')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'matches' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>My Matches</div>
+                <div onClick={() => setCurrentTab('leaderboard')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'leaderboard' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>Leaderboard</div>
+                <div onClick={() => setCurrentTab('profile')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'profile' ? '#d32f2f' : '#666', fontWeight: '700', cursor: 'pointer' }}>Profile</div>
+            </div>
+
+        </div>
+    );
+};
+
+export default ClashX24MasterApp;
