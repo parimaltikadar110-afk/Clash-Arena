@@ -1,252 +1,158 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clash X 24 - Free Fire Tournaments</title>
-    <style>
-        :root {
-            --primary-color: #d32f2f;
-            --secondary-color: #121212;
-            --bg-color: #f8f9fa;
-            --card-bg: #ffffff;
-            --text-color: #333333;
-            --border-color: #e0e0e0;
-        }
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            padding-bottom: 70px;
-        }
-        /* Top Header Bar */
-        .app-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            background-color: var(--card-bg);
-            border-bottom: 1px solid var(--border-color);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
-        .user-profile-icon {
-            width: 35px;
-            height: 35px;
-            border-radius: 50%;
-            background-color: #e0e0e0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: var(--primary-color);
-        }
-        .wallet-badge {
-            display: flex;
-            align-items: center;
-            background: #fff;
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid var(--border-color);
-            font-weight: 600;
-            font-size: 14px;
-        }
-        /* Game Category Tabs */
-        .category-scroll {
-            display: flex;
-            overflow-x: auto;
-            background: var(--card-bg);
-            padding: 10px 16px;
-            gap: 15px;
-            white-space: nowrap;
-            border-bottom: 1px solid var(--border-color);
-            scrollbar-width: none;
-        }
-        .category-scroll::-webkit-scrollbar {
-            display: none;
-        }
-        .cat-tab {
-            font-size: 13px;
-            font-weight: 700;
-            color: #666;
-            text-transform: uppercase;
-            cursor: pointer;
-            padding-bottom: 5px;
-        }
-        .cat-tab.active {
-            color: var(--primary-color);
-            border-bottom: 2px solid var(--primary-color);
-        }
-        /* Match Cards Container */
-        .match-container {
-            padding: 16px;
-        }
-        .match-card {
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 14px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            border: 1px solid var(--border-color);
-        }
-        .match-tags {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-        .tag {
-            font-size: 10px;
-            font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid var(--border-color);
-            color: #555;
-            background: #fafafa;
-        }
-        .match-body {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .match-info h3 {
-            font-size: 15px;
-            font-weight: 800;
-            color: #111;
-            margin-bottom: 6px;
-        }
-        .prize-pool {
-            font-size: 13px;
-            color: var(--primary-color);
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-        .match-status-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 11px;
-            color: #888;
-            border-top: 1px dashed var(--border-color);
-            padding-top: 8px;
-            margin-top: 6px;
-        }
-        .match-banner {
-            width: 85px;
-            height: 75px;
-            border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-        }
-        .match-banner img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        .time-badge {
-            position: absolute;
-            bottom: 0;
-            width: 100%;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            font-size: 9px;
-            text-align: center;
-            padding: 2px 0;
-        }
-        .join-btn {
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            padding: 6px 14px;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 12px;
-            cursor: pointer;
-        }
-        /* Bottom Navigation Bar */
-        .bottom-nav {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: var(--card-bg);
-            display: flex;
-            justify-content: space-around;
-            padding: 10px 0;
-            border-top: 1px solid var(--border-color);
-            z-index: 1000;
-        }
-        .nav-item {
-            text-align: center;
-            font-size: 11px;
-            color: #777;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        .nav-item.active {
-            color: var(--primary-color);
-        }
-    </style>
-</head>
-<body>
+import React, { useState } from 'react';
+const AdminAndWalletModule = () => {
+  const [activeTab, setActiveTab] = useState('home');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [depositAmount, setDepositAmount] = useState(10);
+  const [matches, setMatches] = useState([]);
 
-    <!-- Header Section -->
-    <div class="app-header">
-        <div class="user-profile-icon">D</div>
-        <div class="wallet-badge">₹ 0 ⌵</div>
-    </div>
+  const superAdminEmail = "parimaltikadar110@gmail.com";
+  const [currentUser, setCurrentUser] = useState({
+    email: "parimaltikadar110@gmail.com",
+    role: "Super Admin",
+    balance: 0
+  });
 
-    <!-- Mode Selector Tabs -->
-    <div class="category-scroll">
-        <div class="cat-tab active">SOLO BR</div>
-        <div class="cat-tab">DUO BR</div>
-        <div class="cat-tab">SQUAD BR</div>
-        <div class="cat-tab">LONE WOLF</div>
-        <div class="cat-tab">CS CHALLENGERS</div>
-        <div class="cat-tab">CS HEADSHOT</div>
-    </div>
+  const [matchTitle, setMatchTitle] = useState('');
+  const [prizePool, setPrizePool] = useState('');
+  const [entryFee, setEntryFee] = useState('');
+  const [matchTime, setMatchTime] = useState('');
 
-    <!-- Match List Section (Controlled via Admin Panel) -->
-    <div class="match-container" id="adminMatchList">
-        <div class="match-card">
-            <div class="match-tags">
-                <span class="tag">SOLO</span>
-                <span class="tag">BERMUDA</span>
-                <span class="tag">32 SLOTS</span>
-            </div>
-            <div class="match-body">
-                <div class="match-info">
-                    <h3>FREE FIRE - SOLO HUNTER</h3>
-                    <div class="prize-pool">Prize Pool - ₹225</div>
-                    <div class="match-status-row">
-                        <span>MATCH ID</span>
-                        <span style="color:var(--primary-color); font-weight:700;">0 spots left</span>
-                    </div>
-                </div>
-                <div>
-                    <div class="match-banner">
-                        <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e" alt="game">
-                        <div class="time-badge">26 Sep 12:30 PM</div>
-                    </div>
-                    <button class="join-btn" style="margin-top:6px; width:100%;">₹8 JOIN</button>
-                </div>
-            </div>
+  const handleCreateMatch = (e) => {
+    e.preventDefault();
+    if (currentUser.email !== superAdminEmail) {
+      alert('Only Super Admin can create matches!');
+      return;
+    }
+    const newMatch = {
+      id: Date.now(),
+      title: matchTitle,
+      prize: prizePool,
+      fee: entryFee,
+      time: matchTime,
+      spots: 32
+    };
+    setMatches([...matches, newMatch]);
+    setMatchTitle('');
+    setPrizePool('');
+    setEntryFee('');
+    setMatchTime('');
+  };
+
+  const handleAddBalance = () => {
+    setWalletBalance(walletBalance + Number(depositAmount));
+    alert(`Successfully added ₹${depositAmount} via UPI Gateway!`);
+  };
+
+  return (
+    <div style={{ fontFamily: 'Segoe UI', backgroundColor: '#f8f9fa', minHeight: '100vh', paddingBottom: '70px' }}>
+      
+      {/* App Header (Apnar purono HTML-er header-ke JSX-e rupantor kora holo) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: '#ffffff', borderBottom: '1px solid #e0e0e0', position: 'sticky', top: 0, zIndex: 1000 }}>
+        <div style={{ width: '35px', height: '35px', borderRadius: '50%', background: '#e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#d32f2f' }}>D</div>
+        <div style={{ display: 'flex', alignItems: 'center', background: '#fff', padding: '6px 12px', borderRadius: '20px', border: '1px solid #e0e0e0', fontWeight: 600, fontSize: '14px' }}>
+          ₹ {walletBalance}
         </div>
-    </div>
+      </div>
 
-    <!-- Bottom Navigation -->
-    <div class="bottom-nav">
-        <a href="#" class="nav-item active">Home</a>
-        <a href="#" class="nav-item">My Matches</a>
-        <a href="#" class="nav-item">Leaderboard</a>
-    </div>
+      {/* Mode Selector Tabs */}
+      <div style={{ display: 'flex', overflowX: 'auto', background: '#ffffff', padding: '10px 16px', gap: '15px', whiteSpace: 'nowrap', borderBottom: '1px solid #e0e0e0' }}>
+        <div onClick={() => setActiveTab('SOLO')} style={{ fontSize: '13px', fontWeight: 700, color: activeTab === 'SOLO' ? '#d32f2f' : '#666', cursor: 'pointer' }}>SOLO BR</div>
+        <div onClick={() => setActiveTab('DUO')} style={{ fontSize: '13px', fontWeight: 700, color: activeTab === 'DUO' ? '#d32f2f' : '#666', cursor: 'pointer' }}>DUO BR</div>
+        <div onClick={() => setActiveTab('SQUAD')} style={{ fontSize: '13px', fontWeight: 700, color: activeTab === 'SQUAD' ? '#d32f2f' : '#666', cursor: 'pointer' }}>SQUAD BR</div>
+      </div>
 
-</body>
-</html>
+      {/* Admin Panel & UPI Section (Apnar ager code theke) */}
+      {currentUser.email === superAdminEmail && (
+        <div style={{ margin: '15px', background: '#fff', padding: '15px', borderRadius: '12px', border: '1px solid #e0e0e0' }}>
+          <h3 style={{ color: '#d32f2f', marginBottom: '10px' }}>⚡ Super Admin Match Creator</h3>
+          <form onSubmit={handleCreateMatch} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <input 
+              type="text" 
+              placeholder="Match Title (e.g. FREE FIRE - SOLO HUNTER)" 
+              value={matchTitle}
+              onChange={(e) => setMatchTitle(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              required 
+            />
+            <input 
+              type="text" 
+              placeholder="Prize Pool (e.g. ₹225)" 
+              value={prizePool}
+              onChange={(e) => setPrizePool(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              required 
+            />
+            <input 
+              type="text" 
+              placeholder="Entry Fee (e.g. ₹8)" 
+              value={entryFee}
+              onChange={(e) => setEntryFee(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              required 
+            />
+            <input 
+              type="text" 
+              placeholder="Match Time (e.g. 26 Sep 12:30 PM)" 
+              value={matchTime}
+              onChange={(e) => setMatchTime(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              required 
+            />
+            <button type="submit" style={{ background: '#d32f2f', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Create Match (Admin Only)
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* UPI Deposit Gateway Section */}
+      <div style={{ margin: '15px', background: '#fff', padding: '15px', borderRadius: '12px', border: '1px solid #e0e0e0' }}>
+        <h4 style={{ marginBottom: '10px' }}>Add Funds via UPI Gateway</h4>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <input 
+            type="number" 
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
+            style={{ padding: '8px', width: '100px', borderRadius: '4px', border: '1px solid #ccc' }} 
+          />
+          <button onClick={handleAddBalance} style={{ background: '#2e7d32', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            Add ₹{depositAmount}
+          </button>
+        </div>
+      </div>
+
+      {/* Match List Section */}
+      <div style={{ padding: '16px' }}>
+        <h3 style={{ marginBottom: '10px', fontSize: '16px' }}>Available Tournaments</h3>
+        {matches.length === 0 ? (
+          <p style={{ color: '#777', fontSize: '14px' }}>No matches created yet. Admin can create matches above.</p>
+        ) : (
+          matches.map((m) => (
+            <div key={m.id} style={{ background: '#fff', borderRadius: '12px', padding: '14px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e0e0e0' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#111', marginBottom: '6px' }}>{m.title}</h3>
+              <div style={{ fontSize: '13px', color: '#d32f2f', fontWeight: 700, marginBottom: '8px' }}>Prize Pool: {m.prize}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888', borderTop: '1px dashed #e0e0e0', paddingTop: '8px', marginTop: '6px' }}>
+                <span>Entry: <strong style={{ color: '#d32f2f' }}>₹{m.fee}</strong></span>
+                <span>Time: {m.time}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Bottom Navigation Bar */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#fff', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #e0e0e0', zIndex: 1000 }}>
+        <div onClick={() => setActiveTab('home')} style={{ textAlign: 'center', fontSize: '11px', color: activeTab === 'home' ? '#d32f2f' : '#777', fontWeight: 600, cursor: 'pointer' }}>Home</div>
+        <div onClick={() => setActiveTab('matches')} style={{ textAlign: 'center', fontSize: '11px', color: activeTab === 'matches' ? '#d32f2f' : '#777', fontWeight: 600, cursor: 'pointer' }}>My Matches</div>
+        <div onClick={() => setActiveTab('leaderboard')} style={{ textAlign: 'center', fontSize: '11px', color: activeTab === 'leaderboard' ? '#d32f2f' : '#777', fontWeight: 600, cursor: 'pointer' }}>Leaderboard</div>
+      </div>
+
+    </div>
+  );
+};
+
+export default AdminAndWalletModule;
+
 // Part 2: Admin Panel, Wallet & My Matches Component
 import React, { useState } from 'react';
 
