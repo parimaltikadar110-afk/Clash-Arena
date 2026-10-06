@@ -1,422 +1,182 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient"; // <- change to the path of your existing Supabase client file
 
-const ClashX7App = () => {
-    const [isLoggedIn, setIsLoggedIn] = useState(true);
-    const [email, setEmail] = useState("parimaltikadar110@gmail.com");
-    const [password, setPassword] = useState("");
-    const [currentTab, setCurrentTab] = useState('home');
-    const [subTab, setSubTab] = useState('solo_br');
+/* ClashX7 – single-file React app. Usage: replace src/App.jsx (Vite/CRA). Admin panel: open /#admin
+   Data is demo state. To connect Supabase, swap the actions marked  // DB  with supabase.from('matches' | 'profiles' | 'withdrawals') calls. */
 
-    const [walletBalance, setWalletBalance] = useState(0);
-    const [winningBalance, setWinningBalance] = useState(0);
-    const [depositAmount, setDepositAmount] = useState(50);
-    const [withdrawAmount, setWithdrawAmount] = useState(50);
-    const [upiId, setUpiId] = useState('');
-    
-    const [gameName, setGameName] = useState('Debraj');
-    const [gameId, setGameId] = useState('4646434354');
+const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
+const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
+const ADMIN_EMAIL = "parimaltikadar110@gmail.com"; // UI gate only; real protection = the RLS policies (is_admin() SQL)
+const STORE = [["Google Play ₹50",60],["Amazon Voucher ₹100",120],["FF Diamonds 100",90]];
+const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["store","Clash Store","M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v10M9 10h6"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
+const now = Date.now();
+const seedU = [["Player",0],["Saksham",102000],["ISAGI",145600],["Mehebub",95500],["Abhi",84000],["ITZ ARYAN",80900],["Arab",69500],["Krishna",68100],["Dynamoop",67000],["Hiri",57000]].map(([name,win],i)=>({id:i+1,name,win,bal:0,gid:"",ban:false}));
+const seedM = [];
+T.forEach((t,i)=>{for(let k=0;k<3;k++)seedM.push({id:1000+seedM.length,tab:t,title:"FF - "+["SOLO HUNTER","NEW THUNDER","OLD THUNDER"][k],map:["BERMUDA","PURGATORY","KALAHARI"][k],slots:[32,48,12][k],filled:[3,20,9][k],prize:[225,145,330][k],fee:[6,5,8][k],time:now+(i*3+k+1)*36e5,status:"upcoming",c:COL[(i+k)%5]})});
+seedM.push({id:1999,tab:T[0],title:"VIP CUSTOM",map:"BERMUDA",slots:12,filled:0,prize:500,fee:10,time:now+9e6,status:"upcoming",priv:true,code:"X7VIP",c:COL[0]});
 
-    const [matches, setMatches] = useState([
-        { id: 1, title: "FREE FIRE - SOLO HUNTER", category: "solo_br", prize: "₹225", fee: "₹8", time: "06 Oct 12:00 AM", spots: "0 spots left" },
-        { id: 2, title: "FREE FIRE - NEW THUNDER", category: "solo_br", prize: "₹145", fee: "₹8", time: "06 Oct 01:00 AM", spots: "19 spots left" },
-        { id: 3, title: "FF - 5RS DUO PER KILL", category: "duo_kill", prize: "₹240", fee: "₹8", time: "06 Oct 12:00 AM", spots: "22 spots left" },
-        { id: 4, title: "FF - LONE WOLF 1V1 HEAD", category: "lone_wolf", prize: "₹45", fee: "₹26", time: "06 Oct 12:15 AM", spots: "0 spots left" }
-    ]);
+const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
+const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 
-    const [myJoinedMatches, setMyJoinedMatches] = useState([]);
-    const [transactions, setTransactions] = useState([]);
-    const [notifications, setNotifications] = useState([
-        { id: 1, title: "Welcome to ClashX7", body: "Join tournaments and win cash daily!" }
-    ]);
-    const [supportMsg, setSupportMsg] = useState('');
+const Logo = ({s=64}) => (
+  <svg width={s} height={s} viewBox="0 0 100 100">
+    <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff6a5c"/><stop offset="1" stopColor="#c4161c"/></linearGradient></defs>
+    <path d="M50 4l40 23v46L50 96 10 73V27z" fill="url(#lg)" stroke="#fff" strokeWidth="3"/>
+    <path d="M24 34l28 32M52 34L24 66" stroke="#fff" strokeWidth="10" strokeLinecap="round"/>
+    <path d="M62 34h20l-13 32" stroke="#111" strokeWidth="9" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
 
-    // Admin States
-    const [matchTitle, setMatchTitle] = useState('');
-    const [prizePool, setPrizePool] = useState('');
-    const [entryFee, setEntryFee] = useState('');
-    const [matchTime, setMatchTime] = useState('');
-    const [matchCategory, setMatchCategory] = useState('solo_br');
+export default function App() {
+  const [U,setU] = useState(seedU), [M,setM] = useState(seedM), [W,setW] = useState([]);
+  const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming");
+  const [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [f,setF] = useState({});
+  const [boot,setBoot] = useState(true), [hash,setHash] = useState(window.location.hash), [adm,setAdm] = useState(false), [at,setAt] = useState("Dashboard");
+  useEffect(()=>{const h=()=>setHash(window.location.hash);window.addEventListener("hashchange",h);const t=setTimeout(()=>setBoot(false),1200);return()=>{window.removeEventListener("hashchange",h);clearTimeout(t)}},[]);
 
-    const [notifTitle, setNotifTitle] = useState('');
-    const [notifBody, setNotifBody] = useState('');
+  const isOwner = s => s?.user?.email?.toLowerCase() === ADMIN_EMAIL;
+  useEffect(()=>{supabase.auth.getSession().then(({data})=>setAdm(isOwner(data.session)));const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setAdm(isOwner(s)));return()=>l.subscription.unsubscribe()},[]);
+  const adminLogin = async () => { const {data,error}=await supabase.auth.signInWithPassword({email:f.em||"",password:f.pw||""}); if(error) return alert(error.message); if(!isOwner(data.session)){await supabase.auth.signOut();alert("This account is not an admin")} };
 
-    const [resMatch, setResMatch] = useState('');
-    const [resWinner, setResWinner] = useState('');
-    const [resPrize, setResPrize] = useState('');
-    const [announcedResults, setAnnouncedResults] = useState([]);
+  const u = U.find(x=>x.id===1);
+  const upd = (id,fn) => setU(a=>a.map(x=>x.id===id?{...x,...fn(x)}:x));
+  const updM = (id,p) => setM(a=>a.map(x=>x.id===id?{...x,...p}:x));
+  const addTx = (t,a) => setTxs(x=>[{t,a,d:new Date().toLocaleString()},...x]);
+  const go = (p,init={}) => {setF(init);setPage(p)};
+  const inp = (k,l,t="text") => (<><label>{l}</label><input type={t} value={f[k]??""} onChange={e=>setF({...f,[k]:e.target.value})}/></>);
 
-    const [appUsers, setAppUsers] = useState([
-        { id: 1, name: "Parimal Tikadar", email: "parimaltikadar110@gmail.com", role: "Super Admin" },
-        { id: 2, name: "Debraj", email: "debraj@gmail.com", role: "Player" }
-    ]);
+  // ---- user actions ----
+  const join = id => { // DB: insert into participants + deduct wallet (do this in a Postgres function/RPC)
+    const m = M.find(x=>x.id===id);
+    if(!u.gid) return alert("Set your Game ID first (Profile → Account Settings)");
+    if(u.bal+u.win < m.fee) return alert("Not enough balance. Add money in Wallet.");
+    const fb = Math.min(u.bal,m.fee);
+    upd(1,x=>({bal:x.bal-fb,win:x.win-(m.fee-fb)})); updM(id,{filled:m.filled+1}); setJoined(j=>[...j,id]); addTx("Joined "+m.title,-m.fee); setPage(null);
+  };
+  const joinCode = () => { const m=M.find(x=>x.priv&&x.code===(f.c||"").trim().toUpperCase()); m?join(m.id):alert("Invalid code") };
+  const addMoney = () => { const a=+f.a; if(a>0){upd(1,x=>({bal:x.bal+a}));addTx("Added money",a);go(null)} }; // DB: real top-up needs payment gateway + server-side verification
+  const withdraw = () => { const a=+f.a; if(!(a>0)||a>u.win||!f.u) return alert("Check amount (max = winning balance) and UPI ID");
+    upd(1,x=>({win:x.win-a})); setW(w=>[...w,{id:w.length+1,uid:1,name:u.name,a,up:f.u,st:"pending"}]); addTx("Withdrawal requested",-a); alert("Request sent"); go("profile") };
+  const redeem = ([n,p]) => { if(u.win<p) return alert("Need ₹"+p+" winning balance"); upd(1,x=>({win:x.win-p})); addTx("Redeemed "+n,-p); alert("Requested! Admin will deliver your code.") };
 
-    const handleLogin = (e) => {
-        e.preventDefault();
-        setIsLoggedIn(true);
-        alert("Logged in to ClashX7 successfully!");
-    };
+  // ---- admin actions ----
+  const addMatch = () => { if(!f.t||!f.d) return alert("Title and time are required");
+    const id=Math.max(...M.map(m=>m.id))+1; setM(a=>[...a,{id,tab:f.g||T[0],title:f.t,map:f.m||"BERMUDA",slots:+f.s||32,filled:0,prize:+f.p||0,fee:+f.fee||0,time:new Date(f.d).getTime(),status:"upcoming",priv:f.v==="1",code:"X7"+Math.random().toString(36).slice(2,6).toUpperCase(),c:COL[id%5]}]); setF({}) };
+  const room = m => { const r=prompt("Room ID?",m.room||""); if(r===null) return; updM(m.id,{room:r,pass:prompt("Room password?",m.pass||"")||""}) };
+  const pay = m => { const w=U.find(x=>x.name===prompt("Winner name?")), a=+prompt("Prize amount ₹?",m.prize); if(!w||!(a>0)) return alert("User not found / bad amount"); upd(w.id,x=>({win:x.win+a})); updM(m.id,{status:"played"}) };
+  const wdAct = (w,ok) => { setW(a=>a.map(x=>x.id===w.id?{...x,st:ok?"paid":"rejected"}:x)); if(!ok) upd(w.uid,x=>({win:x.win+w.a})) };
 
-    const handleCreateMatch = (e) => {
-        e.preventDefault();
-        if (email !== "parimaltikadar110@gmail.com") {
-            alert("Access Denied! Only Super Admin can create matches.");
-            return;
-        }
-        const newMatch = {
-            id: Date.now(),
-            title: matchTitle,
-            category: matchCategory,
-            prize: prizePool,
-            fee: entryFee,
-            time: matchTime,
-            spots: "32 spots left"
-        };
-        setMatches([newMatch, ...matches]);
-        setMatchTitle('');
-        setPrizePool('');
-        setEntryFee('');
-        setMatchTime('');
-        alert("Match created successfully via Admin Panel!");
-    };
+  // ---- UI pieces ----
+  const card = m => { const left=m.slots-m.filled, j=joined.includes(m.id); return (
+    <div className="card" key={m.id}>
+      <div className="tags"><i>{m.tab.split(" ")[0]}</i><i>{m.map}</i><i>{m.slots} SLOTS</i></div>
+      <div className="row"><div><h4>{m.title}</h4><p className="pz">Prize Pool – ₹{m.prize}</p></div>
+        <div className="thw"><div className="th" style={{background:`linear-gradient(135deg,${m.c},#111)`}}><Logo s={34}/></div>{fmt(m.time)}</div></div>
+      <div className="bar"><u style={{width:`${m.filled/m.slots*100}%`}}/></div>
+      <div className="foot"><span>MATCH ID {m.id}</span><span>{left} spots left</span></div>
+      {j&&m.room&&<div className="room">Room ID: {m.room} · Pass: {m.pass}</div>}
+      <button className="join" disabled={left<1||j} onClick={()=>join(m.id)}>{j?"JOINED":"₹"+m.fee+" JOIN"}</button>
+    </div>)};
 
-    const handleJoinMatch = (match) => {
-        setMyJoinedMatches([...myJoinedMatches, match]);
-        const newTx = {
-            id: Date.now(),
-            type: `Joined: ${match.title}`,
-            amount: `-${match.fee}`,
-            status: "Success",
-            time: new Date().toLocaleTimeString()
-        };
-        setTransactions([newTx, ...transactions]);
-        alert("Successfully joined tournament!");
-    };
+  const Tabs = ({list,cur,set,flex}) => (<div className="tabs">{list.map(t=><b key={t} className={t===cur?"on":""} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:null} onClick={()=>set(t)}>{t}</b>)}</div>);
 
-    const handleDeposit = () => {
-        const amt = Number(depositAmount);
-        setWalletBalance(walletBalance + amt);
-        const newTx = {
-            id: Date.now(),
-            type: "Add Money (UPI)",
-            amount: `+₹${amt}`,
-            status: "Success",
-            time: new Date().toLocaleTimeString()
-        };
-        setTransactions([newTx, ...transactions]);
-        alert(`Successfully added ₹${amt} to wallet!`);
-    };
+  const body = () => {
+    if(nav==="home"){const ms=M.filter(m=>m.tab===tab&&m.status==="upcoming"&&!m.priv); return <><Tabs list={T} cur={tab} set={setTab}/>{ms.length?ms.map(card):<p className="empty">No matches now. Check back soon!</p>}</>}
+    if(nav==="my"){const ms=M.filter(m=>joined.includes(m.id)&&m.status===mt); return <><Tabs list={["upcoming","live","played"]} cur={mt} set={setMt} flex/>{ms.length?ms.map(card):<p className="empty">No matches now. Join upcoming!</p>}</>}
+    if(nav==="store") return <div className="pgb"><h3 style={{margin:"8px 0"}}>Clash Store</h3>{STORE.map(s=><div className="mi" key={s[0]}><span>{s[0]}</span><b style={{color:"var(--r)"}} onClick={()=>redeem(s)}>₹{s[1]} Redeem</b></div>)}</div>;
+    const r=[...U].sort((a,b)=>b.win-a.win), P=x=>(<div><div className="av">{x.name[0]}</div><b>{x.name}</b><div className="gn">₹{kf(x.win)}</div></div>);
+    return <><div className="pod">{P(r[1])}<div style={{marginTop:-14}}>{P(r[0])}</div>{P(r[2])}</div>
+      <div className="lr" style={{fontWeight:600}}><b>Name</b>Rank</div>
+      {r.slice(3).map((x,i)=><div key={x.id} className={"lr"+(x.id===1?" me":"")}><span className="av">{x.name[0]}</span><b>{x.name}<div className="gn">₹{kf(x.win)}</div></b>{i+4}</div>)}</>;
+  };
 
-    const handleWithdraw = (e) => {
-        e.preventDefault();
-        const amt = Number(withdrawAmount);
-        if (amt > winningBalance) {
-            alert("Insufficient winning balance!");
-            return;
-        }
-        setWinningBalance(winningBalance - amt);
-        const newTx = {
-            id: Date.now(),
-            type: "UPI Withdrawal",
-            amount: `-₹${amt}`,
-            status: "Processing",
-            time: new Date().toLocaleTimeString()
-        };
-        setTransactions([newTx, ...transactions]);
-        alert(`Withdrawal request of ₹${amt} sent to UPI ID: ${upiId}`);
-    };
+  const sub = () => { const back=["account","private","withdraw","tx","support"].includes(page)?"profile":null; let t="",h=null;
+    if(page==="wallet"){t="Wallet";h=<><div className="kv">Current Balance<b>₹{u.bal}</b></div><div className="kv">Winning Balance<b className="gn">₹{u.win}</b></div>{inp("a","Enter amount to add","number")}<button className="btn gb" onClick={addMoney}>Add</button></>}
+    if(page==="profile"){t="Profile";h=<><div style={{textAlign:"center",margin:10}}><div className="av" style={{width:90,height:90,fontSize:34,margin:"auto"}}>{u.name[0]}</div><h3 style={{marginTop:8}}>{u.name}</h3></div>
+      {[["Account Settings","account"],["Join Private Tournament","private"],["Withdrawals","withdraw"],["Transactions","tx"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:u.name,g:u.gid}:{})}>{n}<span>›</span></div>)}<p className="empty" style={{padding:20}}>Version 1.0.0</p></>}
+    if(page==="account"){t="Account";h=<>{inp("n","Game Name")}{inp("g","Game ID")}<button className="btn" onClick={()=>{upd(1,()=>({name:f.n||u.name,gid:f.g||""}));go("profile")}}>Save</button><button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:30}} onClick={()=>supabase.auth.signOut()}>Logout</button></>}
+    if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={joinCode}>Join</button></>}
+    if(page==="withdraw"){t="Withdrawal";h=<><div className="kv">Winning Balance<b className="gn">₹{u.win}</b></div>{inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" onClick={withdraw}>Withdraw</button></>}
+    if(page==="tx"){t="Transactions";h=txs.length?txs.map((x,i)=><div className="lr" key={i}><b>{x.t}<div style={{fontSize:10,color:"#777"}}>{x.d}</div></b><span className={x.a>0?"gn":""}>{x.a>0?"+":""}₹{x.a}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
+    if(page==="support"){t="Customer Support";h=<p className="empty">Add your WhatsApp / Telegram support link here.</p>}
+    return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>go(back)}>←</span>{t}</div><div className="pgb">{h}</div></> };
 
-    const handleSendNotification = (e) => {
-        e.preventDefault();
-        const newNotif = { id: Date.now(), title: notifTitle, body: notifBody };
-        setNotifications([newNotif, ...notifications]);
-        setNotifTitle('');
-        setNotifBody('');
-        alert("Notification broadcasted!");
-    };
+  const admin = () => {
+    if(!adm) return <div className="login"><Logo s={70}/><h2 style={{margin:"10px 0"}}>Admin Login</h2>{inp("em","Admin email","email")}{inp("pw","Password","password")}<button className="btn" onClick={adminLogin}>Login</button></div>;
+    let b=null;
+    if(at==="Dashboard") b=<div className="grid">{[["Users",U.length],["Matches",M.length],["Live now",M.filter(m=>m.status==="live").length],["Pending withdrawals",W.filter(w=>w.st==="pending").length]].map(([n,v])=><div className="stat" key={n}>{n}<h2>{v}</h2></div>)}</div>;
+    if(at==="Matches") b=<>
+      <div className="fg">{inp("t","Title")}<div><label>Mode</label><select value={f.g||T[0]} onChange={e=>setF({...f,g:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>{inp("m","Map")}{inp("s","Slots","number")}{inp("p","Prize ₹","number")}{inp("fee","Entry fee ₹","number")}{inp("d","Start time","datetime-local")}
+        <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div></div>
+      <button className="btn" onClick={addMatch}>Create match</button>
+      <table><tbody><tr><th>Match</th><th>Mode</th><th>Slots</th><th>Status</th><th>Actions</th></tr>
+        {[...M].reverse().map(m=><tr key={m.id}><td>#{m.id} {m.title}{m.priv?" 🔒"+m.code:""}</td><td>{m.tab}</td><td>{m.filled}/{m.slots}</td><td>{m.status}</td>
+          <td><button className="sm" onClick={()=>room(m)}>Room</button><button className="sm" onClick={()=>updM(m.id,{status:"live"})}>Live</button><button className="sm" onClick={()=>pay(m)}>Pay winner</button><button className="sm" onClick={()=>window.confirm("Delete match?")&&setM(a=>a.filter(x=>x.id!==m.id))}>Del</button></td></tr>)}</tbody></table></>;
+    if(at==="Users") b=<table><tbody><tr><th>Name</th><th>Game ID</th><th>Deposit</th><th>Winning</th><th></th></tr>
+      {U.map(x=><tr key={x.id}><td>{x.name}{x.ban?" (banned)":""}</td><td>{x.gid||"-"}</td><td>₹{x.bal}</td><td>₹{x.win}</td><td><button className="sm" onClick={()=>{const a=+prompt("Add amount ₹ (negative to deduct)");a&&upd(x.id,y=>({bal:y.bal+a}))}}>± Balance</button><button className="sm" onClick={()=>upd(x.id,y=>({ban:!y.ban}))}>{x.ban?"Unban":"Ban"}</button></td></tr>)}</tbody></table>;
+    if(at==="Withdrawals") b=W.length?<table><tbody><tr><th>User</th><th>Amount</th><th>UPI</th><th>Status</th><th></th></tr>
+      {W.map(w=><tr key={w.id}><td>{w.name}</td><td>₹{w.a}</td><td>{w.up}</td><td>{w.st}</td><td>{w.st==="pending"&&<><button className="sm" onClick={()=>wdAct(w,true)}>Approve</button><button className="sm" onClick={()=>wdAct(w,false)}>Reject</button></>}</td></tr>)}</tbody></table>:<p className="empty">No withdrawal requests</p>;
+    return <><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 Admin <a href="#" style={{marginLeft:"auto",fontSize:13}}>← Open app</a></div>
+      <div style={{margin:"14px 0"}}>{["Dashboard","Matches","Users","Withdrawals"].map(x=><button key={x} className="sm" style={x===at?{background:"#111",color:"#fff"}:null} onClick={()=>{setAt(x);setF({})}}>{x}</button>)}</div>{b}</>;
+  };
 
-    const handlePublishResult = (e) => {
-        e.preventDefault();
-        const resObj = { id: Date.now(), match: resMatch, winner: resWinner, prize: resPrize };
-        setAnnouncedResults([resObj, ...announcedResults]);
-        setResMatch('');
-        setResWinner('');
-        setResPrize('');
-        alert("Result published successfully!");
-    };
+  const isAdmin = hash === "#admin";
+  return (<div className="x7"><style>{css}</style>
+    <div id="app" className={isAdmin?"adm":""}>
+      {isAdmin ? admin() : boot ? <div className="sp"><Logo s={110}/>ClashX7</div> : page ? sub() : <>
+        <div className="hdr"><span className="av" onClick={()=>go("profile")}>{u.name[0]}</span><span className="brand"><Logo s={24}/>ClashX7</span><button className="ic" onClick={()=>go("wallet")}>₹{u.bal+u.win}</button></div>
+        {body()}
+        <nav>{NAV.map(([n,l,d])=><a key={n} className={nav===n?"on":""} onClick={()=>setNav(n)}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>)}</nav></>}
+    </div></div>);
+}
 
-    const handleSupportSubmit = (e) => {
-        e.preventDefault();
-        alert("Support ticket sent to admin successfully!");
-        setSupportMsg('');
-    };
-
-    if (!isLoggedIn) {
-        return (
-            <div style={{ fontFamily: 'Segoe UI', backgroundColor: '#111', minHeight: '100vh', maxWidth: '480px', margin: '0 auto', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', color: '#fff' }}>
-                <div style={{ background: '#1c1c1c', padding: '25px', borderRadius: '12px', border: '1px solid #d32f2f' }}>
-                    <h2 style={{ fontSize: '20px', color: '#d32f2f', textAlign: 'center', marginBottom: '20px', fontWeight: 'bold' }}>CLASHX7 LOGIN</h2>
-                    <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ padding: '12px', fontSize: '14px', borderRadius: '6px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ padding: '12px', fontSize: '14px', borderRadius: '6px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}>Login</button>
-                    </form>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div style={{ fontFamily: 'Segoe UI, sans-serif', backgroundColor: '#121212', minHeight: '100vh', paddingBottom: '70px', maxWidth: '480px', margin: '0 auto', color: '#fff', position: 'relative', border: '1px solid #333' }}>
-            
-            {/* Top Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#1e1e1e', borderBottom: '1px solid #333', position: 'sticky', top: 0, zIndex: 1000 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#d32f2f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>🔥</div>
-                    <span style={{ fontWeight: '900', color: '#d32f2f', fontSize: '16px', letterSpacing: '1px' }}>CLASHX7</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <div onClick={() => setCurrentTab('wallet')} style={{ background: '#2c2c2c', padding: '6px 12px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', border: '1px solid #444' }}>
-                        ₹ {walletBalance} 💳
-                    </div>
-                    {email === "parimaltikadar110@gmail.com" && (
-                        <button onClick={() => setCurrentTab('admin')} style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>Admin Panel</button>
-                    )}
-                </div>
-            </div>
-
-            {/* HOME TAB */}
-            {currentTab === 'home' && (
-                <div>
-                    {/* Sub-menu bar matching video */}
-                    <div style={{ display: 'flex', overflowX: 'auto', background: '#181818', padding: '8px 10px', borderBottom: '1px solid #333', gap: '8px', whiteSpace: 'nowrap' }}>
-                        {[
-                            { id: 'solo_br', label: 'SOLO BR' },
-                            { id: 'duo_br', label: 'DUO BR' },
-                            { id: 'duo_kill', label: 'DUO PR KILL' },
-                            { id: 'lone_wolf', label: 'LONE WOLF' },
-                            { id: 'cs_challengers', label: 'CS CHALLENGERS' }
-                        ].map(tab => (
-                            <button key={tab.id} onClick={() => setSubTab(tab.id)} style={{ background: subTab === tab.id ? '#d32f2f' : 'transparent', color: subTab === tab.id ? '#fff' : '#aaa', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div style={{ padding: '12px' }}>
-                        {matches.filter(m => subTab === 'solo_br' || m.category === subTab).length === 0 ? (
-                            <div style={{ textAlign: 'center', color: '#888', padding: '40px' }}>No tournaments available in this category.</div>
-                        ) : (
-                            matches.filter(m => subTab === 'solo_br' || m.category === subTab).map(m => (
-                                <div key={m.id} style={{ background: '#1c1c1c', borderRadius: '8px', padding: '12px', marginBottom: '10px', border: '1px solid #333' }}>
-                                    <div style={{ fontSize: '12px', color: '#aaa' }}>SOLO • BERMUDA • 32 SLOTS</div>
-                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff', margin: '4px 0' }}>{m.title}</div>
-                                    <div style={{ fontSize: '12px', color: '#d32f2f', fontWeight: '700' }}>Prize Pool: {m.prize}</div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #444', paddingTop: '8px', marginTop: '6px', fontSize: '11px', color: '#aaa' }}>
-                                        <div>
-                                            <span style={{ color: '#ff9800', display: 'block' }}>{m.spots}</span>
-                                            <span>{m.time}</span>
-                                        </div>
-                                        <button onClick={() => handleJoinMatch(m)} style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                                            {m.fee} JOIN
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* MY MATCHES TAB */}
-            {currentTab === 'matches' && (
-                <div style={{ padding: '15px' }}>
-                    <h3 style={{ fontSize: '14px', color: '#fff', marginBottom: '10px' }}>My Joined Matches</h3>
-                    {myJoinedMatches.length === 0 ? (
-                        <p style={{ fontSize: '12px', color: '#888' }}>No matches joined yet. Join upcoming tournaments!</p>
-                    ) : (
-                        myJoinedMatches.map(jm => (
-                            <div key={jm.id} style={{ background: '#1c1c1c', padding: '12px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #333', fontSize: '12px' }}>
-                                <div style={{ fontWeight: 'bold', color: '#fff' }}>{jm.title}</div>
-                                <div style={{ color: '#d32f2f', fontSize: '11px', marginTop: '4px' }}>Status: Registered (Upcoming)</div>
-                                <div style={{ color: '#aaa', fontSize: '10px', marginTop: '2px' }}>Time: {jm.time}</div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            )}
-
-            {/* LEADERBOARD TAB */}
-            {currentTab === 'leaderboard' && (
-                <div style={{ padding: '15px' }}>
-                    <h3 style={{ fontSize: '14px', color: '#fff', marginBottom: '12px' }}>Top Players Leaderboard</h3>
-                    <div style={{ background: '#1c1c1c', borderRadius: '8px', padding: '12px', border: '1px solid #333' }}>
-                        {appUsers.map((u, idx) => (
-                            <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #2c2c2c', fontSize: '12px', alignItems: 'center' }}>
-                                <div><b>{idx + 1}. {u.name}</b> <span style={{ fontSize: '10px', color: '#888' }}>({u.role})</span></div>
-                                <div style={{ color: '#4caf50', fontWeight: 'bold' }}>₹145.6k</div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* WALLET TAB (Replacing Clash Store) */}
-            {currentTab === 'wallet' && (
-                <div style={{ padding: '15px' }}>
-                    <h3 style={{ fontSize: '14px', color: '#fff', marginBottom: '12px' }}>Wallet & Transactions</h3>
-                    
-                    <div style={{ background: '#1c1c1c', padding: '15px', borderRadius: '8px', border: '1px solid #333', marginBottom: '15px' }}>
-                        <div style={{ fontSize: '13px', color: '#aaa' }}>Current Deposit Balance</div>
-                        <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#4caf50', margin: '5px 0' }}>₹ {walletBalance}</div>
-                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                            <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} style={{ padding: '8px', width: '100px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', fontSize: '12px' }} />
-                            <button onClick={handleDeposit} style={{ background: '#4caf50', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Add Money</button>
-                        </div>
-                    </div>
-
-                    <div style={{ background: '#1c1c1c', padding: '15px', borderRadius: '8px', border: '1px solid #333', marginBottom: '15px' }}>
-                        <div style={{ fontSize: '13px', color: '#aaa' }}>Winning Balance (Withdraw)</div>
-                        <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#ff9800', margin: '5px 0' }}>₹ {winningBalance}</div>
-                        <form onSubmit={handleWithdraw} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                            <input type="number" placeholder="Amount" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', fontSize: '12px' }} required />
-                            <input type="text" placeholder="Enter UPI ID (e.g. okaxis@paytm)" value={upiId} onChange={(e) => setUpiId(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', fontSize: '12px' }} required />
-                            <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Withdraw Money</button>
-                        </form>
-                    </div>
-
-                    <div style={{ background: '#1c1c1c', padding: '15px', borderRadius: '8px', border: '1px solid #333' }}>
-                        <h4 style={{ fontSize: '13px', marginBottom: '8px' }}>Transaction History</h4>
-                        {transactions.length === 0 ? (
-                            <p style={{ fontSize: '11px', color: '#888' }}>No transactions recorded yet.</p>
-                        ) : (
-                            transactions.map(tx => (
-                                <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #2c2c2c', fontSize: '11px' }}>
-                                    <div>
-                                        <div style={{ fontWeight: 'bold' }}>{tx.type}</div>
-                                        <div style={{ fontSize: '9px', color: '#888' }}>{tx.time}</div>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontWeight: 'bold', color: tx.amount.includes('+') ? '#4caf50' : '#d32f2f' }}>{tx.amount}</div>
-                                        <div style={{ fontSize: '9px', color: '#aaa' }}>{tx.status}</div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* PROFILE TAB */}
-            {currentTab === 'profile' && (
-                <div style={{ padding: '15px' }}>
-                    <div style={{ background: '#1c1c1c', padding: '15px', borderRadius: '8px', textAlign: 'center', border: '1px solid #333', marginBottom: '15px' }}>
-                        <div style={{ width: '50px', height: '50px', background: '#d32f2f', color: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 'bold', margin: '0 auto 8px auto' }}>D</div>
-                        <h4 style={{ fontSize: '14px' }}>{gameName}</h4>
-                        <p style={{ fontSize: '11px', color: '#888' }}>Game ID: {gameId}</p>
-                    </div>
-
-                    <div style={{ background: '#1c1c1c', borderRadius: '8px', border: '1px solid #333', overflow: 'hidden' }}>
-                        {[
-                            { title: 'Account Settings', action: () => alert("Account settings updated.") },
-                            { title: 'Results & Winners', action: () => setCurrentTab('results') },
-                            { title: 'Customer Support', action: () => setCurrentTab('support') },
-                            { title: 'Logout', action: () => setIsLoggedIn(false) }
-                        ].map((item, idx) => (
-                            <div key={idx} onClick={item.action} style={{ padding: '12px 15px', borderBottom: '1px solid #2c2c2c', fontSize: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{item.title}</span>
-                                <span>›</span>
-                            </div>
-                        ))}
-                    </div>
-                    <div style={{ textAlign: 'center', fontSize: '10px', color: '#666', marginTop: '15px' }}>Version 1.0.7</div>
-                </div>
-            )}
-
-            {/* ADMIN PANEL */}
-            {currentTab === 'admin' && email === "parimaltikadar110@gmail.com" && (
-                <div style={{ padding: '15px' }}>
-                    <h3 style={{ fontSize: '15px', color: '#d32f2f', marginBottom: '15px', fontWeight: 'bold' }}>⚡ ClashX7 Super Admin Panel</h3>
-                    
-                    {/* Match Creation */}
-                    <form onSubmit={handleCreateMatch} style={{ background: '#1c1c1c', padding: '12px', borderRadius: '8px', border: '1px solid #d32f2f', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <h4 style={{ fontSize: '13px', color: '#fff' }}>Create New Tournament Match</h4>
-                        <input type="text" placeholder="Match Title (e.g. FREE FIRE - SOLO)" value={matchTitle} onChange={(e) => setMatchTitle(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <select value={matchCategory} onChange={(e) => setMatchCategory(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }}>
-                            <option value="solo_br">SOLO BR</option>
-                            <option value="duo_br">DUO BR</option>
-                            <option value="duo_kill">DUO PR KILL</option>
-                            <option value="lone_wolf">LONE WOLF</option>
-                            <option value="cs_challengers">CS CHALLENGERS</option>
-                        </select>
-                        <input type="text" placeholder="Prize Pool (e.g. ₹225)" value={prizePool} onChange={(e) => setPrizePool(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <input type="text" placeholder="Entry Fee (e.g. ₹8)" value={entryFee} onChange={(e) => setEntryFee(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <input type="text" placeholder="Match Time (e.g. 06 Oct 12:00 AM)" value={matchTime} onChange={(e) => setMatchTime(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Publish Match</button>
-                    </form>
-
-                    {/* Declare Winner */}
-                    <form onSubmit={handlePublishResult} style={{ background: '#1c1c1c', padding: '12px', borderRadius: '8px', border: '1px solid #333', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <h4 style={{ fontSize: '13px', color: '#fff' }}>Publish Match Result & Winner</h4>
-                        <input type="text" placeholder="Match Name" value={resMatch} onChange={(e) => setResMatch(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <input type="text" placeholder="Winner Name" value={resWinner} onChange={(e) => setResWinner(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <input type="text" placeholder="Prize Amount Won" value={resPrize} onChange={(e) => setResPrize(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <button type="submit" style={{ background: '#4caf50', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Publish Winner</button>
-                    </form>
-
-                    {/* Notification Broadcast */}
-                    <form onSubmit={handleSendNotification} style={{ background: '#1c1c1c', padding: '12px', borderRadius: '8px', border: '1px solid #333', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <h4 style={{ fontSize: '13px', color: '#fff' }}>Broadcast Notification</h4>
-                        <input type="text" placeholder="Notification Title" value={notifTitle} onChange={(e) => setNotifTitle(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff' }} required />
-                        <textarea placeholder="Notification Body Message" value={notifBody} onChange={(e) => setNotifBody(e.target.value)} style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', resize: 'none', height: '45px' }} required />
-                        <button type="submit" style={{ background: '#333', color: '#fff', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Send Broadcast</button>
-                    </form>
-                </div>
-            )}
-
-            {/* RESULTS TAB */}
-            {currentTab === 'results' && (
-                <div style={{ padding: '15px' }}>
-                    <h3 style={{ fontSize: '14px', color: '#fff', marginBottom: '10px' }}>Match Results & Winners</h3>
-                    <div style={{ background: '#1c1c1c', padding: '12px', borderRadius: '8px', border: '1px solid #333' }}>
-                        {announcedResults.length === 0 ? (
-                            <p style={{ fontSize: '11px', color: '#888' }}>No results declared yet by admin.</p>
-                        ) : (
-                            announcedResults.map(res => (
-                                <div key={res.id} style={{ background: '#222', padding: '10px', borderRadius: '6px', marginBottom: '8px', border: '1px solid #444', fontSize: '12px' }}>
-                                    <div style={{ fontWeight: 'bold', color: '#fff' }}>{res.match}</div>
-                                    <div style={{ color: '#4caf50', marginTop: '3px' }}>Winner: <b>{res.winner}</b></div>
-                                    <div style={{ color: '#ff9800', fontWeight: 'bold' }}>Prize Won: {res.prize}</div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* SUPPORT TAB */}
-            {currentTab === 'support' && (
-                <div style={{ padding: '15px' }}>
-                    <h3 style={{ fontSize: '14px', color: '#fff', marginBottom: '10px' }}>24/7 Customer Support</h3>
-                    <div style={{ background: '#1c1c1c', padding: '15px', borderRadius: '8px', border: '1px solid #333' }}>
-                        <form onSubmit={handleSupportSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <textarea placeholder="Describe your issue or payment query..." value={supportMsg} onChange={(e) => setSupportMsg(e.target.value)} style={{ padding: '10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #444', background: '#222', color: '#fff', resize: 'none', height: '70px' }} required />
-                            <button type="submit" style={{ background: '#d32f2f', color: '#fff', border: 'none', padding: '9px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>Submit Ticket</button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Bottom Navigation Bar matching video */}
-            <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: '#181818', display: 'flex', justifyContent: 'space-around', padding: '10px 0', borderTop: '1px solid #333', zIndex: 1000 }}>
-                <div onClick={() => setCurrentTab('home')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'home' ? '#d32f2f' : '#888', fontWeight: '700', cursor: 'pointer' }}>🏠<br/>Home</div>
-                <div onClick={() => setCurrentTab('matches')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'matches' ? '#d32f2f' : '#888', fontWeight: '700', cursor: 'pointer' }}>🎮<br/>My Matches</div>
-                <div onClick={() => setCurrentTab('wallet')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'wallet' ? '#d32f2f' : '#888', fontWeight: '700', cursor: 'pointer' }}>💳<br/>Wallet</div>
-                <div onClick={() => setCurrentTab('leaderboard')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'leaderboard' ? '#d32f2f' : '#888', fontWeight: '700', cursor: 'pointer' }}>🏆<br/>Leaderboard</div>
-                <div onClick={() => setCurrentTab('profile')} style={{ textAlign: 'center', fontSize: '11px', color: currentTab === 'profile' ? '#d32f2f' : '#888', fontWeight: '700', cursor: 'pointer' }}>👤<br/>Profile</div>
-            </div>
-
-        </div>
-    );
-};
-
-export default ClashX7App;
+const css = `
+.x7{--r:#f5403a;--g:#22c55e;background:#e5e7eb;min-height:100vh;color:#111;font-size:14px}
+.x7,.x7 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.x7 #app{max-width:480px;min-height:100vh;margin:auto;background:#fff;padding-bottom:70px;position:relative}
+.x7 #app.adm{max-width:980px;padding:16px}
+.sp{background:var(--r);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:10px;font-weight:800;font-size:26px}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:5}
+.av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;cursor:pointer}
+.ic{border:1px solid #ddd;border-radius:15px;background:#fff;height:30px;padding:0 10px;font-weight:600;cursor:pointer}
+.brand{display:flex;align-items:center;gap:6px;font-weight:800}
+.tabs{display:flex;overflow-x:auto;border-bottom:1px solid #eee;scrollbar-width:none}
+.tabs b{padding:12px;white-space:nowrap;font-size:12px;font-weight:500;color:#555;cursor:pointer;border-bottom:2px solid transparent}
+.tabs b.on{color:var(--r);border-color:var(--r)}
+.card{margin:8px;border:1px solid #eee;border-radius:6px;position:relative;overflow:hidden;padding:10px 10px 0;box-shadow:0 1px 3px #0001}
+.tags i{font-style:normal;font-size:9px;border:1px solid #333;border-radius:4px;padding:2px 5px;margin-right:6px}
+.row{display:flex;justify-content:space-between;gap:8px;margin-top:10px}
+.row h4{font-size:13px;margin:8px 0 14px}
+.pz{color:var(--r);font-weight:700;font-size:13px}
+.thw{text-align:center;font-size:10px;font-weight:600}
+.th{width:80px;height:80px;border-radius:6px;display:grid;place-items:center;margin-bottom:3px}
+.bar{height:3px;background:#eee;margin-top:6px}.bar u{display:block;height:100%;background:var(--r)}
+.foot{display:flex;justify-content:space-between;font-size:10px;color:var(--r);padding:6px 0 30px}
+.join{position:absolute;right:0;bottom:0;background:var(--r);color:#fff;border:0;font-weight:800;padding:8px 14px 8px 32px;clip-path:polygon(18px 0,100% 0,100% 100%,0 100%);cursor:pointer;font-size:13px}
+.join:disabled{background:#9ca3af}
+.room{background:#fef2f2;color:var(--r);font-size:11px;padding:5px 8px;margin:6px -10px 0;font-weight:600}
+.x7 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:9}
+.x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}
+.x7 nav a.on{color:var(--r)}
+.x7 nav svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pgh{display:flex;align-items:center;gap:14px;padding:14px;font-weight:600}
+.pgb{padding:12px}
+.x7 label{font-size:11px;color:#555}
+.x7 input,.x7 select{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:6px;margin:4px 0 10px;background:#fafafa}
+.btn{width:100%;padding:11px;border:0;border-radius:6px;background:var(--r);color:#fff;font-weight:600;cursor:pointer}
+.gb{background:var(--g)}
+.kv{display:flex;justify-content:space-between;padding:10px 4px;font-weight:500}
+.mi{display:flex;justify-content:space-between;padding:14px;border:1px solid #eee;border-radius:6px;margin:6px 0;cursor:pointer}
+.empty{text-align:center;color:#555;padding:60px 20px;font-size:13px}
+.pod{display:flex;justify-content:space-around;align-items:flex-start;padding:24px 0 30px;text-align:center;font-size:12px}
+.pod .av{width:64px;height:64px;font-size:22px;margin:0 auto 6px}
+.lr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #eee}
+.lr b{flex:1}.lr.me{background:#dbeafe}.gn{color:#16a34a;font-weight:600}
+.login{max-width:320px;margin:80px auto;text-align:center}
+.adm table{width:100%;border-collapse:collapse;margin-top:12px}
+.x7 td,.x7 th{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.stat{background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:14px}
+.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.sm{padding:5px 9px;border:1px solid #ddd;background:#fff;border-radius:5px;cursor:pointer;margin:2px;font-size:12px}
+`;
