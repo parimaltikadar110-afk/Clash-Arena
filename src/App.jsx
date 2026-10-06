@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { supabase } from "./supabaseClient"; // <- change to the path of your existing Supabase client file
+
+// Auto-detects your existing Supabase client file (src/supabase*.js, src/lib/supabase*.js ...).
+// No fixed import path, so the build cannot fail here even if the file is missing.
+const found = import.meta.glob(["./supabase*.{js,jsx,ts,tsx}","./lib/supabase*.{js,jsx,ts,tsx}","./utils/supabase*.{js,jsx,ts,tsx}","./config/supabase*.{js,jsx,ts,tsx}","./services/supabase*.{js,jsx,ts,tsx}"],{eager:true});
+const mod = Object.values(found)[0];
+const supabase = [mod?.supabase, mod?.supabaseClient, mod?.default].find(x=>x?.auth?.getSession) || null;
 
 /* ClashX7 – single-file React app. Usage: replace src/App.jsx (Vite/CRA). Admin panel: open /#admin
    Data is demo state. To connect Supabase, swap the actions marked  // DB  with supabase.from('matches' | 'profiles' | 'withdrawals') calls. */
@@ -35,8 +40,8 @@ export default function App() {
   useEffect(()=>{const h=()=>setHash(window.location.hash);window.addEventListener("hashchange",h);const t=setTimeout(()=>setBoot(false),1200);return()=>{window.removeEventListener("hashchange",h);clearTimeout(t)}},[]);
 
   const isOwner = s => s?.user?.email?.toLowerCase() === ADMIN_EMAIL;
-  useEffect(()=>{supabase.auth.getSession().then(({data})=>setAdm(isOwner(data.session)));const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setAdm(isOwner(s)));return()=>l.subscription.unsubscribe()},[]);
-  const adminLogin = async () => { const {data,error}=await supabase.auth.signInWithPassword({email:f.em||"",password:f.pw||""}); if(error) return alert(error.message); if(!isOwner(data.session)){await supabase.auth.signOut();alert("This account is not an admin")} };
+  useEffect(()=>{if(!supabase)return;supabase.auth.getSession().then(({data})=>setAdm(isOwner(data.session)));const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setAdm(isOwner(s)));return()=>l.subscription.unsubscribe()},[]);
+  const adminLogin = async () => { if(!supabase) return alert("Supabase client file not found. Create src/supabaseClient.js"); const {data,error}=await supabase.auth.signInWithPassword({email:f.em||"",password:f.pw||""}); if(error) return alert(error.message); if(!isOwner(data.session)){await supabase.auth.signOut();alert("This account is not an admin")} };
 
   const u = U.find(x=>x.id===1);
   const upd = (id,fn) => setU(a=>a.map(x=>x.id===id?{...x,...fn(x)}:x));
@@ -94,7 +99,7 @@ export default function App() {
     if(page==="wallet"){t="Wallet";h=<><div className="kv">Current Balance<b>₹{u.bal}</b></div><div className="kv">Winning Balance<b className="gn">₹{u.win}</b></div>{inp("a","Enter amount to add","number")}<button className="btn gb" onClick={addMoney}>Add</button></>}
     if(page==="profile"){t="Profile";h=<><div style={{textAlign:"center",margin:10}}><div className="av" style={{width:90,height:90,fontSize:34,margin:"auto"}}>{u.name[0]}</div><h3 style={{marginTop:8}}>{u.name}</h3></div>
       {[["Account Settings","account"],["Join Private Tournament","private"],["Withdrawals","withdraw"],["Transactions","tx"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:u.name,g:u.gid}:{})}>{n}<span>›</span></div>)}<p className="empty" style={{padding:20}}>Version 1.0.0</p></>}
-    if(page==="account"){t="Account";h=<>{inp("n","Game Name")}{inp("g","Game ID")}<button className="btn" onClick={()=>{upd(1,()=>({name:f.n||u.name,gid:f.g||""}));go("profile")}}>Save</button><button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:30}} onClick={()=>supabase.auth.signOut()}>Logout</button></>}
+    if(page==="account"){t="Account";h=<>{inp("n","Game Name")}{inp("g","Game ID")}<button className="btn" onClick={()=>{upd(1,()=>({name:f.n||u.name,gid:f.g||""}));go("profile")}}>Save</button><button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:30}} onClick={()=>supabase?.auth.signOut()}>Logout</button></>}
     if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={joinCode}>Join</button></>}
     if(page==="withdraw"){t="Withdrawal";h=<><div className="kv">Winning Balance<b className="gn">₹{u.win}</b></div>{inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" onClick={withdraw}>Withdraw</button></>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map((x,i)=><div className="lr" key={i}><b>{x.t}<div style={{fontSize:10,color:"#777"}}>{x.d}</div></b><span className={x.a>0?"gn":""}>{x.a>0?"+":""}₹{x.a}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
