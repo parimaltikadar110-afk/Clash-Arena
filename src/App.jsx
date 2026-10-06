@@ -1,25 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-// Auto-detects your existing Supabase client file (src/supabase*.js, src/lib/supabase*.js ...).
-// No fixed import path, so the build cannot fail here even if the file is missing.
-const found = import.meta.glob(["./supabase*.{js,jsx,ts,tsx}","./lib/supabase*.{js,jsx,ts,tsx}","./utils/supabase*.{js,jsx,ts,tsx}","./config/supabase*.{js,jsx,ts,tsx}","./services/supabase*.{js,jsx,ts,tsx}"],{eager:true});
-const mod = Object.values(found)[0];
-const supabase = [mod?.supabase, mod?.supabaseClient, mod?.default].find(x=>x?.auth?.getSession) || null;
-
-/* ClashX7 – single-file React app. Usage: replace src/App.jsx (Vite/CRA). Admin panel: open /#admin
-   Data is demo state. To connect Supabase, swap the actions marked  // DB  with supabase.from('matches' | 'profiles' | 'withdrawals') calls. */
-
+/* ClashX7 - real Supabase version. Needs: schema.sql run once, env vars VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY,
+   and "@supabase/supabase-js" in package.json. Admin panel: /#admin (only for the admin email). */
+const SB_URL = import.meta.env.VITE_SUPABASE_URL, SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = SB_URL && SB_KEY ? createClient(SB_URL, SB_KEY) : null;
+const ADMIN_EMAIL = "parimaltikadar110@gmail.com"; // UI only; real protection = is_admin() in schema.sql
 const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
-const ADMIN_EMAIL = "parimaltikadar110@gmail.com"; // UI gate only; real protection = the RLS policies (is_admin() SQL)
-const STORE = [["Google Play ₹50",60],["Amazon Voucher ₹100",120],["FF Diamonds 100",90]];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["store","Clash Store","M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v10M9 10h6"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
-const now = Date.now();
-const seedU = [["Player",0],["Saksham",102000],["ISAGI",145600],["Mehebub",95500],["Abhi",84000],["ITZ ARYAN",80900],["Arab",69500],["Krishna",68100],["Dynamoop",67000],["Hiri",57000]].map(([name,win],i)=>({id:i+1,name,win,bal:0,gid:"",ban:false}));
-const seedM = [];
-T.forEach((t,i)=>{for(let k=0;k<3;k++)seedM.push({id:1000+seedM.length,tab:t,title:"FF - "+["SOLO HUNTER","NEW THUNDER","OLD THUNDER"][k],map:["BERMUDA","PURGATORY","KALAHARI"][k],slots:[32,48,12][k],filled:[3,20,9][k],prize:[225,145,330][k],fee:[6,5,8][k],time:now+(i*3+k+1)*36e5,status:"upcoming",c:COL[(i+k)%5]})});
-seedM.push({id:1999,tab:T[0],title:"VIP CUSTOM",map:"BERMUDA",slots:12,filled:0,prize:500,fee:10,time:now+9e6,status:"upcoming",priv:true,code:"X7VIP",c:COL[0]});
-
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 
@@ -33,106 +22,121 @@ const Logo = ({s=64}) => (
 );
 
 export default function App() {
-  const [U,setU] = useState(seedU), [M,setM] = useState(seedM), [W,setW] = useState([]);
-  const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming");
-  const [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [f,setF] = useState({});
-  const [boot,setBoot] = useState(true), [hash,setHash] = useState(window.location.hash), [adm,setAdm] = useState(false), [at,setAt] = useState("Dashboard");
-  useEffect(()=>{const h=()=>setHash(window.location.hash);window.addEventListener("hashchange",h);const t=setTimeout(()=>setBoot(false),1200);return()=>{window.removeEventListener("hashchange",h);clearTimeout(t)}},[]);
+  const [session,setSession] = useState(null), [ready,setReady] = useState(false), [hash,setHash] = useState(window.location.hash);
+  const [me,setMe] = useState(null), [M,setM] = useState([]), [rooms,setRooms] = useState({}), [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
+  const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
+  const isAdmin = session?.user?.email?.toLowerCase() === ADMIN_EMAIL;
 
-  const isOwner = s => s?.user?.email?.toLowerCase() === ADMIN_EMAIL;
-  useEffect(()=>{if(!supabase)return;supabase.auth.getSession().then(({data})=>setAdm(isOwner(data.session)));const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setAdm(isOwner(s)));return()=>l.subscription.unsubscribe()},[]);
-  const adminLogin = async () => { if(!supabase) return alert("Supabase client file not found. Create src/supabaseClient.js"); const {data,error}=await supabase.auth.signInWithPassword({email:f.em||"",password:f.pw||""}); if(error) return alert(error.message); if(!isOwner(data.session)){await supabase.auth.signOut();alert("This account is not an admin")} };
+  useEffect(()=>{
+    const h = () => setHash(window.location.hash); window.addEventListener("hashchange",h);
+    if(!supabase){setReady(true);return()=>window.removeEventListener("hashchange",h)}
+    supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
+    const {data:l} = supabase.auth.onAuthStateChange((_e,s)=>setSession(s));
+    return()=>{l.subscription.unsubscribe();window.removeEventListener("hashchange",h)};
+  },[]);
 
-  const u = U.find(x=>x.id===1);
-  const upd = (id,fn) => setU(a=>a.map(x=>x.id===id?{...x,...fn(x)}:x));
-  const updM = (id,p) => setM(a=>a.map(x=>x.id===id?{...x,...p}:x));
-  const addTx = (t,a) => setTxs(x=>[{t,a,d:new Date().toLocaleString()},...x]);
+  const load = useCallback(async()=>{
+    if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
+    const [p,m,j,t,l,r] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms")]);
+    setMe(p.data); setM(m.data||[]); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
+    if(session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false})]);setAllU(u.data||[]);setW(w.data||[])}
+  },[session]);
+  useEffect(()=>{load();const i=setInterval(load,30000);return()=>clearInterval(i)},[load]);
+
   const go = (p,init={}) => {setF(init);setPage(p)};
   const inp = (k,l,t="text") => (<><label>{l}</label><input type={t} value={f[k]??""} onChange={e=>setF({...f,[k]:e.target.value})}/></>);
+  const rpc = async (fn,args) => { const {error}=await supabase.rpc(fn,args); if(error){alert(error.message);return false} await load(); return true };
+  const run = async p => { const {error}=await p; if(error) return alert(error.message); await load() };
 
-  // ---- user actions ----
-  const join = id => { // DB: insert into participants + deduct wallet (do this in a Postgres function/RPC)
-    const m = M.find(x=>x.id===id);
-    if(!u.gid) return alert("Set your Game ID first (Profile → Account Settings)");
-    if(u.bal+u.win < m.fee) return alert("Not enough balance. Add money in Wallet.");
-    const fb = Math.min(u.bal,m.fee);
-    upd(1,x=>({bal:x.bal-fb,win:x.win-(m.fee-fb)})); updM(id,{filled:m.filled+1}); setJoined(j=>[...j,id]); addTx("Joined "+m.title,-m.fee); setPage(null);
-  };
-  const joinCode = () => { const m=M.find(x=>x.priv&&x.code===(f.c||"").trim().toUpperCase()); m?join(m.id):alert("Invalid code") };
-  const addMoney = () => { const a=+f.a; if(a>0){upd(1,x=>({bal:x.bal+a}));addTx("Added money",a);go(null)} }; // DB: real top-up needs payment gateway + server-side verification
-  const withdraw = () => { const a=+f.a; if(!(a>0)||a>u.win||!f.u) return alert("Check amount (max = winning balance) and UPI ID");
-    upd(1,x=>({win:x.win-a})); setW(w=>[...w,{id:w.length+1,uid:1,name:u.name,a,up:f.u,st:"pending"}]); addTx("Withdrawal requested",-a); alert("Request sent"); go("profile") };
-  const redeem = ([n,p]) => { if(u.win<p) return alert("Need ₹"+p+" winning balance"); upd(1,x=>({win:x.win-p})); addTx("Redeemed "+n,-p); alert("Requested! Admin will deliver your code.") };
+  // ---- auth ----
+  const auth = async () => { const e=(f.em||"").trim(), p=f.pw||""; if(!e||!p) return alert("Email and password required");
+    const r = mode==="up" ? await supabase.auth.signUp({email:e,password:p,options:{data:{name:f.nm||e.split("@")[0]}}}) : await supabase.auth.signInWithPassword({email:e,password:p});
+    if(r.error) return alert(r.error.message);
+    if(mode==="up"&&!r.data.session) alert("Account created. Confirm your email (check inbox/spam), then log in."); };
+  const logout = async () => { await supabase.auth.signOut(); setMe(null); setPage(null); setF({}) };
+
+  // ---- player actions ----
+  const join = async id => { if(await rpc("join_match",{p_match:id})) setPage(null) };
+  const saveAcc = () => run(supabase.from("profiles").update({name:f.n||me.name,game_id:f.g||""}).eq("id",me.id)).then(()=>go("profile"));
+  const withdraw = async () => { if(await rpc("request_withdrawal",{p_amt:+f.a,p_upi:f.u||""})){alert("Request sent");go("profile")} };
 
   // ---- admin actions ----
-  const addMatch = () => { if(!f.t||!f.d) return alert("Title and time are required");
-    const id=Math.max(...M.map(m=>m.id))+1; setM(a=>[...a,{id,tab:f.g||T[0],title:f.t,map:f.m||"BERMUDA",slots:+f.s||32,filled:0,prize:+f.p||0,fee:+f.fee||0,time:new Date(f.d).getTime(),status:"upcoming",priv:f.v==="1",code:"X7"+Math.random().toString(36).slice(2,6).toUpperCase(),c:COL[id%5]}]); setF({}) };
-  const room = m => { const r=prompt("Room ID?",m.room||""); if(r===null) return; updM(m.id,{room:r,pass:prompt("Room password?",m.pass||"")||""}) };
-  const pay = m => { const w=U.find(x=>x.name===prompt("Winner name?")), a=+prompt("Prize amount ₹?",m.prize); if(!w||!(a>0)) return alert("User not found / bad amount"); upd(w.id,x=>({win:x.win+a})); updM(m.id,{status:"played"}) };
-  const wdAct = (w,ok) => { setW(a=>a.map(x=>x.id===w.id?{...x,st:ok?"paid":"rejected"}:x)); if(!ok) upd(w.uid,x=>({win:x.win+w.a})) };
+  const addMatch = async () => { if(!f.t||!f.d) return alert("Title and time are required"); const pv=f.v==="1";
+    const {error}=await supabase.from("matches").insert({title:f.t,mode:f.g||T[0],map:f.m||"BERMUDA",slots:+f.s||32,prize:+f.p||0,fee:+f.fee||0,starts_at:new Date(f.d).toISOString(),is_private:pv,code:pv?"X7"+Math.random().toString(36).slice(2,6).toUpperCase():null});
+    if(error) return alert(error.message); setF({}); load() };
+  const room = m => { const o=rooms[m.id]||{}, r=prompt("Room ID?",o.room_id||""); if(r===null) return; run(supabase.from("match_rooms").upsert({match_id:m.id,room_id:r,room_pass:prompt("Room password?",o.room_pass||"")||""})) };
+  const setSt = (id,s) => run(supabase.from("matches").update({status:s}).eq("id",id));
+  const pay = m => { const n=prompt("Winner name?"), w=allU.find(x=>x.name===n), a=+prompt("Prize amount ₹?",m.prize); if(!w||!(a>0)) return alert("User not found / bad amount"); rpc("admin_pay_winner",{p_match:m.id,p_user:w.id,p_amt:a}) };
+  const adjust = x => { const a=+prompt("Add amount ₹ (negative to deduct)"); a&&rpc("admin_adjust_balance",{p_user:x.id,p_amt:a}) };
 
   // ---- UI pieces ----
-  const card = m => { const left=m.slots-m.filled, j=joined.includes(m.id); return (
+  const card = m => { const left=m.slots-m.filled, j=joined.includes(m.id), r=rooms[m.id]; return (
     <div className="card" key={m.id}>
-      <div className="tags"><i>{m.tab.split(" ")[0]}</i><i>{m.map}</i><i>{m.slots} SLOTS</i></div>
+      <div className="tags"><i>{m.mode.split(" ")[0]}</i><i>{m.map}</i><i>{m.slots} SLOTS</i></div>
       <div className="row"><div><h4>{m.title}</h4><p className="pz">Prize Pool – ₹{m.prize}</p></div>
-        <div className="thw"><div className="th" style={{background:`linear-gradient(135deg,${m.c},#111)`}}><Logo s={34}/></div>{fmt(m.time)}</div></div>
+        <div className="thw"><div className="th" style={{background:`linear-gradient(135deg,${COL[m.id%5]},#111)`}}><Logo s={34}/></div>{fmt(m.starts_at)}</div></div>
       <div className="bar"><u style={{width:`${m.filled/m.slots*100}%`}}/></div>
       <div className="foot"><span>MATCH ID {m.id}</span><span>{left} spots left</span></div>
-      {j&&m.room&&<div className="room">Room ID: {m.room} · Pass: {m.pass}</div>}
-      <button className="join" disabled={left<1||j} onClick={()=>join(m.id)}>{j?"JOINED":"₹"+m.fee+" JOIN"}</button>
+      {j&&r?.room_id&&<div className="room">Room ID: {r.room_id} · Pass: {r.room_pass}</div>}
+      <button className="join" disabled={left<1||j||m.status!=="upcoming"} onClick={()=>join(m.id)}>{j?"JOINED":"₹"+m.fee+" JOIN"}</button>
     </div>)};
-
   const Tabs = ({list,cur,set,flex}) => (<div className="tabs">{list.map(t=><b key={t} className={t===cur?"on":""} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:null} onClick={()=>set(t)}>{t}</b>)}</div>);
 
   const body = () => {
-    if(nav==="home"){const ms=M.filter(m=>m.tab===tab&&m.status==="upcoming"&&!m.priv); return <><Tabs list={T} cur={tab} set={setTab}/>{ms.length?ms.map(card):<p className="empty">No matches now. Check back soon!</p>}</>}
+    if(nav==="home"){const ms=M.filter(m=>m.mode===tab&&m.status==="upcoming"&&!m.is_private); return <><Tabs list={T} cur={tab} set={setTab}/>{ms.length?ms.map(card):<p className="empty">No matches now. Check back soon!</p>}</>}
     if(nav==="my"){const ms=M.filter(m=>joined.includes(m.id)&&m.status===mt); return <><Tabs list={["upcoming","live","played"]} cur={mt} set={setMt} flex/>{ms.length?ms.map(card):<p className="empty">No matches now. Join upcoming!</p>}</>}
-    if(nav==="store") return <div className="pgb"><h3 style={{margin:"8px 0"}}>Clash Store</h3>{STORE.map(s=><div className="mi" key={s[0]}><span>{s[0]}</span><b style={{color:"var(--r)"}} onClick={()=>redeem(s)}>₹{s[1]} Redeem</b></div>)}</div>;
-    const r=[...U].sort((a,b)=>b.win-a.win), P=x=>(<div><div className="av">{x.name[0]}</div><b>{x.name}</b><div className="gn">₹{kf(x.win)}</div></div>);
+    if(nav==="store") return <p className="empty">Clash Store coming soon.</p>;
+    const r=[...lb].sort((a,b)=>b.total_won-a.total_won), P=x=>x?(<div><div className="av">{x.name?.[0]}</div><b>{x.name}</b><div className="gn">₹{kf(x.total_won)}</div></div>):<div/>;
+    if(!r.length) return <p className="empty">No winners yet. Be the first!</p>;
     return <><div className="pod">{P(r[1])}<div style={{marginTop:-14}}>{P(r[0])}</div>{P(r[2])}</div>
       <div className="lr" style={{fontWeight:600}}><b>Name</b>Rank</div>
-      {r.slice(3).map((x,i)=><div key={x.id} className={"lr"+(x.id===1?" me":"")}><span className="av">{x.name[0]}</span><b>{x.name}<div className="gn">₹{kf(x.win)}</div></b>{i+4}</div>)}</>;
+      {r.slice(3).map((x,i)=><div key={x.id} className={"lr"+(x.id===me.id?" me":"")}><span className="av">{x.name?.[0]}</span><b>{x.name}<div className="gn">₹{kf(x.total_won)}</div></b>{i+4}</div>)}</>;
   };
 
-  const sub = () => { const back=["account","private","withdraw","tx","support"].includes(page)?"profile":null; let t="",h=null;
-    if(page==="wallet"){t="Wallet";h=<><div className="kv">Current Balance<b>₹{u.bal}</b></div><div className="kv">Winning Balance<b className="gn">₹{u.win}</b></div>{inp("a","Enter amount to add","number")}<button className="btn gb" onClick={addMoney}>Add</button></>}
-    if(page==="profile"){t="Profile";h=<><div style={{textAlign:"center",margin:10}}><div className="av" style={{width:90,height:90,fontSize:34,margin:"auto"}}>{u.name[0]}</div><h3 style={{marginTop:8}}>{u.name}</h3></div>
-      {[["Account Settings","account"],["Join Private Tournament","private"],["Withdrawals","withdraw"],["Transactions","tx"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:u.name,g:u.gid}:{})}>{n}<span>›</span></div>)}<p className="empty" style={{padding:20}}>Version 1.0.0</p></>}
-    if(page==="account"){t="Account";h=<>{inp("n","Game Name")}{inp("g","Game ID")}<button className="btn" onClick={()=>{upd(1,()=>({name:f.n||u.name,gid:f.g||""}));go("profile")}}>Save</button><button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:30}} onClick={()=>supabase?.auth.signOut()}>Logout</button></>}
-    if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={joinCode}>Join</button></>}
-    if(page==="withdraw"){t="Withdrawal";h=<><div className="kv">Winning Balance<b className="gn">₹{u.win}</b></div>{inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" onClick={withdraw}>Withdraw</button></>}
-    if(page==="tx"){t="Transactions";h=txs.length?txs.map((x,i)=><div className="lr" key={i}><b>{x.t}<div style={{fontSize:10,color:"#777"}}>{x.d}</div></b><span className={x.a>0?"gn":""}>{x.a>0?"+":""}₹{x.a}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
+  const sub = () => { const back=["account","private","withdraw","tx","support","results"].includes(page)?"profile":null; let t="",h=null;
+    if(page==="wallet"){t="Wallet";h=<><div className="kv">Current Balance<b>₹{me.balance}</b></div><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div><p className="empty" style={{padding:20}}>To add money, pay the admin by UPI and send the payment screenshot via Customer Support. Your wallet is credited after verification.</p></>}
+    if(page==="profile"){t="Profile";h=<><div style={{textAlign:"center",margin:10}}><div className="av" style={{width:90,height:90,fontSize:34,margin:"auto"}}>{me.name?.[0]}</div><h3 style={{marginTop:8}}>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p></div>
+      {[["Account Settings","account"],["Join Private Tournament","private"],["Withdrawals","withdraw"],["Transactions","tx"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,g:me.game_id}:{})}>{n}<span>›</span></div>)}
+      {isAdmin&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>Admin Panel<span>›</span></a>}
+      <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>}
+    if(page==="account"){t="Account";h=<>{inp("n","Game Name")}{inp("g","Game ID")}<button className="btn" onClick={saveAcc}>Save</button></>}
+    if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={async()=>{if(await rpc("join_by_code",{p_code:f.c||""}))setPage(null)}}>Join</button></>}
+    if(page==="withdraw"){t="Withdrawal";h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>{inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" onClick={withdraw}>Withdraw</button></>}
+    if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
+    if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} style={{cursor:"default"}}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
     if(page==="support"){t="Customer Support";h=<p className="empty">Add your WhatsApp / Telegram support link here.</p>}
     return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>go(back)}>←</span>{t}</div><div className="pgb">{h}</div></> };
 
-  const admin = () => {
-    if(!adm) return <div className="login"><Logo s={70}/><h2 style={{margin:"10px 0"}}>Admin Login</h2>{inp("em","Admin email","email")}{inp("pw","Password","password")}<button className="btn" onClick={adminLogin}>Login</button></div>;
-    let b=null;
-    if(at==="Dashboard") b=<div className="grid">{[["Users",U.length],["Matches",M.length],["Live now",M.filter(m=>m.status==="live").length],["Pending withdrawals",W.filter(w=>w.st==="pending").length]].map(([n,v])=><div className="stat" key={n}>{n}<h2>{v}</h2></div>)}</div>;
+  const admin = () => { let b=null;
+    if(at==="Dashboard") b=<div className="grid">{[["Users",allU.length],["Matches",M.length],["Live now",M.filter(m=>m.status==="live").length],["Pending withdrawals",W.filter(w=>w.status==="pending").length]].map(([n,v])=><div className="stat" key={n}>{n}<h2>{v}</h2></div>)}</div>;
     if(at==="Matches") b=<>
       <div className="fg">{inp("t","Title")}<div><label>Mode</label><select value={f.g||T[0]} onChange={e=>setF({...f,g:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>{inp("m","Map")}{inp("s","Slots","number")}{inp("p","Prize ₹","number")}{inp("fee","Entry fee ₹","number")}{inp("d","Start time","datetime-local")}
         <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div></div>
       <button className="btn" onClick={addMatch}>Create match</button>
       <table><tbody><tr><th>Match</th><th>Mode</th><th>Slots</th><th>Status</th><th>Actions</th></tr>
-        {[...M].reverse().map(m=><tr key={m.id}><td>#{m.id} {m.title}{m.priv?" 🔒"+m.code:""}</td><td>{m.tab}</td><td>{m.filled}/{m.slots}</td><td>{m.status}</td>
-          <td><button className="sm" onClick={()=>room(m)}>Room</button><button className="sm" onClick={()=>updM(m.id,{status:"live"})}>Live</button><button className="sm" onClick={()=>pay(m)}>Pay winner</button><button className="sm" onClick={()=>window.confirm("Delete match?")&&setM(a=>a.filter(x=>x.id!==m.id))}>Del</button></td></tr>)}</tbody></table></>;
-    if(at==="Users") b=<table><tbody><tr><th>Name</th><th>Game ID</th><th>Deposit</th><th>Winning</th><th></th></tr>
-      {U.map(x=><tr key={x.id}><td>{x.name}{x.ban?" (banned)":""}</td><td>{x.gid||"-"}</td><td>₹{x.bal}</td><td>₹{x.win}</td><td><button className="sm" onClick={()=>{const a=+prompt("Add amount ₹ (negative to deduct)");a&&upd(x.id,y=>({bal:y.bal+a}))}}>± Balance</button><button className="sm" onClick={()=>upd(x.id,y=>({ban:!y.ban}))}>{x.ban?"Unban":"Ban"}</button></td></tr>)}</tbody></table>;
+        {[...M].reverse().map(m=><tr key={m.id}><td>#{m.id} {m.title}{m.is_private?" 🔒"+m.code:""}</td><td>{m.mode}</td><td>{m.filled}/{m.slots}</td><td>{m.status}</td>
+          <td><button className="sm" onClick={()=>room(m)}>Room</button><button className="sm" onClick={()=>setSt(m.id,"live")}>Live</button><button className="sm" onClick={()=>pay(m)}>Pay winner</button><button className="sm" onClick={()=>window.confirm("Delete match?")&&run(supabase.from("matches").delete().eq("id",m.id))}>Del</button></td></tr>)}</tbody></table></>;
+    if(at==="Users") b=<table><tbody><tr><th>Name</th><th>Email</th><th>Game ID</th><th>Deposit</th><th>Winning</th><th></th></tr>
+      {allU.map(x=><tr key={x.id}><td>{x.name}{x.banned?" (banned)":""}</td><td>{x.email}</td><td>{x.game_id||"-"}</td><td>₹{x.balance}</td><td>₹{x.winnings}</td><td><button className="sm" onClick={()=>adjust(x)}>± Balance</button><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button></td></tr>)}</tbody></table>;
     if(at==="Withdrawals") b=W.length?<table><tbody><tr><th>User</th><th>Amount</th><th>UPI</th><th>Status</th><th></th></tr>
-      {W.map(w=><tr key={w.id}><td>{w.name}</td><td>₹{w.a}</td><td>{w.up}</td><td>{w.st}</td><td>{w.st==="pending"&&<><button className="sm" onClick={()=>wdAct(w,true)}>Approve</button><button className="sm" onClick={()=>wdAct(w,false)}>Reject</button></>}</td></tr>)}</tbody></table>:<p className="empty">No withdrawal requests</p>;
+      {W.map(w=><tr key={w.id}><td>{allU.find(x=>x.id===w.user_id)?.name}</td><td>₹{w.amount}</td><td>{w.upi}</td><td>{w.status}</td><td>{w.status==="pending"&&<><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true})}>Approve</button><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false})}>Reject</button></>}</td></tr>)}</tbody></table>:<p className="empty">No withdrawal requests</p>;
     return <><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 Admin <a href="#" style={{marginLeft:"auto",fontSize:13}}>← Open app</a></div>
       <div style={{margin:"14px 0"}}>{["Dashboard","Matches","Users","Withdrawals"].map(x=><button key={x} className="sm" style={x===at?{background:"#111",color:"#fff"}:null} onClick={()=>{setAt(x);setF({})}}>{x}</button>)}</div>{b}</>;
   };
 
-  const isAdmin = hash === "#admin";
-  return (<div className="x7"><style>{css}</style>
-    <div id="app" className={isAdmin?"adm":""}>
-      {isAdmin ? admin() : boot ? <div className="sp"><Logo s={110}/>ClashX7</div> : page ? sub() : <>
-        <div className="hdr"><span className="av" onClick={()=>go("profile")}>{u.name[0]}</span><span className="brand"><Logo s={24}/>ClashX7</span><button className="ic" onClick={()=>go("wallet")}>₹{u.bal+u.win}</button></div>
-        {body()}
-        <nav>{NAV.map(([n,l,d])=><a key={n} className={nav===n?"on":""} onClick={()=>setNav(n)}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>)}</nav></>}
-    </div></div>);
+  const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":""}>{c}</div></div>);
+  if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
+  if(!ready) return wrap(<div className="sp"><Logo s={110}/>ClashX7</div>);
+  if(!session) return wrap(<div className="login"><Logo s={80}/><h2 style={{margin:"10px 0"}}>ClashX7</h2>
+    {mode==="up"&&inp("nm","Your name")}{inp("em","Email","email")}{inp("pw","Password","password")}
+    <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
+    <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p></div>);
+  if(!me) return wrap(<p className="empty">Loading your profile… If this never finishes, run schema.sql in the Supabase SQL Editor.</p>);
+  if(hash==="#admin") return wrap(isAdmin?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
+  return wrap(page ? sub() : <>
+    <div className="hdr"><span className="av" onClick={()=>go("profile")}>{me.name?.[0]}</span><span className="brand"><Logo s={24}/>ClashX7</span><button className="ic" onClick={()=>go("wallet")}>₹{me.balance+me.winnings}</button></div>
+    {body()}
+    <nav>{NAV.map(([n,l,d])=><a key={n} className={nav===n?"on":""} onClick={()=>setNav(n)}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>)}</nav></>);
 }
 
 const css = `
