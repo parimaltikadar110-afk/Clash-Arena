@@ -1,7 +1,7 @@
 // POST /api/webhook?g=razorpay | cashfree | zapupi
 // Gateway dashboard e ei URL webhook hishebe boshate hobe. Signature verify na hole kichu credit hobe na.
 import crypto from "node:crypto";
-import { sb, settleZap } from "./_lib.js";
+import { sb, settleZap, gwSecrets } from "./_lib.js";
 
 export const config = { api: { bodyParser: false } }; // raw body lagbe signature check er jonno
 
@@ -15,21 +15,19 @@ export default async function handler(req, res) {
     let ref = null, paid = 0;
 
     if (g === "razorpay") {
-      const sig = crypto.createHmac("sha256", process.env.RAZORPAY_WEBHOOK_SECRET).update(body).digest("hex");
+      const k = await gwSecrets("razorpay");
+      if (!k.webhook_secret) return res.status(500).send("webhook secret not set");
+      const sig = crypto.createHmac("sha256", k.webhook_secret).update(body).digest("hex");
       if (!same(sig, req.headers["x-razorpay-signature"] || "")) return res.status(400).send("bad signature");
       const ev = JSON.parse(body.toString());
-      if (ev.event === "payment.captured") {
-        const p = ev.payload.payment.entity;
-        ref = p.order_id; paid = p.amount / 100;
-      }
+      if (ev.event === "payment.captured") { const p = ev.payload.payment.entity; ref = p.order_id; paid = p.amount / 100; }
     } else if (g === "cashfree") {
+      const k = await gwSecrets("cashfree");
       const ts = req.headers["x-webhook-timestamp"] || "";
-      const sig = crypto.createHmac("sha256", process.env.CASHFREE_SECRET).update(ts + body.toString()).digest("base64");
+      const sig = crypto.createHmac("sha256", k.secret).update(ts + body.toString()).digest("base64");
       if (!same(sig, req.headers["x-webhook-signature"] || "")) return res.status(400).send("bad signature");
       const ev = JSON.parse(body.toString());
-      if (ev.type === "PAYMENT_SUCCESS_WEBHOOK" && ev.data?.payment?.payment_status === "SUCCESS") {
-        ref = ev.data.order.order_id; paid = Number(ev.data.payment.payment_amount);
-      }
+      if (ev.type === "PAYMENT_SUCCESS_WEBHOOK" && ev.data?.payment?.payment_status === "SUCCESS") { ref = ev.data.order.order_id; paid = Number(ev.data.payment.payment_amount); }
     } else if (g === "zapupi") {
       // webhook sudhu "check koro" signal — asol payment ZapUPI order-status API diye confirm hoy
       const s = body.toString(); let o = {};
