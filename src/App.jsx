@@ -11,7 +11,7 @@ const SUPPORT_URL = env.VITE_SUPPORT_URL || "", APK_URL = env.VITE_APK_URL || ""
 const GATEWAYS = (env.VITE_GATEWAYS || "zapupi,manual,razorpay,cashfree").split(",").map(s => s.trim()); // kon gateway dekhabe
 const VAPID = env.VITE_VAPID_PUBLIC_KEY;
 const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://sdk.cashfree.com/js/v3/cashfree.js";
-const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
+const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","LW HEAD","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
@@ -77,7 +77,7 @@ export default function App() {
   const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false);
   const [matchSearch,setMatchSearch] = useState(""), [pageMatch,setPageMatch] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
-  const isAdmin = me?.role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isStaff = isAdmin || me?.role==="moderator";
+  const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
   const authOpenRef = useRef(false);
   authOpenRef.current = authOpen;
 
@@ -123,6 +123,7 @@ export default function App() {
     setMe(p.data); setM(m.data||[]); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     setNotifs(n.data||[]); setRules(Object.fromEntries((ru.data||[]).map(x=>[x.mode,x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
+    else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
   useEffect(()=>{load();const i=setInterval(load,15000);return()=>clearInterval(i)},[load]);
 
@@ -266,7 +267,7 @@ export default function App() {
       prize:+src.prize||0,
       fee:+src.fee||0,
       starts_at:isNaN(starts.getTime())?null:starts.toISOString(),
-      status:"upcoming",
+      status:String(src.status||"upcoming"),
       is_private:isPrivate,
       code:isPrivate?(String(src.code||"").trim()||("X7"+Math.random().toString(36).slice(2,6).toUpperCase())):null,
       thumbnail_url:String(src.thumbnail||src.thumbnail_url||"").trim()||null
@@ -285,29 +286,70 @@ export default function App() {
     setF({}); load()
   };
 
-  const bulkCreate = async () => {
-    const raw=(f.bulkText||"").trim();
-    if(!raw) return say("Paste at least one match line.",1);
-    const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-    const rows=[];
-    for(let i=0;i<lines.length;i++){
-      const parts=lines[i].split("|").map(x=>x.trim());
-      if(parts.length<7) return say(`Line ${i+1}: use Title | Mode | Map | Slots | Prize | Fee | Start`,1);
-      const row=buildMatchRow({
-        title:parts[0],mode:parts[1],map:parts[2],slots:parts[3],prize:parts[4],fee:parts[5],start:parts[6],
-        thumbnail:parts[7],type:parts[8]
+  const bulkRows = () => {
+    const count=Math.max(1,Math.min(100,+f.bulkCount||1));
+    const gap=Math.max(0,+f.bulkGap||0);
+    const start=new Date(f.bulkStart||"");
+    if(!f.bulkTitle?.trim() || isNaN(start.getTime())) return [];
+    return Array.from({length:count},(_,i)=>{
+      const titleBase=f.bulkTitle.trim();
+      const title=(f.bulkNumber!=="0" || count>1) ? `${titleBase} #${i+1}` : titleBase;
+      return buildMatchRow({
+        title,
+        mode:f.bulkModeGame||T[0],
+        map:f.bulkMap||"BERMUDA",
+        slots:f.bulkSlots,
+        prize:f.bulkPrize,
+        fee:f.bulkFee,
+        start:new Date(start.getTime()+i*gap*60000).toISOString(),
+        thumbnail:f.th,
+        type:f.bulkPrivate,
+        status:f.bulkStatus||"upcoming",
       });
-      if(!row.title||!row.starts_at) return say(`Line ${i+1}: title/start time is invalid`,1);
-      rows.push(row);
-    }
+    });
+  };
+
+  const bulkCreate = async () => {
+    const rows=bulkRows();
+    if(!rows.length) return say("Fill title and first start time first.",1);
+    if(rows.some(r=>!r.title||!r.starts_at)) return say("Please check the bulk match details.",1);
+    const count=rows.length;
     setBusy(true);
     try{
       const {error}=await supabase.from("matches").insert(rows);
       if(error) throw error;
-      say(`${rows.length} matches created ✅`);
-      if(f.bulkNotify!=="0") notify({title:`🔥 ${rows.length} new matches added`,body:"New matches are now available in ClashX7."});
+      say(`${count} matches created ✅`);
+      if(f.bulkNotify!=="0") notify({title:`🔥 ${count} new matches added`,body:`${f.bulkModeGame||T[0]} matches are now available in ClashX7.`});
       setF({}); await load();
     }catch(e){say(e.message,1)} finally{setBusy(false)}
+  };
+
+  const openPayWinner = async m => {
+    setBusy(true);
+    try{
+      const {data:ps,error}=await supabase.from("participants").select("user_id,game_name").eq("match_id",m.id).order("id");
+      if(error) throw error;
+      const rows=(ps||[]).map((p,i)=>{
+        const u=allU.find(x=>x.id===p.user_id)||{};
+        return {idx:String(i),user_id:p.user_id,name:u.name||u.username||u.email||"Player",game_name:p.game_name||u.game_name||"-",email:u.email||""};
+      });
+      if(!rows.length) return say("No players have joined this match yet.",1);
+      const opts=rows.map(x=>[x.idx,`${x.name} · ${x.game_name}${x.email?` · ${x.email}`:""}`]);
+      ask(`Pay prize · #${m.id}`,
+        [["w","Select winner from joined players","select",opts],["a","Prize amount ₹","number"]],
+        async v=>{
+          const winner=rows.find(x=>x.idx===String(v.w));
+          const amount=+v.a;
+          if(!winner) {say("Select a joined player.",1);return false}
+          if(!(amount>0)) {say("Enter a valid prize amount.",1);return false}
+          if(amount>+m.prize) {say(`Prize cannot be more than ₹${m.prize}.`,1);return false}
+          return rpc("admin_pay_winner",{p_match:m.id,p_user:winner.user_id,p_amt:amount},`₹${amount} paid to ${winner.name}`);
+        },
+        {w:"0",a:String(Math.max(1,+m.prize||0))},
+        {btn:"Pay prize",note:`Joined players: ${rows.length} · Maximum payout for this match: ₹${m.prize}`}
+      );
+    }catch(e){say(e.message||"Could not load joined players.",1)}
+    finally{setBusy(false)}
   };
 
   const room = m => { const o=rooms[m.id]||{};
@@ -322,10 +364,15 @@ export default function App() {
   };
 
   const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s).then(ok=>{ if(ok&&s==="live") notify({match_id:m.id,title:"🔴 Match is LIVE",body:m.title+" has started. Join the room now!"}) });
-  const pay = m => ask(`Pay winner · #${m.id}`,[["w","Winner name or email","text"],["a","Prize amount ₹","number"]],async v=>{
-      const k=v.w.trim().toLowerCase(), w=allU.find(x=>x.email?.toLowerCase()===k||x.name?.toLowerCase()===k), a=+v.a;
-      if(!w||!(a>0)){say("User not found / bad amount",1);return false} return rpc("admin_pay_winner",{p_match:m.id,p_user:w.id,p_amt:a},`₹${a} paid to ${w.name}`) },{a:m.prize},{btn:"Pay"});
+  const pay = m => openPayWinner(m);
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
+  const setStaffRole = async (u, nextRole) => {
+    if(!isAdmin) return say("Only the main Admin can change staff roles",1);
+    const label = nextRole === "acting_admin" ? "Acting Admin" : nextRole === "moderator" ? "Moderator" : "User";
+    if(u.role === "admin") return say("The main Admin role cannot be changed",1);
+    if(await rpc("admin_set_staff_role",{p_user:u.id,p_role:nextRole},`${u.name} → ${label}`)) setF({});
+  };
+
   const saveRules = async (m,text) => run(supabase.from("mode_rules").upsert(m.map(k=>({mode:k,rules:text,updated_at:new Date().toISOString()}))), m.length>1?"Rules saved for ALL modes":"Rules saved");
   const saveLinks = () => {
     const links={telegram:(f.telegram??S.support_links?.telegram??"").trim(),whatsapp:(f.whatsapp??S.support_links?.whatsapp??"").trim()};
@@ -345,7 +392,7 @@ export default function App() {
         <div className="thumbWrap">
           {m.thumbnail_url
             ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy"/>
-            : <div className="thumbFallback"><Logo s={40}/></div>}
+            : <div className="thumbFallback"><Logo s={28}/></div>}
           <div className="thumbShade"/>
           <div className="thumbTop"><span>#{m.id}</span><span>{m.mode}</span></div>
         </div>
@@ -367,11 +414,11 @@ export default function App() {
       const ms=M.filter(m=>{
         if(m.status!=="upcoming"||m.is_private||m.mode!==tab) return false;
         if(!q) return true;
-        return String(m.id).includes(q)||String(m.code||"").toLowerCase().includes(q)||String(m.title||"").toLowerCase().includes(q);
+        return String(m.title||"").toLowerCase().includes(q);
       });
       return <><Tabs list={T} cur={tab} set={setTab}/>
         {pushOK()&&!pushOn&&Notification.permission!=="denied"&&<div className="bn" onClick={enablePush}>🔔 Turn on match & room notifications</div>}
-        <div className="searchBox"><span>⌕</span><input value={matchSearch} onChange={e=>setMatchSearch(e.target.value)} placeholder="Search match code or match name"/></div>
+        <div className="searchBox"><span>⌕</span><input value={matchSearch} onChange={e=>setMatchSearch(e.target.value)} placeholder="Search match name"/></div>
         {ms.length?ms.map(matchCard):<p className="empty">No matches found.</p>}
       </>;
     }
@@ -468,7 +515,11 @@ export default function App() {
 
   const admin = () => {
     let b=null;
-    const TABS = isAdmin ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Withdrawals","Users"] : ["Matches","Rules","Notify"];
+    const TABS = isAdmin
+      ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Withdrawals","Users","Staff"]
+      : isActingAdmin
+        ? ["Matches","Rules","Notify","Users"]
+        : ["Matches","Rules","Notify"];
     const cur = TABS.includes(at)?at:TABS[0];
 
     if(cur==="Dashboard"){
@@ -515,16 +566,40 @@ export default function App() {
               {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}
               <button className="btn" onClick={addMatch}>Create match</button>
             </div>
-          : <div className="createPanel">
-              <div className="createHead"><h3>Bulk Create</h3><span>One match per line · use <b>|</b> between fields</span></div>
-              <textarea rows={10} value={f.bulkText||""} onChange={e=>setF({...f,bulkText:e.target.value})} placeholder={"Title | Mode | Map | Slots | Prize | Fee | Start | ThumbnailURL | Public\nRoom #1 | SOLO BR | BERMUDA | 48 | 5000 | 50 | 2026-10-08T19:00\nRoom #2 | DUO BR | BERMUDA | 24 | 3000 | 50 | 2026-10-08T20:00"}/>
+          : <div className="createPanel bulkPanel">
+              <div className="createHead"><div><h3>Bulk Create</h3><p className="fieldHint">Set everything once. ClashX7 will create a full schedule automatically.</p></div><span className="bulkCountBadge">{Math.max(1,+f.bulkCount||1)} matches</span></div>
+              <div className="fg bulkGrid">
+                {inp("bulkTitle","Match title / prefix")}
+                <div><label>Game mode</label><select value={f.bulkModeGame||T[0]} onChange={e=>setF({...f,bulkModeGame:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>
+                {inp("bulkMap","Map")}
+                {inp("bulkCount","Number of matches","number")}
+                {inp("bulkGap","Gap between matches (minutes)","number")}
+                {inp("bulkSlots","Slots per match","number")}
+                {inp("bulkFee","Entry fee ₹","number")}
+                {inp("bulkPrize","Prize pool ₹","number")}
+                {inp("bulkStart","First match start","datetime-local")}
+                <div><label>Initial status</label><select value={f.bulkStatus||"upcoming"} onChange={e=>setF({...f,bulkStatus:e.target.value})}><option value="upcoming">Upcoming</option><option value="live">Live now</option></select></div>
+                <div><label>Match type</label><select value={f.bulkPrivate||"0"} onChange={e=>setF({...f,bulkPrivate:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
+                <div><label>Number titles</label><select value={f.bulkNumber||"1"} onChange={e=>setF({...f,bulkNumber:e.target.value})}><option value="1">Yes · #1, #2, #3…</option><option value="0">No · same title</option></select></div>
+              </div>
+              <label>Same thumbnail for all matches (optional)</label>
+              <input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
+              <label>Or upload thumbnail once</label>
+              <input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
+              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}
+              <div className="bulkPreview">
+                <div className="bulkPreviewHead"><b>Schedule preview</b><span>{f.bulkGap||0} min gap</span></div>
+                {bulkRows().slice(0,8).map((r,i)=><div className="bulkPreviewRow" key={i}><span><b>{r.title}</b><small>{fmt(r.starts_at)} · {r.mode} · {r.slots} slots</small></span><strong>₹{r.fee}</strong></div>)}
+                {bulkRows().length>8&&<small className="fieldHint">+ {bulkRows().length-8} more matches will be created.</small>}
+                {!bulkRows().length&&<small className="fieldHint">Enter the title and first start time to preview the schedule.</small>}
+              </div>
               <label>Send one notification after bulk create</label><select value={f.bulkNotify||"1"} onChange={e=>setF({...f,bulkNotify:e.target.value})}><option value="1">Yes</option><option value="0">No</option></select>
-              <button className="btn" disabled={busy} onClick={bulkCreate}>{busy?"Creating…":"Create all matches"}</button>
+              <button className="btn" disabled={busy||!bulkRows().length} onClick={bulkCreate}>{busy?"Creating…":`Create ${Math.max(1,+f.bulkCount||1)} matches`}</button>
             </div>}
         <div className="adminSearch"><input value={f.ms||""} onChange={e=>setF({...f,ms:e.target.value})} placeholder="Search match code / #ID / title"/></div>
         <div className="tableWrap"><table><tbody><tr><th>Match</th><th>Mode</th><th>Slots</th><th>Status</th><th>Actions</th></tr>
           {list.map(m=><tr key={m.id}><td><b>#{m.id}</b> {m.title}{m.is_private?" 🔒 "+m.code:""}</td><td>{m.mode}</td><td>{m.filled||0}/{m.slots}</td><td>{m.status}</td>
-            <td><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}<button className="sm" onClick={()=>window.confirm("Delete match?")&&run(supabase.from("matches").delete().eq("id",m.id),"Deleted")}>Del</button></td>
+            <td><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete match?")&&run(supabase.from("matches").delete().eq("id",m.id),"Deleted")}>Del</button>}</td>
           </tr>)}</tbody></table></div>
       </div>;
     }
@@ -569,14 +644,26 @@ export default function App() {
       </div>
     }
 
+    if(cur==="Staff"){
+      const staffers=allU.filter(x=>x.role==="moderator"||x.role==="acting_admin");
+      b=<div className="pnl">
+        <h3>👥 Staff & Moderators</h3>
+        <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Only the main Admin can change staff roles. Acting Admin sits between Moderator and Admin.</p>
+        {staffers.length ? <div className="tableWrap"><table><tbody><tr><th>Name</th><th>Email</th><th>Role</th><th>Change role</th></tr>
+          {staffers.map(x=><tr key={x.id}><td>{x.name||"-"}</td><td>{x.email||"-"}</td><td><b style={{color:x.role==="acting_admin"?"#7c3aed":"#2563eb"}}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</b></td><td><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></td></tr>)}
+        </tbody></table></div> : <p className="empty">No moderators or acting admins yet.</p>}
+        <p className="sh">Role powers</p>
+        <div className="roleInfo"><div><b>Moderator</b><small>Matches, room ID/Pass, rules and notifications.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search/profile view + customer-service links. Cannot manage staff, gateway settings, payouts or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
+      </div>;
+    }
+
     if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<div className="tableWrap"><table><tbody><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Game name</th><th>Role</th><th>Deposit</th><th>Winning</th><th></th></tr>
-      {L.map(x=><tr key={x.id}><td>{x.name}{x.banned?" (banned)":""}</td><td>{x.email}</td><td>{x.phone||"-"}</td><td>{x.game_name||"-"}</td><td>{x.role||"user"}</td><td>₹{x.balance}</td><td>₹{x.winnings}</td><td><button className="sm" onClick={()=>adjust(x)}>± Balance</button><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>
-        {x.role!=="admin"&&<button className="sm" onClick={()=>rpc("admin_set_role",{p_user:x.id,p_role:x.role==="moderator"?"user":"moderator"},x.role==="moderator"?`${x.name} is no longer a moderator`:`${x.name} is now a moderator`)}>{x.role==="moderator"?"Remove mod":"Make mod"}</button>}</td></tr>)}</tbody></table></div></>}
+      {L.map(x=><tr key={x.id}><td>{x.name}{x.banned?" (banned)":""}</td><td>{x.email}</td><td>{x.phone||"-"}</td><td>{x.game_name||"-"}</td><td>{x.role||"user"}</td><td>₹{x.balance}</td><td>₹{x.winnings}</td><td>{isAdmin&&<><button className="sm" onClick={()=>adjust(x)}>± Balance</button><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>{x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</>}{isActingAdmin&&<span style={{fontSize:11,color:"#777"}}>View only</span>}</td></tr>)}</tbody></table></div></>}
 
     if(cur==="Withdrawals") b=W.length?<div className="tableWrap"><table><tbody><tr><th>User</th><th>Amount</th><th>UPI</th><th>Status</th><th></th></tr>
       {W.map(w=><tr key={w.id}><td>{allU.find(x=>x.id===w.user_id)?.name}</td><td>₹{w.amount}</td><td>{w.upi}</td><td>{w.status}</td><td>{w.status==="pending"&&<><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true},"Approved")}>Approve</button><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false},"Rejected")}>Reject</button></>}</td></tr>)}</tbody></table></div>:<p className="empty">No withdrawal requests</p>;
 
-    return <><div className="adminHeader"><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 {isAdmin?"Admin":"Moderator"}</div><div className="adminHeaderRight"><span className={"lv"+(live?" on":"")}>{live?"● Live":"○ Auto-refresh"}</span><button className="sm" onClick={()=>{load();say("Refreshed")}}>↻</button><a className="sm" href="#">Open app</a></div></div>
+    return <><div className="adminHeader"><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 {isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</div><div className="adminHeaderRight"><span className={"lv"+(live?" on":"")}>{live?"● Live":"○ Auto-refresh"}</span><button className="sm" onClick={()=>{load();say("Refreshed")}}>↻</button><a className="sm" href="#">Open app</a></div></div>
       <div className="adminTabs">{TABS.map(x=><button key={x} className={x===cur?"on":""} onClick={()=>{setAt(x);setF({})}}>{x}</button>)}</div>{b}</>;
   };
 
@@ -616,18 +703,18 @@ const css = `
 .tabs b.on{color:var(--r);border-color:var(--r)}
 .searchBox{display:flex;align-items:center;gap:8px;margin:10px 8px;padding:0 11px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa}
 .searchBox span{font-size:20px;color:#777}.searchBox input{border:0!important;background:transparent!important;margin:0!important;padding:11px 2px!important}
-.card{margin:9px;border:1px solid #ececec;border-radius:13px;overflow:hidden;box-shadow:0 2px 8px #0000000b;cursor:pointer;background:#fff}
-.thumbWrap{height:170px;position:relative;background:#111;overflow:hidden}
+.card{margin:8px;border:1px solid #ececec;border-radius:13px;overflow:hidden;box-shadow:0 2px 8px #0000000b;cursor:pointer;background:#fff}
+.thumbWrap{height:112px;position:relative;background:#111;overflow:hidden}
 .matchThumb{width:100%;height:100%;display:block;object-fit:cover}
 .thumbFallback{width:100%;height:100%;display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
 .thumbShade{position:absolute;inset:0;background:linear-gradient(180deg,#0005 0,#0000 38%,#0007 100%)}
 .thumbTop{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;color:#fff;font-size:11px;font-weight:700}
-.matchBody{padding:10px 11px 0}
+.matchBody{padding:8px 10px 0}
 .tags i{font-style:normal;font-size:9px;border:1px solid #333;border-radius:5px;padding:3px 6px;margin-right:6px;background:#fff}
 .matchTitleRow{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-top:9px}
-.matchTitleRow h4{font-size:15px;margin:4px 0 4px}.pz{color:var(--r);font-weight:800;font-size:13px}.matchTime{font-size:10px;color:#555;text-align:right;white-space:nowrap}
+.matchTitleRow h4{font-size:14px;margin:3px 0 2px}.pz{color:var(--r);font-weight:800;font-size:13px}.matchTime{font-size:10px;color:#555;text-align:right;white-space:nowrap}
 .bar{height:5px;background:#eee;margin-top:10px;border-radius:6px;overflow:hidden}.bar u{display:block;height:100%;background:var(--r);text-decoration:none}
-.foot{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#666;padding:9px 0 12px}.foot b{color:#fff;background:var(--r);padding:7px 10px;border-radius:8px;font-size:11px}
+.foot{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#666;padding:7px 0 9px}.foot b{color:#fff;background:var(--r);padding:7px 10px;border-radius:8px;font-size:11px}
 .x7 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:30}
 .x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}.x7 nav a.on{color:var(--r)}
 .x7 nav svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -655,7 +742,7 @@ const css = `
 .detailSection{margin-top:14px;border:1px solid #eee;border-radius:12px;padding:12px}.detailSection h4{margin-bottom:8px}.rulesBox{white-space:pre-wrap;line-height:1.6;color:#333;font-size:13px}.roomBox{background:#fef2f2;border-color:#fee2e2}.copyRow{display:flex;align-items:center;gap:8px;margin-top:8px}.copyRow span{flex:1;background:#fff;border:1px solid #eee;border-radius:8px;padding:9px;font-size:11px}.copyRow b{display:block;margin-top:2px;font-size:13px;color:var(--r);user-select:all}.joinedNote,.hint{margin-top:8px;padding:9px;border-radius:8px;background:#f8fafc;color:#555;font-size:11px;line-height:1.5}
 .adm table{width:100%;border-collapse:collapse;margin-top:12px}.x7 td,.x7 th{padding:9px;border-bottom:1px solid #eee;text-align:left;font-size:12px;vertical-align:top}.tableWrap{overflow:auto;border:1px solid #eee;border-radius:10px;background:#fff}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:14px}.dg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.dg .stat{background:#fff}.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
-.adminHeader{display:flex;justify-content:space-between;align-items:center;gap:10px;position:sticky;top:0;background:#fff;padding:6px 0 12px;z-index:25}.adminHeaderRight{display:flex;align-items:center;gap:5px}.adminTabs{display:flex;gap:6px;overflow-x:auto;padding:0 0 12px}.adminTabs button{border:1px solid #ddd;background:#fff;padding:8px 12px;border-radius:8px;white-space:nowrap;cursor:pointer}.adminTabs button.on{background:#111;color:#fff}.adminModeRow{display:flex;gap:8px;margin:6px 0 10px}.modeBtn{border:1px solid #ddd;background:#fff;border-radius:9px;padding:9px 13px;font-weight:700;cursor:pointer}.modeBtn.active{background:#111;color:#fff}.createPanel{border:1px solid #eee;border-radius:12px;padding:14px;margin-bottom:12px;background:#fff}.createHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;margin-bottom:12px}.createHead h3{font-size:17px}.createHead span{font-size:10px;color:#777}.adminThumbPreview{width:180px;height:100px;object-fit:cover;border-radius:9px;margin:4px 0 10px;display:block}.adminSearch{margin:10px 0}.adminSearch input{margin:0!important}.emptyAdmin{padding:40px;text-align:center;color:#666}
+.adminHeader{display:flex;justify-content:space-between;align-items:center;gap:10px;position:sticky;top:0;background:#fff;padding:6px 0 12px;z-index:25}.adminHeaderRight{display:flex;align-items:center;gap:5px}.adminTabs{display:flex;gap:6px;overflow-x:auto;padding:0 0 12px}.adminTabs button{border:1px solid #ddd;background:#fff;padding:8px 12px;border-radius:8px;white-space:nowrap;cursor:pointer}.adminTabs button.on{background:#111;color:#fff}.adminModeRow{display:flex;gap:8px;margin:6px 0 10px}.modeBtn{border:1px solid #ddd;background:#fff;border-radius:9px;padding:9px 13px;font-weight:700;cursor:pointer}.modeBtn.active{background:#111;color:#fff}.createPanel{border:1px solid #eee;border-radius:12px;padding:14px;margin-bottom:12px;background:#fff}.createHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;margin-bottom:12px}.createHead h3{font-size:17px}.createHead span{font-size:10px;color:#777}.adminThumbPreview{width:180px;height:100px;object-fit:cover;border-radius:9px;margin:4px 0 10px;display:block}.fieldHint{font-size:11px;color:#777;margin:3px 0 0}.bulkCountBadge{padding:6px 9px;border-radius:99px;background:#fef2f2;color:var(--r);font-weight:800;font-size:11px;white-space:nowrap}.bulkGrid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}.bulkPreview{margin:10px 0 12px;border:1px solid #eee;border-radius:10px;background:#fafafa;overflow:hidden}.bulkPreviewHead{display:flex;justify-content:space-between;padding:10px 11px;border-bottom:1px solid #eee;font-size:11px}.bulkPreviewHead span{color:#777}.bulkPreviewRow{display:flex;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid #eee;font-size:11px;background:#fff}.bulkPreviewRow:last-of-type{border-bottom:0}.bulkPreviewRow span{min-width:0}.bulkPreviewRow b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}.bulkPreviewRow small{display:block;color:#777;margin-top:2px}.bulkPreviewRow strong{color:var(--r);white-space:nowrap}.bulkPreview>.fieldHint{display:block;padding:9px 11px}.adminSearch{margin:10px 0}.adminSearch input{margin:0!important}.emptyAdmin{padding:40px;text-align:center;color:#666}
 .chart{display:flex;gap:6px;height:130px;align-items:flex-end;margin:8px 0}.cb{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end}.bars{display:flex;gap:2px;align-items:flex-end;height:100px;width:100%;justify-content:center}.bars i{width:38%;min-height:2px;border-radius:3px 3px 0 0}.cb small{font-size:9px;color:#777;margin-top:2px}
 .x7 #app.land{max-width:1000px;padding-bottom:0}.lh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px}.hero{background:linear-gradient(160deg,#f5403a,#7f1d1d);color:#fff;text-align:center;padding:48px 20px 56px;display:flex;flex-direction:column;align-items:center;gap:12px}.hero h1{font-size:clamp(30px,6vw,52px);font-weight:800}.hero p{max-width:520px;opacity:.93;line-height:1.5}.cta{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px}.lb2{border:0;border-radius:8px;padding:12px 22px;font-weight:700;cursor:pointer;font-size:14px;background:#fff;color:var(--r)}.lb2.ghost{background:transparent;color:#fff;border:1.5px solid #fff}.lb2.dk{background:#111;color:#fff}.lb2.rd{background:var(--r);color:#fff}.lsec{padding:34px 18px}.lsec h2{text-align:center;margin-bottom:18px;font-size:22px}.l3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.lc{border:1px solid #eee;border-radius:10px;padding:18px;background:#fff;box-shadow:0 1px 3px #0001}.lc b{display:block;margin:8px 0 4px;font-size:16px}.lc p{color:#555;line-height:1.5;font-size:13px}.lc .em{font-size:28px;font-weight:800;color:var(--r)}.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}.chips i{font-style:normal;border:1px solid #333;border-radius:20px;padding:6px 12px;font-size:12px}.lf{background:#111;color:#bbb;text-align:center;padding:24px 18px;font-size:12px;line-height:1.8}
 `;
