@@ -33,6 +33,13 @@ const Logo = ({s=64}) => (
   </svg>
 );
 
+const Avatar = ({name="Player",s=32}) => {
+  const letter = (name||"P").trim().slice(0,1).toUpperCase();
+  return <div className="avatar" style={{width:s,height:s,fontSize:Math.max(12,Math.round(s*.34))}}>
+    <span className="avatarGlow">✦</span><b>{letter}</b>
+  </div>;
+};
+
 /* Visitor landing page (login korar age) */
 function Landing({open,download,showDl,support}) {
   const F = [["🛡️","Fair Play","Strict anti-cheat rules, verified room results and transparent prize pools. Everyone plays by the same rules."],["⚡","Fast Withdrawal","Winnings land in your wallet. Request a withdrawal and get paid straight to your UPI ID."],["💬","Good Customer Support","Real people on WhatsApp / Telegram to help with deposits, matches and withdrawals."]];
@@ -68,6 +75,7 @@ export default function App() {
   const [me,setMe] = useState(null), [M,setM] = useState([]), [rooms,setRooms] = useState({}), [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState([]), [rules,setRules] = useState({}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
   const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false);
+  const [matchSearch,setMatchSearch] = useState(""), [pageMatch,setPageMatch] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const isAdmin = me?.role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isStaff = isAdmin || me?.role==="moderator";
 
@@ -81,16 +89,22 @@ export default function App() {
 
   useEffect(()=>{
     const h = () => setHash(window.location.hash); window.addEventListener("hashchange",h);
-    if("serviceWorker" in navigator){ // purono PWA/cache service worker thakle mere dei — eta-i "deploy korle tarpor show hoy" er boro karon
-      navigator.serviceWorker.getRegistrations().then(async rs=>{ let killed=false;
-        for(const r of rs){ const u=(r.active||r.waiting||r.installing)?.scriptURL||""; if(!u.endsWith("/push-sw.js")){ await r.unregister(); killed=true } }
-        if(window.caches) for(const k of await caches.keys()) await caches.delete(k);
-        if(killed&&!sessionStorage.getItem("x7sw")){ sessionStorage.setItem("x7sw","1"); location.reload() } });
-      navigator.serviceWorker.register("/push-sw.js").catch(()=>{}) }
-    if(!supabase){setReady(true);return()=>window.removeEventListener("hashchange",h)}
+    let reloaded = false;
+    const reloadOnce = () => {
+      if(reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    };
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.addEventListener("controllerchange",reloadOnce);
+      navigator.serviceWorker.register("/push-sw.js",{updateViaCache:"none"}).then(reg=>{
+        reg.update().catch(()=>{});
+      }).catch(()=>{});
+    }
+    if(!supabase){setReady(true);return()=>{window.removeEventListener("hashchange",h);navigator.serviceWorker?.removeEventListener?.("controllerchange",reloadOnce)}}
     supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
     const {data:l} = supabase.auth.onAuthStateChange((_e,s)=>setSession(s));
-    return()=>{l.subscription.unsubscribe();window.removeEventListener("hashchange",h)};
+    return()=>{l.subscription.unsubscribe();window.removeEventListener("hashchange",h);navigator.serviceWorker?.removeEventListener?.("controllerchange",reloadOnce)};
   },[]);
 
   const load = useCallback(async()=>{
@@ -152,11 +166,38 @@ export default function App() {
     await supabase.auth.signOut(); setMe(null); setPage(null); setF({}) };
 
   // ---- player actions ----
-  const join = async id => { if(await rpc("join_match",{p_match:id})) setPage(null) };
-  const saveAcc = () => run(supabase.from("profiles").update({name:f.n||me.name,game_id:f.g||"",phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null}).eq("id",me.id),"Saved").then(()=>go("profile"));
+  const join = async (id, gameName) => {
+    const m = M.find(x=>x.id===id);
+    if(!m) return;
+    if(m.status!=="upcoming") return say("This match is already ongoing.",1);
+    if((m.slots-(m.filled||0))<1) return say("No slot left.",1);
+    const gn=(gameName||"").trim();
+    if(!gn) return say("Enter your game name first.",1);
+    const {error:pe}=await supabase.from("profiles").update({game_name:gn}).eq("id",me.id);
+    if(pe) return say(pe.message,1);
+    const ok=await rpc("join_match_slot",{p_match:id,p_game_name:gn});
+    if(!ok) return;
+    const {error:ce}=await supabase.from("participants").update({game_name:gn}).eq("match_id",id).eq("user_id",me.id);
+    if(ce) console.warn("participant game_name update:",ce.message);
+    setMe(x=>({...x,game_name:gn}));
+    say("Slot booked ✅");
+    setF(v=>({...v,game_name:gn}));
+    await load();
+  };
+
+  const saveAcc = () => run(
+    supabase.from("profiles").update({
+      name:f.n||me.name,
+      game_name:f.gn||"",
+      game_id:f.g||"",
+      phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null
+    }).eq("id",me.id),
+    "Saved"
+  ).then(ok=>{ if(ok){setMe(x=>({...x,name:f.n||x.name,game_name:f.gn||"",game_id:f.g||"",phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null}));go("profile")} });
+
   const withdraw = async () => { if(await rpc("request_withdrawal",{p_amt:+f.a,p_upi:f.u||""})){say("Withdrawal request sent");go(null)} };
   const gwActive = () => { const key = g => g==="manual"?"manual":"gw_"+g, ALL=["zapupi","manual","razorpay","cashfree"];
-    const cfg = ALL.some(g=>S[key(g)]); return ALL.filter(g => cfg ? S[key(g)]?.enabled===true : GATEWAYS.includes(g)) }; // admin panel e set korle sheta, na hole env list
+    const cfg = ALL.some(g=>S[key(g)]); return ALL.filter(g => cfg ? S[key(g)]?.enabled===true : GATEWAYS.includes(g)) };
   const manualDep = async () => { const a=+f.a, u=(f.u||"").trim(), mn=+(S.manual?.min||10), mx=+(S.manual?.max||0);
     if(!(a>=mn)) return say(`Minimum deposit is ₹${mn}`,1); if(mx&&a>mx) return say(`Maximum deposit is ₹${mx}`,1);
     if(u&&u.length<8) return say("UTR looks too short",1); if(!u&&!f.pf) return say("Enter the UTR / transaction ID or upload the payment screenshot",1);
@@ -170,13 +211,31 @@ export default function App() {
   const viewProof = async path => { const {data,error}=await supabase.storage.from("proofs").createSignedUrl(path,300); if(error) return say(error.message,1); setPv(data.signedUrl) };
   const uploadQr = async file => { if(!file) return; setBusy(true); try{ const b=await shrink(file,800,.92); const {error}=await supabase.storage.from("public-assets").upload("pay-qr.jpg",b,{contentType:"image/jpeg",upsert:true}); if(error) throw error;
       const {data}=supabase.storage.from("public-assets").getPublicUrl("pay-qr.jpg"); setF(x=>({...x,qr:data.publicUrl+"?v="+Date.now()})); say("QR uploaded — now press Save") }catch(e){say(e.message,1)} setBusy(false) };
+  const uploadMatchThumb = async file => {
+    if(!file) return;
+    setBusy(true);
+    try{
+      const b=await shrink(file,1200,.86);
+      const path=`match-thumbnails/${session.user.id}-${Date.now()}.jpg`;
+      const {error}=await supabase.storage.from("public-assets").upload(path,b,{contentType:"image/jpeg",upsert:false});
+      if(error) throw error;
+      const {data}=supabase.storage.from("public-assets").getPublicUrl(path);
+      setF(x=>({...x,th:data.publicUrl+"?v="+Date.now()}));
+      say("Thumbnail ready ✅");
+    }catch(e){say(e.message,1)} finally{setBusy(false)}
+  };
+  const setThumbForMatch = async m => {
+    const v=prompt("Paste thumbnail image URL",m.thumbnail_url||"");
+    if(v===null) return;
+    await run(supabase.from("matches").update({thumbnail_url:v.trim()||null}).eq("id",m.id),"Thumbnail updated");
+  };
   const saveManual = () => { const m=S.manual||{}, v=(k,d="")=>f[k]??m[k]??d;
     return run(supabase.from("app_settings").upsert({key:"manual",value:{enabled:v("me_en",m.enabled===false?"0":"1")==="1",upi_id:v("upi_id").trim(),upi_name:v("upi_name").trim(),qr_url:f.qr??m.qr_url??"",note:v("note"),min:+v("min",10)||10,max:+v("max",0)||0},updated_at:new Date().toISOString()}),"Manual payment settings saved") };
   const saveGw = async (n,keys) => { const sec={}; keys.forEach(k=>{const v=(f[`gs_${n}_${k}`]||"").trim(); if(v) sec[k]=v}); const en=(f[`ge_${n}`]??(S["gw_"+n]?.enabled===true?"1":"0"))==="1";
     if(await rpc("admin_save_gateway",{p_name:n,p_enabled:en,p_secrets:sec},`${n} ${en?"enabled":"disabled"} & saved`)) setF(x=>Object.fromEntries(Object.entries(x).filter(([k])=>!k.startsWith("gs_"+n)))) };
 
   const gwDep = async g => { const a=+f.a; if(!(a>=10)) return say("Minimum deposit is ₹10",1); setBusy(true);
-    try{ const d = await api("deposit",{gateway:g,amount:a,phone:f.ph});
+    try{ const d = await api("deposit",{gateway:g,amount:a,phone:me.phone||undefined});
       const done = () => { say("Payment received. Wallet updates in a few seconds…"); [2500,6000,12000].forEach(ms=>setTimeout(load,ms)) };
       if(g==="zapupi"){ window.location.href = d.url; return }
       if(g==="razorpay"){ await loadScript(RZP_JS,()=>window.Razorpay); new window.Razorpay({key:d.key,order_id:d.order_id,amount:d.amount,currency:"INR",name:"ClashX7",prefill:{email:me.email,name:me.name},theme:{color:"#f5403a"},handler:done}).open() }
@@ -185,60 +244,181 @@ export default function App() {
 
   // ---- admin / moderator actions ----
   const notify = async (body) => { try{ const r = await api("notify",body); say(`Notification sent · ${r.sent} phone(s) reached`); return true }catch(e){ say("Notification failed: "+e.message,1); return false } };
-  const addMatch = async () => { if(!f.t||!f.d) return say("Title and time are required",1); const pv=f.v==="1";
-    const row={title:f.t,mode:f.g||T[0],map:f.m||"BERMUDA",slots:+f.s||32,prize:+f.p||0,fee:+f.fee||0,starts_at:new Date(f.d).toISOString(),status:"upcoming",is_private:pv,code:pv?"X7"+Math.random().toString(36).slice(2,6).toUpperCase():null};
-    const {data:nm,error}=await supabase.from("matches").insert(row).select().single(); if(error) return say(error.message,1);
-    if(nm) setM(a=>[...a.filter(x=>x.id!==nm.id),nm]); // admin list e sathe sathe dekhao
+
+  const buildMatchRow = (src={}) => {
+    const pv=String(src.private||src.type||"0").toLowerCase();
+    const isPrivate=pv==="1"||pv==="true"||pv==="private";
+    const starts=new Date(src.start||src.d||src.starts_at||"");
+    return {
+      title:String(src.title||"").trim(),
+      mode:String(src.mode||T[0]).trim(),
+      map:String(src.map||"BERMUDA").trim()||"BERMUDA",
+      slots:+src.slots||32,
+      prize:+src.prize||0,
+      fee:+src.fee||0,
+      starts_at:isNaN(starts.getTime())?null:starts.toISOString(),
+      status:"upcoming",
+      is_private:isPrivate,
+      code:isPrivate?(String(src.code||"").trim()||("X7"+Math.random().toString(36).slice(2,6).toUpperCase())):null,
+      thumbnail_url:String(src.thumbnail||src.thumbnail_url||"").trim()||null
+    };
+  };
+
+  const addMatch = async () => {
+    if(!f.t||!f.d) return say("Title and start time are required",1);
+    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
+    if(!row.starts_at) return say("Start time is invalid",1);
+    const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
+    if(error) return say(error.message,1);
+    setM(a=>[...a.filter(x=>x.id!==nm.id),nm].sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at)));
     say("Match created — players can see it now ✅");
-    if(f.nf!=="0"&&!pv) notify({title:"🔥 New match: "+row.title,body:`${row.mode} · Prize ₹${row.prize} · Entry ₹${row.fee} · ${fmt(row.starts_at)}`});
-    setF({}); load() };
+    if(f.nf!=="0") notify({title:"🔥 New match: "+row.title,body:`${row.mode} · Prize ₹${row.prize} · Entry ₹${row.fee} · ${fmt(row.starts_at)}`});
+    setF({}); load()
+  };
+
+  const bulkCreate = async () => {
+    const raw=(f.bulkText||"").trim();
+    if(!raw) return say("Paste at least one match line.",1);
+    const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    const rows=[];
+    for(let i=0;i<lines.length;i++){
+      const parts=lines[i].split("|").map(x=>x.trim());
+      if(parts.length<7) return say(`Line ${i+1}: use Title | Mode | Map | Slots | Prize | Fee | Start`,1);
+      const row=buildMatchRow({
+        title:parts[0],mode:parts[1],map:parts[2],slots:parts[3],prize:parts[4],fee:parts[5],start:parts[6],
+        thumbnail:parts[7],type:parts[8]
+      });
+      if(!row.title||!row.starts_at) return say(`Line ${i+1}: title/start time is invalid`,1);
+      rows.push(row);
+    }
+    setBusy(true);
+    try{
+      const {error}=await supabase.from("matches").insert(rows);
+      if(error) throw error;
+      say(`${rows.length} matches created ✅`);
+      if(f.bulkNotify!=="0") notify({title:`🔥 ${rows.length} new matches added`,body:"New matches are now available in ClashX7."});
+      setF({}); await load();
+    }catch(e){say(e.message,1)} finally{setBusy(false)}
+  };
+
   const room = m => { const o=rooms[m.id]||{};
-    ask(`Room details · #${m.id}`,[["r","Room ID","text"],["p","Room password","text"],["n","Notify joined players?","select",[["1","Yes, send notification"],["0","No"]]]],async v=>{
-      if(!await run(supabase.from("match_rooms").upsert({match_id:m.id,room_id:v.r,room_pass:v.p}),"Room saved")) return false;
-      if(v.n==="1") notify({match_id:m.id,title:"🎮 Room ready: "+m.title,body:`Room ID ${v.r} · Pass ${v.p}`}) },{r:o.room_id||"",p:o.room_pass||""}) };
+    ask(`Room details · #${m.id}`,
+      [["r","Room ID","text"],["p","Room password","text"]],
+      async v=>{
+        const oldR=o.room_id||"", oldP=o.room_pass||"";
+        if(!v.r||!v.p) {say("Room ID and password are required",1);return false}
+        if(!await run(supabase.from("match_rooms").upsert({match_id:m.id,room_id:v.r,room_pass:v.p}),"Room saved")) return false;
+        if(v.r!==oldR||v.p!==oldP) await notify({match_id:m.id,title:"🎮 Room ID & password updated",body:`${m.title} room is ready. Room ID: ${v.r} · Pass: ${v.p}`});
+      },{r:o.room_id||"",p:o.room_pass||""});
+  };
+
   const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s).then(ok=>{ if(ok&&s==="live") notify({match_id:m.id,title:"🔴 Match is LIVE",body:m.title+" has started. Join the room now!"}) });
   const pay = m => ask(`Pay winner · #${m.id}`,[["w","Winner name or email","text"],["a","Prize amount ₹","number"]],async v=>{
       const k=v.w.trim().toLowerCase(), w=allU.find(x=>x.email?.toLowerCase()===k||x.name?.toLowerCase()===k), a=+v.a;
       if(!w||!(a>0)){say("User not found / bad amount",1);return false} return rpc("admin_pay_winner",{p_match:m.id,p_user:w.id,p_amt:a},`₹${a} paid to ${w.name}`) },{a:m.prize},{btn:"Pay"});
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
   const saveRules = async (m,text) => run(supabase.from("mode_rules").upsert(m.map(k=>({mode:k,rules:text,updated_at:new Date().toISOString()}))), m.length>1?"Rules saved for ALL modes":"Rules saved");
+  const saveLinks = () => {
+    const links={telegram:(f.telegram??S.support_links?.telegram??"").trim(),whatsapp:(f.whatsapp??S.support_links?.whatsapp??"").trim()};
+    return run(supabase.from("app_settings").upsert({key:"support_links",value:links,updated_at:new Date().toISOString()}),"Support links saved");
+  };
 
   // ---- UI pieces ----
-  const card = m => { const left=m.slots-m.filled, j=joined.includes(m.id), r=rooms[m.id]; return (
-    <div className="card" key={m.id}>
-      <div className="tags"><i>{m.mode.split(" ")[0]}</i><i>{m.map}</i><i>{m.slots} SLOTS</i></div>
-      <div className="row"><div><h4>{m.title}</h4><p className="pz">Prize Pool – ₹{m.prize}</p></div>
-        <div className="thw"><div className="th" style={{background:`linear-gradient(135deg,${COL[m.id%5]},#111)`}}><Logo s={34}/></div>{fmt(m.starts_at)}</div></div>
-      <div className="bar"><u style={{width:`${m.filled/m.slots*100}%`}}/></div>
-      <div className="foot"><span>MATCH ID {m.id}</span><span>{left} spots left</span></div>
-      {j&&r?.room_id&&<div className="room">Room ID: {r.room_id} · Pass: {r.room_pass}</div>}
-      <button className="join" disabled={left<1||j||m.status!=="upcoming"} onClick={()=>join(m.id)}>{j?"JOINED":"₹"+m.fee+" JOIN"}</button>
-    </div>)};
+  const copyText = async text => {
+    try{ await navigator.clipboard.writeText(text); say("Copied ✅") }
+    catch{ say("Copy failed — long press and copy it.",1) }
+  };
+
+  const matchCard = m => {
+    const left=Math.max(0,(m.slots||0)-(m.filled||0));
+    return (
+      <div className="card matchCard" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}>
+        <div className="thumbWrap">
+          {m.thumbnail_url
+            ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy"/>
+            : <div className="thumbFallback"><Logo s={40}/></div>}
+          <div className="thumbShade"/>
+          <div className="thumbTop"><span>#{m.id}</span><span>{m.mode}</span></div>
+        </div>
+        <div className="matchBody">
+          <div className="tags"><i>{m.map}</i><i>{m.slots} SLOTS</i>{m.is_private&&<i>PRIVATE</i>}</div>
+          <div className="matchTitleRow"><div><h4>{m.title}</h4><p className="pz">Prize Pool · ₹{m.prize}</p></div><b className="matchTime">{fmt(m.starts_at)}</b></div>
+          <div className="bar"><u style={{width:`${m.slots?Math.min(100,(m.filled||0)/m.slots*100):0}%`}}/></div>
+          <div className="foot"><span>{left} spots left</span><b>₹{m.fee} JOIN</b></div>
+        </div>
+      </div>
+    );
+  };
+
   const Tabs = ({list,cur,set,flex}) => (<div className="tabs">{list.map(t=><b key={t} className={t===cur?"on":""} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:null} onClick={()=>set(t)}>{t}</b>)}</div>);
 
   const body = () => {
-    if(nav==="home"){const ms=M.filter(m=>m.mode===tab&&m.status==="upcoming"&&!m.is_private), ru=rules[tab]?.rules;
+    if(nav==="home"){
+      const q=matchSearch.trim().toLowerCase();
+      const ms=M.filter(m=>{
+        if(m.status!=="upcoming"||m.is_private||m.mode!==tab) return false;
+        if(!q) return true;
+        return String(m.id).includes(q)||String(m.code||"").toLowerCase().includes(q)||String(m.title||"").toLowerCase().includes(q);
+      });
       return <><Tabs list={T} cur={tab} set={setTab}/>
-        {pushOK()&&!pushOn&&Notification.permission!=="denied"&&<div className="bn" onClick={enablePush}>🔔 Tap to get match & room notifications on your phone</div>}
-        {ru&&<details className="rl"><summary>📜 {tab} — Rules</summary><p>{ru}</p></details>}
-        {ms.length?ms.map(card):<p className="empty">No matches now. Check back soon!</p>}</>}
-    if(nav==="my"){const ms=M.filter(m=>joined.includes(m.id)&&m.status===mt); return <><Tabs list={["upcoming","live","played"]} cur={mt} set={setMt} flex/>{ms.length?ms.map(card):<p className="empty">No matches now. Join upcoming!</p>}</>}
+        {pushOK()&&!pushOn&&Notification.permission!=="denied"&&<div className="bn" onClick={enablePush}>🔔 Turn on match & room notifications</div>}
+        <div className="searchBox"><span>⌕</span><input value={matchSearch} onChange={e=>setMatchSearch(e.target.value)} placeholder="Search match code or match name"/></div>
+        {ms.length?ms.map(matchCard):<p className="empty">No matches found.</p>}
+      </>;
+    }
+    if(nav==="my"){
+      const ms=M.filter(m=>joined.includes(m.id)&&m.status===mt);
+      return <><Tabs list={["upcoming","live","played","cancelled"]} cur={mt} set={setMt} flex/>{ms.length?ms.map(matchCard):<p className="empty">No matches here yet.</p>}</>;
+    }
     if(nav==="wallet"){ const md=deps.filter(d=>d.user_id===me.id).slice(0,5); return <div className="pgb">
       <div className="wc"><span style={{fontSize:12,opacity:.9}}>Total balance</span><h2>₹{me.balance+me.winnings}</h2><div className="wsplit"><div>Deposit balance<b>₹{me.balance}</b></div><div>Winnings<b>₹{me.winnings}</b></div></div></div>
       <div style={{display:"flex",gap:8,margin:"12px 0"}}><button className="btn gb" onClick={()=>go("deposit",{a:""})}>+ Add Money</button><button className="btn" onClick={()=>go("withdraw",{})}>Withdraw</button></div>
       {myW.length>0&&<><p className="sh">Withdrawal requests</p>{myW.slice(0,5).map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>)}</>}
       {md.length>0&&<><p className="sh">Deposits</p>{md.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}
       <p className="sh">Transactions</p>{txs.length?txs.slice(0,20).map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty" style={{padding:20}}>No transactions yet</p>}</div> }
-    const r=[...lb].sort((a,b)=>b.total_won-a.total_won), P=x=>x?(<div><div className="av">{x.name?.[0]}</div><b>{x.name}</b><div className="gn">₹{kf(x.total_won)}</div></div>):<div/>;
+    const r=[...lb].sort((a,b)=>b.total_won-a.total_won), P=x=>x?(<div><Avatar name={x.name} s={64}/><b>{x.name}</b><div className="gn">₹{kf(x.total_won)}</div></div>):<div/>;
     if(!r.length) return <p className="empty">No winners yet. Be the first!</p>;
     return <><div className="pod">{P(r[1])}<div style={{marginTop:-14}}>{P(r[0])}</div>{P(r[2])}</div>
       <div className="lr" style={{fontWeight:600}}><b>Name</b>Rank</div>
-      {r.slice(3).map((x,i)=><div key={x.id} className={"lr"+(x.id===me.id?" me":"")}><span className="av">{x.name?.[0]}</span><b>{x.name}<div className="gn">₹{kf(x.total_won)}</div></b>{i+4}</div>)}</>;
+      {r.slice(3).map((x,i)=><div key={x.id} className={"lr"+(x.id===me.id?" me":"")}><Avatar name={x.name} s={34}/><b>{x.name}<div className="gn">₹{kf(x.total_won)}</div></b>{i+4}</div>)}</>;
   };
 
   const stTxt = s => <span style={{color:s==="approved"?"#16a34a":s==="pending"?"#d97706":"#dc2626",fontWeight:600,textTransform:"capitalize"}}>{s}</span>;
-  const sub = () => { const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",notifs:"profile"}[page]||null; let t="",h=null;
-    if(page==="deposit"){t="Add Money";const a=+f.a||0, act=gwActive(), gg=act.includes(gw)?gw:act[0], man=S.manual||{}, upi=man.upi_id||UPI_ID, upiName=man.upi_name||UPI_NAME, mine=deps.filter(d=>d.user_id===me.id).slice(0,8);
+  const sub = () => {
+    const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",notifs:"profile",match:null,deposit:null,withdraw:null}[page]??null;
+    let t="",h=null;
+
+    if(page==="match"){
+      const m=M.find(x=>x.id===+f.mid), r=m?rooms[m.id]:null, ru=m?rules[m.mode]?.rules:"";
+      const already=joined.includes(m?.id);
+      const left=m?Math.max(0,(m.slots||0)-(m.filled||0)):0;
+      const canEdit=m?.status==="upcoming";
+      t=m?.title||"Match";
+      if(!m) h=<p className="empty">Match not found.</p>;
+      else h=<div className="matchDetail">
+        {m.thumbnail_url?<img className="detailThumb" src={m.thumbnail_url} alt=""/>:<div className="detailFallback"><Logo s={58}/></div>}
+        <div className="detailMeta"><span>#{m.id}</span><span>{m.mode}</span><span>{m.map}</span><span>{left} slots left</span></div>
+        <div className="detailGrid"><div><small>Prize Pool</small><b>₹{m.prize}</b></div><div><small>Entry</small><b>₹{m.fee}</b></div><div><small>Start</small><b>{fmt(m.starts_at)}</b></div><div><small>Status</small><b>{m.status}</b></div></div>
+        <section className="detailSection"><h4>📜 Rules</h4><div className="rulesBox">{ru||"Rules have not been added yet."}</div></section>
+        {already&&r?.room_id&&<section className="detailSection roomBox"><h4>🎮 Room details</h4>
+          <div className="copyRow"><span>Room ID<b>{r.room_id}</b></span><button className="sm" onClick={()=>copyText(r.room_id)}>Copy</button></div>
+          <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
+        </section>}
+        {already&&m.status==="upcoming"&&<div className="joinedNote">✓ Already joined — you have a slot. You can book another slot while space is available.</div>}
+        {canEdit&&left>0&&<section className="detailSection">
+          <h4>👤 Your game name</h4>
+          <input value={f.game_name??me.game_name??""} onChange={e=>setF({...f,game_name:e.target.value})} placeholder="Enter the game name shown in the match"/>
+          <button className="btn gb" onClick={()=>join(m.id,f.game_name??me.game_name??"")}>{already?`Book another slot · ₹${m.fee}`:`Join match · ₹${m.fee}`}</button>
+          <p className="hint">You can edit the game name until the match becomes ongoing.</p>
+        </section>}
+        {!canEdit&&<div className="joinedNote">This match is {m.status}. New slots cannot be booked now.</div>}
+      </div>;
+      return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>go(back)}>←</span>{t}</div><div className="pgb">{h}</div></>;
+    }
+
+    if(page==="deposit"){
+      t="Add Money";
+      const a=+f.a||0, act=gwActive(), gg=act.includes(gw)?gw:act[0], man=S.manual||{}, upi=man.upi_id||UPI_ID, upiName=man.upi_name||UPI_NAME, mine=deps.filter(d=>d.user_id===me.id).slice(0,8);
       h=<>{inp("a","Amount ₹ (min 10)","number")}<div style={{display:"flex",gap:6,marginBottom:12}}>{[50,100,200,500].map(x=><button key={x} className="sm" style={{flex:1}} onClick={()=>setF({...f,a:String(x)})}>₹{x}</button>)}</div>
         {!act.length&&<p className="empty">Deposits are temporarily unavailable.</p>}{act.length>1&&<Tabs list={act} cur={gg} set={setGw} flex/>}
         {gg==="manual"&&<div style={{marginTop:10}}>
@@ -247,68 +427,120 @@ export default function App() {
           {a>=10&&upi&&<a className="btn" style={{display:"block",textAlign:"center",textDecoration:"none",background:"#111",marginBottom:10}} href={`upi://pay?pa=${upi}&pn=${encodeURIComponent(upiName)}&am=${a}&cu=INR&tn=ClashX7`}>Open UPI app & pay ₹{a}</a>}
           {inp("u","UTR / Transaction ID (optional if screenshot)")}<label>Payment screenshot (optional if UTR)</label><input type="file" accept="image/*" onChange={e=>setF({...f,pf:e.target.files[0]})}/>
           <button className="btn" disabled={busy} onClick={manualDep}>{busy?"Uploading…":"Submit for verification"}</button></div>}
-        {gg==="zapupi"&&<div style={{marginTop:10}}><p style={{fontSize:12,color:"#555",marginBottom:8}}>Pay with any UPI app (GPay, PhonePe, Paytm…). Balance is added automatically after payment.</p>{inp("ph","Mobile number","tel")}<button className="btn gb" disabled={busy} onClick={()=>gwDep("zapupi")}>{busy?"Please wait…":`Pay ₹${a||""} with UPI`}</button></div>}
+        {gg==="zapupi"&&<div style={{marginTop:10}}><p style={{fontSize:12,color:"#555",marginBottom:8}}>Pay with any UPI app (GPay, PhonePe, Paytm…). Balance is added automatically after payment.</p><button className="btn gb" disabled={busy} onClick={()=>gwDep("zapupi")}>{busy?"Please wait…":`Pay ₹${a||""} with UPI`}</button></div>}
         {gg==="razorpay"&&<div style={{marginTop:10}}><p style={{fontSize:12,color:"#555",marginBottom:8}}>UPI, cards, netbanking & wallets. Balance is added automatically.</p><button className="btn gb" disabled={busy} onClick={()=>gwDep("razorpay")}>{busy?"Please wait…":`Pay ₹${a||""} with Razorpay`}</button></div>}
-        {gg==="cashfree"&&<div style={{marginTop:10}}><p style={{fontSize:12,color:"#555",marginBottom:8}}>UPI, cards & netbanking. Balance is added automatically.</p>{inp("ph","Mobile number","tel")}<button className="btn gb" disabled={busy} onClick={()=>gwDep("cashfree")}>{busy?"Please wait…":`Pay ₹${a||""} with Cashfree`}</button></div>}
-        {mine.length>0&&<><p style={{margin:"18px 0 4px",fontWeight:600}}>Recent deposits</p>{mine.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}</>}
+        {gg==="cashfree"&&<div style={{marginTop:10}}><p style={{fontSize:12,color:"#555",marginBottom:8}}>UPI, cards & netbanking. Balance is added automatically.</p><button className="btn gb" disabled={busy} onClick={()=>gwDep("cashfree")}>{busy?"Please wait…":`Pay ₹${a||""} with Cashfree`}</button></div>}
+        {mine.length>0&&<><p style={{margin:"18px 0 4px",fontWeight:600}}>Recent deposits</p>{mine.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}</>
+    }
+
     if(page==="notifs"){t="Notifications";localStorage.setItem("x7seen",Date.now());
       h=<>{pushOK()&&!pushOn&&<button className="btn" style={{marginBottom:12}} onClick={enablePush}>🔔 Turn on phone notifications</button>}{pushOn&&<p style={{fontSize:11,color:"#16a34a",marginBottom:8}}>✅ Phone notifications are on</p>}
         {notifs.length?notifs.map(n=><div className="mi" key={n.id} style={{cursor:"default",display:"block"}}><b>{n.title}</b><div style={{fontSize:12,color:"#444",marginTop:2}}>{n.body}</div><div style={{fontSize:10,color:"#999",marginTop:4}}>{fmt(n.created_at)}</div></div>):<p className="empty">No notifications yet.</p>}</>}
-    if(page==="profile"){t="Profile";h=<><div style={{textAlign:"center",margin:10}}><div className="av" style={{width:90,height:90,fontSize:34,margin:"auto"}}>{me.name?.[0]}</div><h3 style={{marginTop:8}}>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p></div>
-      {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+
+    if(page==="profile"){
+      t="Profile";
+      const links=S.support_links||{};
+      h=<><div style={{textAlign:"center",margin:"10px 10px 18px"}}><Avatar name={me.name} s={96}/><h3 style={{marginTop:8}}>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
+      {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+      {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={links.telegram} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"Admin Panel":"Moderator Panel"}<span>›</span></a>}
-      <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>}
-    if(page==="account"){t="Account";h=<>{inp("n","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
+      <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
+    }
+    if(page==="account"){t="Account";h=<>{inp("n","Name")}{inp("gn","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
     if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={async()=>{if(await rpc("join_by_code",{p_code:f.c||""}))setPage(null)}}>Join</button></>}
     if(page==="withdraw"){t="Withdrawal";h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>{inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" onClick={withdraw}>Withdraw</button></>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
-    if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} style={{cursor:"default"}}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
-    if(page==="support"){t="Customer Support";h=<div className="empty">{SUPPORT_URL?<a className="btn gb" style={{display:"block",textDecoration:"none"}} href={SUPPORT_URL} target="_blank" rel="noreferrer">Chat with support</a>:"Support link not set yet."}</div>}
-    return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>go(back)}>←</span>{t}</div><div className="pgb">{h}</div></> };
+    if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
+    if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={links.telegram} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={links.whatsapp} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
 
-  const admin = () => { let b=null;
-    const TABS = isAdmin ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Withdrawals","Users"] : ["Matches","Rules","Notify"], cur = TABS.includes(at)?at:TABS[0];
-    if(cur==="Dashboard"){ const x=stats;
-      if(!x) b=<p className="empty">Loading stats…</p>;
-      else if(x.error) b=<p className="empty">Stats unavailable: {x.error}<br/>Run the latest schema_patch.sql in Supabase.</p>;
-      else { const C=(l,v,sub,go)=><div className="stat" key={l} style={go?{cursor:"pointer"}:null} onClick={go?()=>setAt(go):undefined}>{l}<h2>{v}</h2>{sub&&<small>{sub}</small>}</div>, dl=x.daily||[], mx=Math.max(1,...dl.flatMap(d=>[Math.abs(d.dep),Math.abs(d.inc)]));
+    const actualBack=page==="match"?null:back;
+    return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</span>{t}</div><div className="pgb">{h}</div></>
+  };
+
+  const admin = () => {
+    let b=null;
+    const TABS = isAdmin ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Withdrawals","Users"] : ["Matches","Rules","Notify"];
+    const cur = TABS.includes(at)?at:TABS[0];
+
+    if(cur==="Dashboard"){
+      const x=stats;
+      if(!x) b=<div className="emptyAdmin">No dashboard data available yet.</div>;
+      else if(x.error) b=<div className="emptyAdmin">Stats unavailable: {x.error}<br/>Run the latest schema patch in Supabase.</div>;
+      else {
+        const C=(l,v,sub,goTab)=><div className="stat" key={l} style={goTab?{cursor:"pointer"}:null} onClick={goTab?()=>setAt(goTab):undefined}>{l}<h2>{v}</h2>{sub&&<small>{sub}</small>}</div>, dl=x.daily||[], mx=Math.max(1,...dl.flatMap(d=>[Math.abs(d.dep),Math.abs(d.inc)]));
         b=<>
-        <p className="sh">💰 Deposits</p><div className="dg">{C("Total deposited",R(x.dep.total),`${x.dep.count} deposits`)}{C("Today",R(x.dep.today))}{C("Last 7 days",R(x.dep.week))}{C("Last 30 days",R(x.dep.month))}{C("Pending",R(x.dep.pending_amt),`${x.dep.pending_cnt} waiting`,"Deposits")}</div>
-        <p className="sh">📈 Income</p><div className="dg">{C("Today",R(x.inc.today))}{C("Last 7 days",R(x.inc.week))}{C("Last 30 days",R(x.inc.month))}{C("Total income",R(x.inc.total))}{C("Entry fees collected",R(x.inc.fees))}{C("Prizes paid",R(x.inc.prizes))}</div>
-        <small style={{color:"#777"}}>Income = entry fees − prize pool of finished (played) matches.</small>
-        <p className="sh">Last 7 days</p><div className="chart">{dl.map(d=><div className="cb" key={d.d}><div className="bars"><i title={"Deposit "+R(d.dep)} style={{height:`${Math.abs(d.dep)/mx*100}%`,background:"#2563eb"}}/><i title={"Income "+R(d.inc)} style={{height:`${Math.abs(d.inc)/mx*100}%`,background:d.inc<0?"#dc2626":"#16a34a"}}/></div><small>{d.d.slice(5)}</small></div>)}</div>
-        <small style={{color:"#777"}}><b style={{color:"#2563eb"}}>■</b> Deposits &nbsp;<b style={{color:"#16a34a"}}>■</b> Income</small>
-        <p className="sh">👥 Users</p><div className="dg">{C("Total users",x.users.total)}{C("New today",x.users.today)}{C("New (7 days)",x.users.week)}{C("Banned",x.users.banned)}</div>
-        <p className="sh">🎮 Matches</p><div className="dg">{C("Total matches",x.matches.total)}{C("Upcoming",x.matches.upcoming)}{C("Live now",x.matches.live)}{C("Played",x.matches.played,`${x.matches.played_today} today`)}{C("Total joins",x.matches.joins)}</div>
-        <p className="sh">💼 Wallets & withdrawals</p><div className="dg">{C("Users' deposit balance",R(x.wallet.balance),"held by app")}{C("Users' winnings",R(x.wallet.winnings),"held by app")}{C("Withdraw pending",R(x.wd.pending_amt),`${x.wd.pending_cnt} requests`,"Withdrawals")}{C("Total withdrawn",R(x.wd.paid_total))}{C("Withdrawn (7 days)",R(x.wd.paid_week))}</div>
-        <p className="sh">🏆 Top winners</p><table><tbody>{[...allU].sort((a,b)=>b.winnings-a.winnings).slice(0,5).map(u=><tr key={u.id}><td>{u.name}</td><td>₹{u.winnings}</td></tr>)}</tbody></table>
-        <p className="sh">🆕 Latest signups</p><table><tbody>{[...allU].reverse().slice(0,5).map(u=><tr key={u.id}><td>{u.name}</td><td>{u.phone||u.email}</td><td>{fmt(u.created_at)}</td></tr>)}</tbody></table></> } }
-    if(cur==="Matches") b=<>
-      <div className="fg">{inp("t","Title")}<div><label>Mode</label><select value={f.g||T[0]} onChange={e=>setF({...f,g:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>{inp("m","Map")}{inp("s","Slots","number")}{inp("p","Prize ₹","number")}{inp("fee","Entry fee ₹","number")}{inp("d","Start time","datetime-local")}
-        <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
-        <div><label>Notify players</label><select value={f.nf||"1"} onChange={e=>setF({...f,nf:e.target.value})}><option value="1">Yes (push)</option><option value="0">No</option></select></div></div>
-      <button className="btn" onClick={addMatch}>Create match</button>
-      <table><tbody><tr><th>Match</th><th>Mode</th><th>Slots</th><th>Status</th><th>Actions</th></tr>
-        {[...M].reverse().map(m=><tr key={m.id}><td>#{m.id} {m.title}{m.is_private?" 🔒"+m.code:""}</td><td>{m.mode}</td><td>{m.filled}/{m.slots}</td><td>{m.status}</td>
-          <td><button className="sm" onClick={()=>room(m)}>Room</button><button className="sm" onClick={()=>setSt(m,"live")}>Live</button><button className="sm" onClick={()=>setSt(m,"played")}>Done</button>{isAdmin&&<button className="sm" onClick={()=>pay(m)}>Pay winner</button>}<button className="sm" onClick={()=>window.confirm("Delete match?")&&run(supabase.from("matches").delete().eq("id",m.id),"Deleted")}>Del</button></td></tr>)}</tbody></table></>;
+          <p className="sh">💰 Deposits</p><div className="dg">{C("Total deposited",R(x.dep.total),`${x.dep.count} deposits`)}{C("Today",R(x.dep.today))}{C("Last 7 days",R(x.dep.week))}{C("Last 30 days",R(x.dep.month))}{C("Pending",R(x.dep.pending_amt),`${x.dep.pending_cnt} waiting`,"Deposits")}</div>
+          <p className="sh">📈 Income</p><div className="dg">{C("Today",R(x.inc.today))}{C("Last 7 days",R(x.inc.week))}{C("Last 30 days",R(x.inc.month))}{C("Total income",R(x.inc.total))}{C("Entry fees collected",R(x.inc.fees))}{C("Prizes paid",R(x.inc.prizes))}</div>
+          <small style={{color:"#777"}}>Income = entry fees − prize pool of finished matches.</small>
+          <p className="sh">Last 7 days</p><div className="chart">{dl.map(d=><div className="cb" key={d.d}><div className="bars"><i title={"Deposit "+R(d.dep)} style={{height:`${Math.abs(d.dep)/mx*100}%`,background:"#2563eb"}}/><i title={"Income "+R(d.inc)} style={{height:`${Math.abs(d.inc)/mx*100}%`,background:d.inc<0?"#dc2626":"#16a34a"}}/></div><small>{d.d.slice(5)}</small></div>)}</div>
+          <small style={{color:"#777"}}>■ Deposits &nbsp; ■ Income</small>
+          <p className="sh">👥 Users</p><div className="dg">{C("Total users",x.users.total)}{C("New today",x.users.today)}{C("New (7 days)",x.users.week)}{C("Banned",x.users.banned)}</div>
+          <p className="sh">🎮 Matches</p><div className="dg">{C("Total matches",x.matches.total)}{C("Upcoming",x.matches.upcoming)}{C("Live now",x.matches.live)}{C("Played",x.matches.played,`${x.matches.played_today} today`)}{C("Total joins",x.matches.joins)}</div>
+          <p className="sh">💼 Wallets & withdrawals</p><div className="dg">{C("Users' deposit balance",R(x.wallet.balance),"held by app")}{C("Users' winnings",R(x.wallet.winnings),"held by app")}{C("Withdraw pending",R(x.wd.pending_amt),`${x.wd.pending_cnt} requests`,"Withdrawals")}{C("Total withdrawn",R(x.wd.paid_total))}{C("Withdrawn (7 days)",R(x.wd.paid_week))}</div>
+        </>
+      }
+    }
+
+    if(cur==="Matches"){
+      const q=(f.ms||"").trim().toLowerCase();
+      const list=[...M].filter(m=>!q||String(m.id).includes(q)||String(m.code||"").toLowerCase().includes(q)||String(m.title||"").toLowerCase().includes(q)).reverse();
+      const single= !f.bulkMode;
+      b=<div className="matchAdmin">
+        <div className="adminModeRow"><button className={"modeBtn"+(single?" active":"")} onClick={()=>setF(x=>({...x,bulkMode:false}))}>Single Create</button><button className={"modeBtn"+(!single?" active":"")} onClick={()=>setF(x=>({...x,bulkMode:true}))}>Bulk Create</button></div>
+        {single
+          ? <div className="createPanel">
+              <div className="createHead"><h3>Create Match</h3><span>Public / Private · Thumbnail · Room ready after create</span></div>
+              <div className="fg">
+                {inp("t","Match title")}
+                <div><label>Mode</label><select value={f.g||T[0]} onChange={e=>setF({...f,g:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>
+                {inp("m","Map")}
+                {inp("s","Slots","number")}
+                {inp("p","Prize ₹","number")}
+                {inp("fee","Entry fee ₹","number")}
+                {inp("d","Start time","datetime-local")}
+                <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
+                <div><label>Notify</label><select value={f.nf||"1"} onChange={e=>setF({...f,nf:e.target.value})}><option value="1">Yes</option><option value="0">No</option></select></div>
+              </div>
+              <label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
+              <label>Or upload thumbnail</label><input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
+              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}
+              <button className="btn" onClick={addMatch}>Create match</button>
+            </div>
+          : <div className="createPanel">
+              <div className="createHead"><h3>Bulk Create</h3><span>One match per line · use <b>|</b> between fields</span></div>
+              <textarea rows={10} value={f.bulkText||""} onChange={e=>setF({...f,bulkText:e.target.value})} placeholder={"Title | Mode | Map | Slots | Prize | Fee | Start | ThumbnailURL | Public\nRoom #1 | SOLO BR | BERMUDA | 48 | 5000 | 50 | 2026-10-08T19:00\nRoom #2 | DUO BR | BERMUDA | 24 | 3000 | 50 | 2026-10-08T20:00"}/>
+              <label>Send one notification after bulk create</label><select value={f.bulkNotify||"1"} onChange={e=>setF({...f,bulkNotify:e.target.value})}><option value="1">Yes</option><option value="0">No</option></select>
+              <button className="btn" disabled={busy} onClick={bulkCreate}>{busy?"Creating…":"Create all matches"}</button>
+            </div>}
+        <div className="adminSearch"><input value={f.ms||""} onChange={e=>setF({...f,ms:e.target.value})} placeholder="Search match code / #ID / title"/></div>
+        <div className="tableWrap"><table><tbody><tr><th>Match</th><th>Mode</th><th>Slots</th><th>Status</th><th>Actions</th></tr>
+          {list.map(m=><tr key={m.id}><td><b>#{m.id}</b> {m.title}{m.is_private?" 🔒 "+m.code:""}</td><td>{m.mode}</td><td>{m.filled||0}/{m.slots}</td><td>{m.status}</td>
+            <td><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}<button className="sm" onClick={()=>window.confirm("Delete match?")&&run(supabase.from("matches").delete().eq("id",m.id),"Deleted")}>Del</button></td>
+          </tr>)}</tbody></table></div>
+      </div>;
+    }
+
     if(cur==="Rules"){const rm=f.rm||T[0], txt=f.rt ?? rules[rm]?.rules ?? "";
-      b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Players see these rules on the Home screen under the mode tab.</p>
+      b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Rules are shown only after the player opens a match.</p>
         <label>Mode</label><select value={rm} onChange={e=>setF({rm:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select>
-        <label>Rules for {rm}</label><textarea rows={10} value={txt} placeholder={"1. No hacking / teaming\n2. Join room 5 min before start\n3. ..."} onChange={e=>setF({...f,rm,rt:e.target.value})}/>
+        <label>Rules for {rm}</label><textarea rows={12} value={txt} placeholder={"1. No hacking / teaming\n2. Join room 5 min before start\n3. ..."} onChange={e=>setF({...f,rm,rt:e.target.value})}/>
         <button className="btn" onClick={()=>saveRules([rm],txt)}>Save for {rm}</button>
         <button className="btn" style={{background:"#111",marginTop:8}} onClick={()=>window.confirm("Replace rules of ALL modes with this text?")&&saveRules(T,txt)}>Apply this to ALL modes</button></>}
-    if(cur==="Notify") b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Goes to every player's phone (who allowed notifications) and the in-app list.</p>{inp("nt","Title")}<label>Message</label><textarea rows={4} value={f.nb??""} onChange={e=>setF({...f,nb:e.target.value})}/>{inp("ne","Only this user's email (leave blank = everyone)","email")}
+
+    if(cur==="Notify") b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Push notification + in-app notification for players who enabled notifications.</p>{inp("nt","Title")}<label>Message</label><textarea rows={4} value={f.nb??""} onChange={e=>setF({...f,nb:e.target.value})}/>{inp("ne","Only this user's email (leave blank = everyone)","email")}
       <button className="btn" disabled={busy} onClick={async()=>{if(!f.nt) return say("Title required",1); setBusy(true); if(await notify({title:f.nt,body:f.nb,email:f.ne})) setF({}); setBusy(false)}}>Send notification</button></>;
+
     if(cur==="Deposits"){const L=deps.filter(d=>f.dp==="all"?true:d.status==="pending"); b=<><div style={{margin:"0 0 8px"}}><button className="sm" onClick={()=>setF({dp:"pending"})}>Pending</button><button className="sm" onClick={()=>setF({dp:"all"})}>All</button></div>
-      {L.length?<table><tbody><tr><th>User</th><th>Amount</th><th>Via</th><th>UTR</th><th>Proof</th><th>Status</th><th></th></tr>{L.map(d=><tr key={d.id}><td>{allU.find(x=>x.id===d.user_id)?.name}</td><td>₹{d.amount}</td><td>{d.gateway}</td><td>{d.utr||"-"}</td><td>{d.proof_path?<button className="sm" onClick={()=>viewProof(d.proof_path)}>View</button>:"-"}</td><td>{stTxt(d.status)}</td>
-        <td>{d.status==="pending"&&<><button className="sm" onClick={()=>rpc("admin_review_deposit",{p_id:d.id,p_ok:true},"Deposit approved, balance added")}>Approve</button><button className="sm" onClick={()=>rpc("admin_review_deposit",{p_id:d.id,p_ok:false},"Deposit rejected")}>Reject</button></>}</td></tr>)}</tbody></table>:<p className="empty">No deposits</p>}</>}
-    if(cur==="Deposit Settings"){ const m=S.manual||{}, fv=(k,d="")=>f[k]??d, fl=(k,l,d,t="text")=><><label>{l}</label><input type={t} value={fv(k,d)} onChange={e=>setF({...f,[k]:e.target.value})}/></>,
+      {L.length?<div className="tableWrap"><table><tbody><tr><th>User</th><th>Amount</th><th>Via</th><th>UTR</th><th>Proof</th><th>Status</th><th></th></tr>{L.map(d=><tr key={d.id}><td>{allU.find(x=>x.id===d.user_id)?.name}</td><td>₹{d.amount}</td><td>{d.gateway}</td><td>{d.utr||"-"}</td><td>{d.proof_path?<button className="sm" onClick={()=>viewProof(d.proof_path)}>View</button>:"-"}</td><td>{stTxt(d.status)}</td>
+        <td>{d.status==="pending"&&<><button className="sm" onClick={()=>rpc("admin_review_deposit",{p_id:d.id,p_ok:true},"Deposit approved, balance added")}>Approve</button><button className="sm" onClick={()=>rpc("admin_review_deposit",{p_id:d.id,p_ok:false},"Deposit rejected")}>Reject</button></>}</td></tr>)}</tbody></table></div>:<p className="empty">No deposits</p>}</>}
+
+    if(cur==="Deposit Settings"){ const m=S.manual||{}, fv=(k,d="")=>f[k]??d, fl=(k,l,d,t="text")=>(<><label>{l}</label><input type={t} value={fv(k,d)} onChange={e=>setF({...f,[k]:e.target.value})}/></>),
         GW=[["zapupi","ZapUPI",["zap_key"],{zap_key:"ZapUPI Key"}],["razorpay","Razorpay",["key_id","key_secret","webhook_secret"],{key_id:"Key ID",key_secret:"Key Secret",webhook_secret:"Webhook Secret"}],["cashfree","Cashfree",["app_id","secret","env"],{app_id:"App ID",secret:"Secret Key",env:"Mode"}]];
       b=<>
-      <div className="pnl"><h4>📲 Manual payment (your QR / UPI)</h4><p style={{fontSize:11,color:"#777",margin:"4px 0 8px"}}>Players scan your QR, pay, then send the UTR and/or a screenshot. You approve from the Deposits tab.</p>
+      <div className="pnl"><h4>📲 Manual payment (your QR / UPI)</h4><p style={{fontSize:11,color:"#777",margin:"4px 0 8px"}}>Players scan your QR, pay, then send the UTR and/or a screenshot.</p>
         <label>Status</label><select value={fv("me_en",m.enabled===false?"0":"1")} onChange={e=>setF({...f,me_en:e.target.value})}><option value="1">Enabled</option><option value="0">Disabled</option></select>
         {fl("upi_id","Your UPI ID",m.upi_id)}{fl("upi_name","Payee name",m.upi_name)}
-        <label>Payment QR (screenshot of your scanner)</label>{(f.qr??m.qr_url)&&<img src={f.qr??m.qr_url} alt="QR" style={{width:180,display:"block",margin:"6px 0",borderRadius:8,border:"1px solid #eee"}}/>}<input type="file" accept="image/*" disabled={busy} onChange={e=>uploadQr(e.target.files[0])}/>
+        <label>Payment QR</label>{(f.qr??m.qr_url)&&<img src={f.qr??m.qr_url} alt="QR" style={{width:180,display:"block",margin:"6px 0",borderRadius:8,border:"1px solid #eee"}}/>}<input type="file" accept="image/*" disabled={busy} onChange={e=>uploadQr(e.target.files[0])}/>
         <label>Instructions shown to players</label><textarea rows={3} value={fv("note",m.note||"")} onChange={e=>setF({...f,note:e.target.value})}/>
         {fl("min","Minimum deposit ₹",m.min||10,"number")}{fl("max","Maximum deposit ₹ (0 = no limit)",m.max||0,"number")}
         <button className="btn" onClick={saveManual}>Save manual payment</button></div>
@@ -318,107 +550,103 @@ export default function App() {
           :<div key={k}><label>{names[k]}</label><input type="password" autoComplete="off" placeholder={gwOk[n]?"•••••• (leave blank to keep)":"Paste here"} value={fv("gs_"+n+"_"+k,"")} onChange={e=>setF({...f,["gs_"+n+"_"+k]:e.target.value})}/></div>)}
         <p style={{fontSize:11,color:"#777",margin:"6px 0"}}>Webhook URL: <b style={{userSelect:"all"}}>{window.location.origin}/api/webhook?g={n}</b></p>
         <button className="btn" onClick={()=>saveGw(n,keys)}>Save {label}</button></div>)}</>}
-    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email")}<table><tbody><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Game ID</th><th>Role</th><th>Deposit</th><th>Winning</th><th></th></tr>
-      {L.map(x=><tr key={x.id}><td>{x.name}{x.banned?" (banned)":""}</td><td>{x.email}</td><td>{x.phone||"-"}</td><td>{x.game_id||"-"}</td><td>{x.role||"user"}</td><td>₹{x.balance}</td><td>₹{x.winnings}</td><td><button className="sm" onClick={()=>adjust(x)}>± Balance</button><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>
-        {x.role!=="admin"&&<button className="sm" onClick={()=>rpc("admin_set_role",{p_user:x.id,p_role:x.role==="moderator"?"user":"moderator"},x.role==="moderator"?`${x.name} is no longer a moderator`:`${x.name} is now a moderator`)}>{x.role==="moderator"?"Remove mod":"Make mod"}</button>}</td></tr>)}</tbody></table></>}
-    if(cur==="Withdrawals") b=W.length?<table><tbody><tr><th>User</th><th>Amount</th><th>UPI</th><th>Status</th><th></th></tr>
-      {W.map(w=><tr key={w.id}><td>{allU.find(x=>x.id===w.user_id)?.name}</td><td>₹{w.amount}</td><td>{w.upi}</td><td>{w.status}</td><td>{w.status==="pending"&&<><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true},"Approved")}>Approve</button><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false},"Rejected")}>Reject</button></>}</td></tr>)}</tbody></table>:<p className="empty">No withdrawal requests</p>;
-    return <><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 {isAdmin?"Admin":"Moderator"} <span className={"lv"+(live?" on":"")} style={{marginLeft:"auto"}}>{live?"● Live":"○ Auto-refresh"}</span><button className="sm" onClick={()=>{load();say("Refreshed")}}>↻ Refresh</button><a href="#" style={{fontSize:13}}>← Open app</a></div>
-      <div style={{margin:"14px 0"}}>{TABS.map(x=><button key={x} className="sm" style={x===cur?{background:"#111",color:"#fff"}:null} onClick={()=>{setAt(x);setF({})}}>{x}</button>)}</div>{b}</>;
+
+    if(cur==="Support Links"){
+      const links=S.support_links||{};
+      b=<div className="pnl"><h3>🔗 Customer service & community</h3><p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>These links appear in the user profile/support section.</p>
+        <label>Telegram customer service link</label><input value={f.telegram??links.telegram??""} onChange={e=>setF({...f,telegram:e.target.value})} placeholder="https://t.me/your_support"/>
+        <label>WhatsApp community link</label><input value={f.whatsapp??links.whatsapp??""} onChange={e=>setF({...f,whatsapp:e.target.value})} placeholder="https://chat.whatsapp.com/..."/>
+        <button className="btn" onClick={saveLinks}>Save links</button>
+      </div>
+    }
+
+    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<div className="tableWrap"><table><tbody><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Game name</th><th>Role</th><th>Deposit</th><th>Winning</th><th></th></tr>
+      {L.map(x=><tr key={x.id}><td>{x.name}{x.banned?" (banned)":""}</td><td>{x.email}</td><td>{x.phone||"-"}</td><td>{x.game_name||"-"}</td><td>{x.role||"user"}</td><td>₹{x.balance}</td><td>₹{x.winnings}</td><td><button className="sm" onClick={()=>adjust(x)}>± Balance</button><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>
+        {x.role!=="admin"&&<button className="sm" onClick={()=>rpc("admin_set_role",{p_user:x.id,p_role:x.role==="moderator"?"user":"moderator"},x.role==="moderator"?`${x.name} is no longer a moderator`:`${x.name} is now a moderator`)}>{x.role==="moderator"?"Remove mod":"Make mod"}</button>}</td></tr>)}</tbody></table></div></>}
+
+    if(cur==="Withdrawals") b=W.length?<div className="tableWrap"><table><tbody><tr><th>User</th><th>Amount</th><th>UPI</th><th>Status</th><th></th></tr>
+      {W.map(w=><tr key={w.id}><td>{allU.find(x=>x.id===w.user_id)?.name}</td><td>₹{w.amount}</td><td>{w.upi}</td><td>{w.status}</td><td>{w.status==="pending"&&<><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true},"Approved")}>Approve</button><button className="sm" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false},"Rejected")}>Reject</button></>}</td></tr>)}</tbody></table></div>:<p className="empty">No withdrawal requests</p>;
+
+    return <><div className="adminHeader"><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 {isAdmin?"Admin":"Moderator"}</div><div className="adminHeaderRight"><span className={"lv"+(live?" on":"")}>{live?"● Live":"○ Auto-refresh"}</span><button className="sm" onClick={()=>{load();say("Refreshed")}}>↻</button><a className="sm" href="#">Open app</a></div></div>
+      <div className="adminTabs">{TABS.map(x=><button key={x} className={x===cur?"on":""} onClick={()=>{setAt(x);setF({})}}>{x}</button>)}</div>{b}</>;
   };
 
   const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
-  if(!ready) return wrap(<div className="sp"><Logo s={110}/>ClashX7</div>);
+  if(!ready) return wrap(<div className="bootBlank"/>);
   if(!session && !authOpen) return wrap(<Landing open={open} download={download} showDl={!standalone} support={SUPPORT_URL}/>);
   if(!session) return wrap(<div className="login"><Logo s={80}/><h2 style={{margin:"10px 0"}}>ClashX7</h2>
     {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p>
     <p style={{marginTop:10,color:"#666",cursor:"pointer",fontSize:12}} onClick={()=>setAuthOpen(false)}>← Back to home</p></div>);
-  if(!me) return wrap(<p className="empty">Loading your profile… If this never finishes, run schema.sql then schema_patch.sql in the Supabase SQL Editor.</p>);
+  if(!me) return wrap(<div className="bootBlank"/>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
   const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
   return wrap(page ? sub() : <>
-    <div className="hdr"><span className="av" onClick={()=>go("profile")}>{me.name?.[0]}</span><span className="brand"><Logo s={24}/>ClashX7</span>
+    <div className="hdr"><span onClick={()=>go("profile")}><Avatar name={me.name} s={34}/></span><span className="brand"><Logo s={24}/>ClashX7</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>go("notifs")}>🔔{unread>0&&<sup style={{color:"var(--r)",fontWeight:800}}> {unread}</sup>}</button><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
     {body()}
     <nav>{NAV.map(([n,l,d])=><a key={n} className={nav===n?"on":""} onClick={()=>setNav(n)}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>)}</nav></>);
 }
 
 const css = `
-.x7{--r:#f5403a;--g:#22c55e;background:#e5e7eb;min-height:100vh;color:#111;font-size:14px}
-.x7,.x7 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-.x7 #app{max-width:480px;min-height:100vh;margin:auto;background:#fff;padding-bottom:70px;position:relative}
-.x7 #app.adm{max-width:980px;padding:16px}
-.sp{background:var(--r);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:10px;font-weight:800;font-size:26px}
-.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:5}
-.av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;cursor:pointer}
-.ic{border:1px solid #ddd;border-radius:15px;background:#fff;height:30px;padding:0 10px;font-weight:600;cursor:pointer}
+.x7{--r:#f5403a;--g:#22c55e;background:#eef0f3;min-height:100vh;color:#111;font-size:14px}
+.x7,.x7 *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.x7 #app{max-width:480px;min-height:100vh;margin:auto;background:#fff;padding-bottom:74px;position:relative}
+.x7 #app.adm{max-width:1180px;padding:18px;background:#fff}
+.bootBlank{min-height:100vh;background:#fff}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:20}
 .brand{display:flex;align-items:center;gap:6px;font-weight:800}
-.tabs{display:flex;overflow-x:auto;border-bottom:1px solid #eee;scrollbar-width:none}
-.tabs b{padding:12px;white-space:nowrap;font-size:12px;font-weight:500;color:#555;cursor:pointer;border-bottom:2px solid transparent}
+.avatar{border-radius:50%;display:grid;place-items:center;position:relative;color:#fff;background:radial-gradient(circle at 30% 25%,#a78bfa 0,#7c3aed 35%,#4c1d95 100%);overflow:hidden;box-shadow:0 4px 10px #4c1d9533}
+.avatar b{position:relative;z-index:2;text-shadow:0 1px 2px #0005}
+.avatarGlow{position:absolute;top:4%;right:7%;font-size:.55em;opacity:.85;color:#fff}
+.ic{border:1px solid #ddd;border-radius:15px;background:#fff;height:30px;padding:0 10px;font-weight:600;cursor:pointer}
+.tabs{display:flex;overflow-x:auto;border-bottom:1px solid #eee;scrollbar-width:none;background:#fff}
+.tabs b{padding:12px;white-space:nowrap;font-size:12px;font-weight:600;color:#555;cursor:pointer;border-bottom:2px solid transparent}
 .tabs b.on{color:var(--r);border-color:var(--r)}
-.card{margin:8px;border:1px solid #eee;border-radius:6px;position:relative;overflow:hidden;padding:10px 10px 0;box-shadow:0 1px 3px #0001}
-.tags i{font-style:normal;font-size:9px;border:1px solid #333;border-radius:4px;padding:2px 5px;margin-right:6px}
-.row{display:flex;justify-content:space-between;gap:8px;margin-top:10px}
-.row h4{font-size:13px;margin:8px 0 14px}
-.pz{color:var(--r);font-weight:700;font-size:13px}
-.thw{text-align:center;font-size:10px;font-weight:600}
-.th{width:80px;height:80px;border-radius:6px;display:grid;place-items:center;margin-bottom:3px}
-.bar{height:3px;background:#eee;margin-top:6px}.bar u{display:block;height:100%;background:var(--r)}
-.foot{display:flex;justify-content:space-between;font-size:10px;color:var(--r);padding:6px 0 30px}
-.join{position:absolute;right:0;bottom:0;background:var(--r);color:#fff;border:0;font-weight:800;padding:8px 14px 8px 32px;clip-path:polygon(18px 0,100% 0,100% 100%,0 100%);cursor:pointer;font-size:13px}
-.join:disabled{background:#9ca3af}
-.room{background:#fef2f2;color:var(--r);font-size:11px;padding:5px 8px;margin:6px -10px 0;font-weight:600}
-.x7 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:9}
-.x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}
-.x7 nav a.on{color:var(--r)}
+.searchBox{display:flex;align-items:center;gap:8px;margin:10px 8px;padding:0 11px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa}
+.searchBox span{font-size:20px;color:#777}.searchBox input{border:0!important;background:transparent!important;margin:0!important;padding:11px 2px!important}
+.card{margin:9px;border:1px solid #ececec;border-radius:13px;overflow:hidden;box-shadow:0 2px 8px #0000000b;cursor:pointer;background:#fff}
+.thumbWrap{height:170px;position:relative;background:#111;overflow:hidden}
+.matchThumb{width:100%;height:100%;display:block;object-fit:cover}
+.thumbFallback{width:100%;height:100%;display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
+.thumbShade{position:absolute;inset:0;background:linear-gradient(180deg,#0005 0,#0000 38%,#0007 100%)}
+.thumbTop{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;color:#fff;font-size:11px;font-weight:700}
+.matchBody{padding:10px 11px 0}
+.tags i{font-style:normal;font-size:9px;border:1px solid #333;border-radius:5px;padding:3px 6px;margin-right:6px;background:#fff}
+.matchTitleRow{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-top:9px}
+.matchTitleRow h4{font-size:15px;margin:4px 0 4px}.pz{color:var(--r);font-weight:800;font-size:13px}.matchTime{font-size:10px;color:#555;text-align:right;white-space:nowrap}
+.bar{height:5px;background:#eee;margin-top:10px;border-radius:6px;overflow:hidden}.bar u{display:block;height:100%;background:var(--r);text-decoration:none}
+.foot{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#666;padding:9px 0 12px}.foot b{color:#fff;background:var(--r);padding:7px 10px;border-radius:8px;font-size:11px}
+.x7 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:30}
+.x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}.x7 nav a.on{color:var(--r)}
 .x7 nav svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.pgh{display:flex;align-items:center;gap:14px;padding:14px;font-weight:600}
-.pgb{padding:12px}
-.x7 label{font-size:11px;color:#555}
-.x7 input,.x7 select{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:6px;margin:4px 0 10px;background:#fafafa}
-.btn{width:100%;padding:11px;border:0;border-radius:6px;background:var(--r);color:#fff;font-weight:600;cursor:pointer}
-.gb{background:var(--g)}
+.pgh{display:flex;align-items:center;gap:14px;padding:14px;font-weight:700;border-bottom:1px solid #eee;background:#fff;position:sticky;top:0;z-index:18}.pgb{padding:12px}
+.x7 label{display:block;font-size:11px;color:#555;font-weight:600}.x7 input,.x7 select{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0 10px;background:#fafafa}.x7 textarea{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0 10px;background:#fafafa;font-size:14px;resize:vertical}
+.btn{width:100%;padding:11px;border:0;border-radius:8px;background:var(--r);color:#fff;font-weight:700;cursor:pointer}.gb{background:var(--g)}
 .kv{display:flex;justify-content:space-between;padding:10px 4px;font-weight:500}
-.mi{display:flex;justify-content:space-between;padding:14px;border:1px solid #eee;border-radius:6px;margin:6px 0;cursor:pointer}
+.mi{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid #eee;border-radius:10px;margin:7px 0;cursor:pointer;background:#fff}
 .empty{text-align:center;color:#555;padding:60px 20px;font-size:13px}
 .pod{display:flex;justify-content:space-around;align-items:flex-start;padding:24px 0 30px;text-align:center;font-size:12px}
-.pod .av{width:64px;height:64px;font-size:22px;margin:0 auto 6px}
-.lr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #eee}
-.lr b{flex:1}.lr.me{background:#dbeafe}.gn{color:#16a34a;font-weight:600}
+.lr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #eee}.lr b{flex:1}.lr.me{background:#dbeafe}.gn{color:#16a34a;font-weight:600}
 .login{max-width:320px;margin:80px auto;text-align:center}
-.adm table{width:100%;border-collapse:collapse;margin-top:12px}
-.x7 td,.x7 th{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:13px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
-.stat{background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:14px}
-.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
-.sm{padding:5px 9px;border:1px solid #ddd;background:#fff;border-radius:5px;cursor:pointer;margin:2px;font-size:12px}
-.x7 textarea{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:6px;margin:4px 0 10px;background:#fafafa;font-size:14px;resize:vertical}
-.ov{position:fixed;inset:0;background:#0007;display:grid;place-items:center;z-index:50;padding:16px}
-.dl{background:#fff;border-radius:10px;padding:16px;width:100%;max-width:380px;max-height:90vh;overflow:auto}
-.toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:99;max-width:92vw;box-shadow:0 4px 14px #0004}
-.toast.er{background:#b91c1c}
-.bn{margin:8px;padding:10px;background:#fef2f2;color:var(--r);border-radius:6px;font-size:12px;font-weight:600;text-align:center;cursor:pointer}
-.rl{margin:8px;border:1px solid #eee;border-radius:6px;padding:8px 10px;font-size:12px}.rl summary{font-weight:700;cursor:pointer;color:var(--r)}.rl p{white-space:pre-wrap;margin-top:6px;line-height:1.5;color:#333}
-.sm:disabled,.btn:disabled{opacity:.6}
-.x7 #app.land{max-width:1000px;padding-bottom:0}
-.lh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px}
-.hero{background:linear-gradient(160deg,#f5403a,#7f1d1d);color:#fff;text-align:center;padding:48px 20px 56px;display:flex;flex-direction:column;align-items:center;gap:12px}
-.hero h1{font-size:clamp(30px,6vw,52px);font-weight:800}.hero p{max-width:520px;opacity:.93;line-height:1.5}
-.cta{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px}
-.lb2{border:0;border-radius:8px;padding:12px 22px;font-weight:700;cursor:pointer;font-size:14px;background:#fff;color:var(--r)}
-.lb2.ghost{background:transparent;color:#fff;border:1.5px solid #fff}.lb2.dk{background:#111;color:#fff}.lb2.rd{background:var(--r);color:#fff}
-.lsec{padding:34px 18px}.lsec h2{text-align:center;margin-bottom:18px;font-size:22px}
-.l3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-.lc{border:1px solid #eee;border-radius:10px;padding:18px;background:#fff;box-shadow:0 1px 3px #0001}.lc b{display:block;margin:8px 0 4px;font-size:16px}.lc p{color:#555;line-height:1.5;font-size:13px}.lc .em{font-size:28px;font-weight:800;color:var(--r)}
-.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}.chips i{font-style:normal;border:1px solid #333;border-radius:20px;padding:6px 12px;font-size:12px}
-.lf{background:#111;color:#bbb;text-align:center;padding:24px 18px;font-size:12px;line-height:1.8}
-.wc{background:linear-gradient(135deg,#f5403a,#7f1d1d);color:#fff;border-radius:12px;padding:18px}.wc h2{font-size:32px;margin:2px 0 12px}
-.wsplit{display:flex;gap:10px}.wsplit div{flex:1;background:#fff2;border-radius:8px;padding:8px 10px;font-size:11px}.wsplit b{display:block;font-size:16px;margin-top:2px}
+.sm{padding:6px 9px;border:1px solid #ddd;background:#fff;border-radius:6px;cursor:pointer;margin:2px;font-size:12px}.sm:disabled,.btn:disabled{opacity:.6}
+.ov{position:fixed;inset:0;background:#0008;display:grid;place-items:center;z-index:80;padding:16px}.dl{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:400px;max-height:90vh;overflow:auto}
+.toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;z-index:99;max-width:92vw;box-shadow:0 4px 14px #0004}.toast.er{background:#b91c1c}
+.bn{margin:8px;padding:11px;background:#fef2f2;color:var(--r);border-radius:8px;font-size:12px;font-weight:700;text-align:center;cursor:pointer}
+.wc{background:linear-gradient(135deg,#f5403a,#7f1d1d);color:#fff;border-radius:14px;padding:18px}.wc h2{font-size:32px;margin:2px 0 12px}.wsplit{display:flex;gap:10px}.wsplit div{flex:1;background:#fff2;border-radius:8px;padding:8px 10px;font-size:11px}.wsplit b{display:block;font-size:16px;margin-top:2px}
 .sh{margin:16px 0 4px;font-weight:700}.lv{font-size:11px;color:#999}.lv.on{color:#16a34a}
-.pnl{border:1px solid #eee;border-radius:10px;padding:14px;margin-bottom:14px;background:#fff}.pnl h4{margin-bottom:4px}
-.dg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.dg .stat{border:1px solid #eee;border-radius:8px;padding:10px;background:#fff;font-size:12px;color:#555}.dg .stat h2{font-size:20px;color:#111;margin-top:2px}.dg .stat small{display:block;font-size:10px;color:#777;margin-top:2px}
+.gameSaved{display:inline-block;margin-top:7px;padding:5px 9px;border-radius:99px;background:#f3f4f6;color:#444;font-size:11px}
+.socialLinks{display:flex;gap:8px;margin:12px 0}.socialLinks a{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:9px;background:#111;color:#fff;font-weight:700;font-size:12px}
+.supportGrid{display:grid;gap:10px}.supportBtn{display:block;text-align:center;text-decoration:none;color:#fff;padding:13px;border-radius:10px;font-weight:800}.tg{background:#229ed9}.wa{background:#16a34a}
+.matchDetail{background:#fff}.detailThumb,.detailFallback{width:100%;height:210px;object-fit:cover}.detailFallback{display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
+.detailMeta{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0}.detailMeta span{padding:5px 8px;background:#f3f4f6;border-radius:99px;font-size:10px;color:#444}
+.detailGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.detailGrid div{border:1px solid #eee;border-radius:10px;padding:10px}.detailGrid small{display:block;color:#777;font-size:10px}.detailGrid b{display:block;margin-top:3px;font-size:13px}
+.detailSection{margin-top:14px;border:1px solid #eee;border-radius:12px;padding:12px}.detailSection h4{margin-bottom:8px}.rulesBox{white-space:pre-wrap;line-height:1.6;color:#333;font-size:13px}.roomBox{background:#fef2f2;border-color:#fee2e2}.copyRow{display:flex;align-items:center;gap:8px;margin-top:8px}.copyRow span{flex:1;background:#fff;border:1px solid #eee;border-radius:8px;padding:9px;font-size:11px}.copyRow b{display:block;margin-top:2px;font-size:13px;color:var(--r);user-select:all}.joinedNote,.hint{margin-top:8px;padding:9px;border-radius:8px;background:#f8fafc;color:#555;font-size:11px;line-height:1.5}
+.adm table{width:100%;border-collapse:collapse;margin-top:12px}.x7 td,.x7 th{padding:9px;border-bottom:1px solid #eee;text-align:left;font-size:12px;vertical-align:top}.tableWrap{overflow:auto;border:1px solid #eee;border-radius:10px;background:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:14px}.dg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.dg .stat{background:#fff}.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.adminHeader{display:flex;justify-content:space-between;align-items:center;gap:10px;position:sticky;top:0;background:#fff;padding:6px 0 12px;z-index:25}.adminHeaderRight{display:flex;align-items:center;gap:5px}.adminTabs{display:flex;gap:6px;overflow-x:auto;padding:0 0 12px}.adminTabs button{border:1px solid #ddd;background:#fff;padding:8px 12px;border-radius:8px;white-space:nowrap;cursor:pointer}.adminTabs button.on{background:#111;color:#fff}.adminModeRow{display:flex;gap:8px;margin:6px 0 10px}.modeBtn{border:1px solid #ddd;background:#fff;border-radius:9px;padding:9px 13px;font-weight:700;cursor:pointer}.modeBtn.active{background:#111;color:#fff}.createPanel{border:1px solid #eee;border-radius:12px;padding:14px;margin-bottom:12px;background:#fff}.createHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;margin-bottom:12px}.createHead h3{font-size:17px}.createHead span{font-size:10px;color:#777}.adminThumbPreview{width:180px;height:100px;object-fit:cover;border-radius:9px;margin:4px 0 10px;display:block}.adminSearch{margin:10px 0}.adminSearch input{margin:0!important}.emptyAdmin{padding:40px;text-align:center;color:#666}
 .chart{display:flex;gap:6px;height:130px;align-items:flex-end;margin:8px 0}.cb{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end}.bars{display:flex;gap:2px;align-items:flex-end;height:100px;width:100%;justify-content:center}.bars i{width:38%;min-height:2px;border-radius:3px 3px 0 0}.cb small{font-size:9px;color:#777;margin-top:2px}
+.x7 #app.land{max-width:1000px;padding-bottom:0}.lh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px}.hero{background:linear-gradient(160deg,#f5403a,#7f1d1d);color:#fff;text-align:center;padding:48px 20px 56px;display:flex;flex-direction:column;align-items:center;gap:12px}.hero h1{font-size:clamp(30px,6vw,52px);font-weight:800}.hero p{max-width:520px;opacity:.93;line-height:1.5}.cta{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px}.lb2{border:0;border-radius:8px;padding:12px 22px;font-weight:700;cursor:pointer;font-size:14px;background:#fff;color:var(--r)}.lb2.ghost{background:transparent;color:#fff;border:1.5px solid #fff}.lb2.dk{background:#111;color:#fff}.lb2.rd{background:var(--r);color:#fff}.lsec{padding:34px 18px}.lsec h2{text-align:center;margin-bottom:18px;font-size:22px}.l3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.lc{border:1px solid #eee;border-radius:10px;padding:18px;background:#fff;box-shadow:0 1px 3px #0001}.lc b{display:block;margin:8px 0 4px;font-size:16px}.lc p{color:#555;line-height:1.5;font-size:13px}.lc .em{font-size:28px;font-weight:800;color:var(--r)}.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}.chips i{font-style:normal;border:1px solid #333;border-radius:20px;padding:6px 12px;font-size:12px}.lf{background:#111;color:#bbb;text-align:center;padding:24px 18px;font-size:12px;line-height:1.8}
 `;
