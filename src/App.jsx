@@ -70,12 +70,23 @@ function Dlg({d, close}) {
     <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button></div></div>);
 }
 
+const Tabs = ({list,cur,set,flex}) => (
+  <div className="tabs">
+    {list.map(t=><b key={t} className={t===cur?"on":""} ref={t===cur?el=>{
+      if(!el||!el.parentElement||flex) return;
+      const p=el.parentElement;
+      const left=Math.max(0,el.offsetLeft-(p.clientWidth-el.offsetWidth)/2);
+      p.scrollLeft=left;
+    }:undefined} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:null} onClick={()=>set(t)}>{t}</b>)}
+  </div>
+);
+
 export default function App() {
   const [session,setSession] = useState(null), [ready,setReady] = useState(false), [hash,setHash] = useState(window.location.hash);
   const [me,setMe] = useState(null), [M,setM] = useState([]), [rooms,setRooms] = useState({}), [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState([]), [rules,setRules] = useState({}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
   const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false);
-  const [matchSearch,setMatchSearch] = useState(""), [pageMatch,setPageMatch] = useState(null);
+  const [pageMatch,setPageMatch] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
   const authOpenRef = useRef(false);
@@ -146,7 +157,7 @@ export default function App() {
     await savePush(); setPushOn(true); say("Phone notifications turned on ✅") }catch(e){say(e.message,1)} };
 
   const go = (p,init={}) => {setF(init);setPage(p)};
-  const inp = (k,l,t="text") => (<><label>{l}</label><input type={t} value={f[k]??""} onChange={e=>setF({...f,[k]:e.target.value})}/></>);
+  const inp = (k,l,t="text") => (<div className="field"><label>{l}</label><input type={t} value={f[k]??""} onChange={e=>setF({...f,[k]:e.target.value})}/></div>);
   const rpc = async (fn,args,msg) => { const {error}=await supabase.rpc(fn,args); if(error){say(error.message,1);return false} if(msg) say(msg); await load(); return true };
   const run = async (p,msg) => { const {error}=await p; if(error){say(error.message,1);return false} if(msg) say(msg); await load(); return true };
   const api = async (path,body) => { const r = await fetch("/api/"+path,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify(body)});
@@ -288,7 +299,7 @@ export default function App() {
 
   const bulkRows = () => {
     const count=Math.max(1,Math.min(100,+f.bulkCount||1));
-    const gap=Math.max(0,+f.bulkGap||0);
+    const gap=parseGapMinutes(f.bulkGap||"00:10");
     const start=new Date(f.bulkStart||"");
     if(!f.bulkTitle?.trim() || isNaN(start.getTime())) return [];
     return Array.from({length:count},(_,i)=>{
@@ -376,7 +387,7 @@ export default function App() {
   const saveRules = async (m,text) => run(supabase.from("mode_rules").upsert(m.map(k=>({mode:k,rules:text,updated_at:new Date().toISOString()}))), m.length>1?"Rules saved for ALL modes":"Rules saved");
   const saveLinks = () => {
     const links={telegram:(f.telegram??S.support_links?.telegram??"").trim(),whatsapp:(f.whatsapp??S.support_links?.whatsapp??"").trim()};
-    return run(supabase.from("app_settings").upsert({key:"support_links",value:links,updated_at:new Date().toISOString()}),"Support links saved");
+    return rpc("admin_save_support_links",{p_telegram:links.telegram,p_whatsapp:links.whatsapp},"Support links saved");
   };
 
   // ---- UI pieces ----
@@ -385,14 +396,32 @@ export default function App() {
     catch{ say("Copy failed — long press and copy it.",1) }
   };
 
+  const parseGapMinutes = v => {
+    const [hh,mm] = String(v||"00:10").split(":").map(Number);
+    return Math.max(0, (hh||0)*60 + (mm||0));
+  };
+
+  const joinSlots = async (m,count) => {
+    count=Math.max(1,Math.min(2,+count||1));
+    if(!m || m.status!=="upcoming") return say("This match is not open for booking.",1);
+    if(!(m.mode||"").toUpperCase().includes("DUO") && count>1) return say("Two-slot booking is only available for DUO matches.",1);
+    const left=Math.max(0,(m.slots||0)-(m.filled||0));
+    if(left<count) return say(`Only ${left} slot${left===1?"":"s"} left.`,1);
+    const gn=(me.game_name||"").trim();
+    if(!gn) return go("match",{mid:m.id,game_name:""});
+    if(await rpc("join_match_slots",{p_match:m.id,p_count:count,p_game_name:gn},count===2?"2 slots booked ✅":"Slot booked ✅")) setPage(null);
+  };
+
   const matchCard = m => {
     const left=Math.max(0,(m.slots||0)-(m.filled||0));
+    const already=joined.includes(m.id);
+    const isDuo=(m.mode||"").toUpperCase().includes("DUO");
     return (
       <div className="card matchCard" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}>
         <div className="thumbWrap">
           {m.thumbnail_url
             ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy"/>
-            : <div className="thumbFallback"><Logo s={28}/></div>}
+            : <div className="thumbFallback"><Logo s={24}/></div>}
           <div className="thumbShade"/>
           <div className="thumbTop"><span>#{m.id}</span><span>{m.mode}</span></div>
         </div>
@@ -400,26 +429,26 @@ export default function App() {
           <div className="tags"><i>{m.map}</i><i>{m.slots} SLOTS</i>{m.is_private&&<i>PRIVATE</i>}</div>
           <div className="matchTitleRow"><div><h4>{m.title}</h4><p className="pz">Prize Pool · ₹{m.prize}</p></div><b className="matchTime">{fmt(m.starts_at)}</b></div>
           <div className="bar"><u style={{width:`${m.slots?Math.min(100,(m.filled||0)/m.slots*100):0}%`}}/></div>
-          <div className="foot"><span>{left} spots left</span><b>₹{m.fee} JOIN</b></div>
+          <div className="foot">
+            <span>{already?"✓ Already joined":`${left} spots left`}</span>
+            {isDuo && !already && left>0 ? (
+              <div className="quickDuo" onClick={e=>e.stopPropagation()}>
+                <button className="sm" onClick={()=>joinSlots(m,1)}>1 Slot · ₹{m.fee}</button>
+                {left>1&&<button className="sm quickDuo2" onClick={()=>joinSlots(m,2)}>2 Slots · ₹{(+m.fee||0)*2}</button>}
+              </div>
+            ) : <b className="joinPill">{already?"OPEN MATCH":"₹"+m.fee+" JOIN"}</b>}
+          </div>
         </div>
       </div>
     );
   };
 
-  const Tabs = ({list,cur,set,flex}) => (<div className="tabs">{list.map(t=><b key={t} className={t===cur?"on":""} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:null} onClick={()=>set(t)}>{t}</b>)}</div>);
-
   const body = () => {
     if(nav==="home"){
-      const q=matchSearch.trim().toLowerCase();
-      const ms=M.filter(m=>{
-        if(m.status!=="upcoming"||m.is_private||m.mode!==tab) return false;
-        if(!q) return true;
-        return String(m.title||"").toLowerCase().includes(q);
-      });
+      const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
         {pushOK()&&!pushOn&&Notification.permission!=="denied"&&<div className="bn" onClick={enablePush}>🔔 Turn on match & room notifications</div>}
-        <div className="searchBox"><span>⌕</span><input value={matchSearch} onChange={e=>setMatchSearch(e.target.value)} placeholder="Search match name"/></div>
-        {ms.length?ms.map(matchCard):<p className="empty">No matches found.</p>}
+        {ms.length?ms.map(matchCard):<p className="empty">No matches available in {tab}.</p>}
       </>;
     }
     if(nav==="my"){
@@ -550,7 +579,7 @@ export default function App() {
         {single
           ? <div className="createPanel">
               <div className="createHead"><h3>Create Match</h3><span>Public / Private · Thumbnail · Room ready after create</span></div>
-              <div className="fg">
+              <div className="fg createGrid">
                 {inp("t","Match title")}
                 <div><label>Mode</label><select value={f.g||T[0]} onChange={e=>setF({...f,g:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>
                 {inp("m","Map")}
@@ -568,12 +597,16 @@ export default function App() {
             </div>
           : <div className="createPanel bulkPanel">
               <div className="createHead"><div><h3>Bulk Create</h3><p className="fieldHint">Set everything once. ClashX7 will create a full schedule automatically.</p></div><span className="bulkCountBadge">{Math.max(1,+f.bulkCount||1)} matches</span></div>
-              <div className="fg bulkGrid">
+              <div className="fg bulkGrid createGrid">
                 {inp("bulkTitle","Match title / prefix")}
                 <div><label>Game mode</label><select value={f.bulkModeGame||T[0]} onChange={e=>setF({...f,bulkModeGame:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>
                 {inp("bulkMap","Map")}
                 {inp("bulkCount","Number of matches","number")}
-                {inp("bulkGap","Gap between matches (minutes)","number")}
+                <div className="field">
+                  <label>Gap between matches</label>
+                  <input type="time" step="60" value={f.bulkGap||"00:10"} onChange={e=>setF({...f,bulkGap:e.target.value})}/>
+                  <small className="fieldHint">Example: 00:10 = 10 minutes · 01:00 = 1 hour</small>
+                </div>
                 {inp("bulkSlots","Slots per match","number")}
                 {inp("bulkFee","Entry fee ₹","number")}
                 {inp("bulkPrize","Prize pool ₹","number")}
@@ -588,7 +621,7 @@ export default function App() {
               <input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
               {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}
               <div className="bulkPreview">
-                <div className="bulkPreviewHead"><b>Schedule preview</b><span>{f.bulkGap||0} min gap</span></div>
+                <div className="bulkPreviewHead"><b>Schedule preview</b><span>{parseGapMinutes(f.bulkGap||"00:10")} min gap</span></div>
                 {bulkRows().slice(0,8).map((r,i)=><div className="bulkPreviewRow" key={i}><span><b>{r.title}</b><small>{fmt(r.starts_at)} · {r.mode} · {r.slots} slots</small></span><strong>₹{r.fee}</strong></div>)}
                 {bulkRows().length>8&&<small className="fieldHint">+ {bulkRows().length-8} more matches will be created.</small>}
                 {!bulkRows().length&&<small className="fieldHint">Enter the title and first start time to preview the schedule.</small>}
@@ -653,7 +686,7 @@ export default function App() {
           {staffers.map(x=><tr key={x.id}><td>{x.name||"-"}</td><td>{x.email||"-"}</td><td><b style={{color:x.role==="acting_admin"?"#7c3aed":"#2563eb"}}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</b></td><td><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></td></tr>)}
         </tbody></table></div> : <p className="empty">No moderators or acting admins yet.</p>}
         <p className="sh">Role powers</p>
-        <div className="roleInfo"><div><b>Moderator</b><small>Matches, room ID/Pass, rules and notifications.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search/profile view + customer-service links. Cannot manage staff, gateway settings, payouts or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
+        <div className="roleInfo"><div><b>Moderator</b><small>Matches, room ID/Pass, rules and notifications.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search/profile view. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
       </div>;
     }
 
@@ -700,11 +733,11 @@ const css = `
 .ic{border:1px solid #ddd;border-radius:15px;background:#fff;height:30px;padding:0 10px;font-weight:600;cursor:pointer}
 .tabs{display:flex;overflow-x:auto;border-bottom:1px solid #eee;scrollbar-width:none;background:#fff}
 .tabs b{padding:12px;white-space:nowrap;font-size:12px;font-weight:600;color:#555;cursor:pointer;border-bottom:2px solid transparent}
-.tabs b.on{color:var(--r);border-color:var(--r)}
+.tabs b.on{color:var(--r);border-color:var(--r)}.tabs{-webkit-overflow-scrolling:touch}.tabs b{flex:0 0 auto}
 .searchBox{display:flex;align-items:center;gap:8px;margin:10px 8px;padding:0 11px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa}
 .searchBox span{font-size:20px;color:#777}.searchBox input{border:0!important;background:transparent!important;margin:0!important;padding:11px 2px!important}
 .card{margin:8px;border:1px solid #ececec;border-radius:13px;overflow:hidden;box-shadow:0 2px 8px #0000000b;cursor:pointer;background:#fff}
-.thumbWrap{height:112px;position:relative;background:#111;overflow:hidden}
+.thumbWrap{height:82px;position:relative;background:#111;overflow:hidden}
 .matchThumb{width:100%;height:100%;display:block;object-fit:cover}
 .thumbFallback{width:100%;height:100%;display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
 .thumbShade{position:absolute;inset:0;background:linear-gradient(180deg,#0005 0,#0000 38%,#0007 100%)}
@@ -714,7 +747,7 @@ const css = `
 .matchTitleRow{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-top:9px}
 .matchTitleRow h4{font-size:14px;margin:3px 0 2px}.pz{color:var(--r);font-weight:800;font-size:13px}.matchTime{font-size:10px;color:#555;text-align:right;white-space:nowrap}
 .bar{height:5px;background:#eee;margin-top:10px;border-radius:6px;overflow:hidden}.bar u{display:block;height:100%;background:var(--r);text-decoration:none}
-.foot{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#666;padding:7px 0 9px}.foot b{color:#fff;background:var(--r);padding:7px 10px;border-radius:8px;font-size:11px}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:10px;color:#666;padding:7px 0 9px}.joinPill{color:#fff;background:var(--r);padding:7px 10px;border-radius:8px;font-size:11px;white-space:nowrap}.quickDuo{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.quickDuo .sm{margin:0;padding:6px 8px;font-weight:700}.quickDuo2{background:#111!important;color:#fff;border-color:#111!important}
 .x7 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:30}
 .x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}.x7 nav a.on{color:var(--r)}
 .x7 nav svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -736,13 +769,13 @@ const css = `
 .gameSaved{display:inline-block;margin-top:7px;padding:5px 9px;border-radius:99px;background:#f3f4f6;color:#444;font-size:11px}
 .socialLinks{display:flex;gap:8px;margin:12px 0}.socialLinks a{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:9px;background:#111;color:#fff;font-weight:700;font-size:12px}
 .supportGrid{display:grid;gap:10px}.supportBtn{display:block;text-align:center;text-decoration:none;color:#fff;padding:13px;border-radius:10px;font-weight:800}.tg{background:#229ed9}.wa{background:#16a34a}
-.matchDetail{background:#fff}.detailThumb,.detailFallback{width:100%;height:210px;object-fit:cover}.detailFallback{display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
+.matchDetail{background:#fff}.detailThumb,.detailFallback{width:100%;height:160px;object-fit:cover}.detailFallback{display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
 .detailMeta{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0}.detailMeta span{padding:5px 8px;background:#f3f4f6;border-radius:99px;font-size:10px;color:#444}
 .detailGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.detailGrid div{border:1px solid #eee;border-radius:10px;padding:10px}.detailGrid small{display:block;color:#777;font-size:10px}.detailGrid b{display:block;margin-top:3px;font-size:13px}
 .detailSection{margin-top:14px;border:1px solid #eee;border-radius:12px;padding:12px}.detailSection h4{margin-bottom:8px}.rulesBox{white-space:pre-wrap;line-height:1.6;color:#333;font-size:13px}.roomBox{background:#fef2f2;border-color:#fee2e2}.copyRow{display:flex;align-items:center;gap:8px;margin-top:8px}.copyRow span{flex:1;background:#fff;border:1px solid #eee;border-radius:8px;padding:9px;font-size:11px}.copyRow b{display:block;margin-top:2px;font-size:13px;color:var(--r);user-select:all}.joinedNote,.hint{margin-top:8px;padding:9px;border-radius:8px;background:#f8fafc;color:#555;font-size:11px;line-height:1.5}
 .adm table{width:100%;border-collapse:collapse;margin-top:12px}.x7 td,.x7 th{padding:9px;border-bottom:1px solid #eee;text-align:left;font-size:12px;vertical-align:top}.tableWrap{overflow:auto;border:1px solid #eee;border-radius:10px;background:#fff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:14px}.dg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.dg .stat{background:#fff}.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
-.adminHeader{display:flex;justify-content:space-between;align-items:center;gap:10px;position:sticky;top:0;background:#fff;padding:6px 0 12px;z-index:25}.adminHeaderRight{display:flex;align-items:center;gap:5px}.adminTabs{display:flex;gap:6px;overflow-x:auto;padding:0 0 12px}.adminTabs button{border:1px solid #ddd;background:#fff;padding:8px 12px;border-radius:8px;white-space:nowrap;cursor:pointer}.adminTabs button.on{background:#111;color:#fff}.adminModeRow{display:flex;gap:8px;margin:6px 0 10px}.modeBtn{border:1px solid #ddd;background:#fff;border-radius:9px;padding:9px 13px;font-weight:700;cursor:pointer}.modeBtn.active{background:#111;color:#fff}.createPanel{border:1px solid #eee;border-radius:12px;padding:14px;margin-bottom:12px;background:#fff}.createHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;margin-bottom:12px}.createHead h3{font-size:17px}.createHead span{font-size:10px;color:#777}.adminThumbPreview{width:180px;height:100px;object-fit:cover;border-radius:9px;margin:4px 0 10px;display:block}.fieldHint{font-size:11px;color:#777;margin:3px 0 0}.bulkCountBadge{padding:6px 9px;border-radius:99px;background:#fef2f2;color:var(--r);font-weight:800;font-size:11px;white-space:nowrap}.bulkGrid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}.bulkPreview{margin:10px 0 12px;border:1px solid #eee;border-radius:10px;background:#fafafa;overflow:hidden}.bulkPreviewHead{display:flex;justify-content:space-between;padding:10px 11px;border-bottom:1px solid #eee;font-size:11px}.bulkPreviewHead span{color:#777}.bulkPreviewRow{display:flex;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid #eee;font-size:11px;background:#fff}.bulkPreviewRow:last-of-type{border-bottom:0}.bulkPreviewRow span{min-width:0}.bulkPreviewRow b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}.bulkPreviewRow small{display:block;color:#777;margin-top:2px}.bulkPreviewRow strong{color:var(--r);white-space:nowrap}.bulkPreview>.fieldHint{display:block;padding:9px 11px}.adminSearch{margin:10px 0}.adminSearch input{margin:0!important}.emptyAdmin{padding:40px;text-align:center;color:#666}
+.field{min-width:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:14px}.dg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.dg .stat{background:#fff}.fg{display:grid;grid-template-columns:1fr;gap:10px}.createGrid{grid-template-columns:1fr}.bulkGrid{grid-template-columns:1fr}
+.adminHeader{display:flex;justify-content:space-between;align-items:center;gap:10px;position:sticky;top:0;background:#fff;padding:6px 0 12px;z-index:25}.adminHeaderRight{display:flex;align-items:center;gap:5px}.adminTabs{display:flex;gap:6px;overflow-x:auto;padding:0 0 12px}.adminTabs button{border:1px solid #ddd;background:#fff;padding:8px 12px;border-radius:8px;white-space:nowrap;cursor:pointer}.adminTabs button.on{background:#111;color:#fff}.adminModeRow{display:flex;gap:8px;margin:6px 0 10px;flex-wrap:wrap}.modeBtn{border:1px solid #ddd;background:#fff;border-radius:9px;padding:9px 13px;font-weight:700;cursor:pointer}.modeBtn.active{background:#111;color:#fff}.createPanel{border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin-bottom:12px;background:#fff;box-shadow:0 2px 10px #00000008}.createHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;margin-bottom:12px}.createHead h3{font-size:19px;margin:0 0 3px}.createHead div{min-width:0}.createHead span{font-size:10px;color:#777}.adminThumbPreview{width:180px;height:100px;object-fit:cover;border-radius:9px;margin:4px 0 10px;display:block}.fieldHint{font-size:11px;color:#777;margin:3px 0 0}.bulkCountBadge{padding:6px 9px;border-radius:99px;background:#fef2f2;color:var(--r);font-weight:800;font-size:11px;white-space:nowrap}.bulkGrid{grid-template-columns:1fr}.bulkPreview{margin:10px 0 12px;border:1px solid #eee;border-radius:10px;background:#fafafa;overflow:hidden}.bulkPreviewHead{display:flex;justify-content:space-between;padding:10px 11px;border-bottom:1px solid #eee;font-size:11px}.bulkPreviewHead span{color:#777}.bulkPreviewRow{display:flex;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid #eee;font-size:11px;background:#fff}.bulkPreviewRow:last-of-type{border-bottom:0}.bulkPreviewRow span{min-width:0}.bulkPreviewRow b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}.bulkPreviewRow small{display:block;color:#777;margin-top:2px}.bulkPreviewRow strong{color:var(--r);white-space:nowrap}.bulkPreview>.fieldHint{display:block;padding:9px 11px}.adminSearch{margin:10px 0}.adminSearch input{margin:0!important}.emptyAdmin{padding:40px;text-align:center;color:#666}
 .chart{display:flex;gap:6px;height:130px;align-items:flex-end;margin:8px 0}.cb{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end}.bars{display:flex;gap:2px;align-items:flex-end;height:100px;width:100%;justify-content:center}.bars i{width:38%;min-height:2px;border-radius:3px 3px 0 0}.cb small{font-size:9px;color:#777;margin-top:2px}
 .x7 #app.land{max-width:1000px;padding-bottom:0}.lh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px}.hero{background:linear-gradient(160deg,#f5403a,#7f1d1d);color:#fff;text-align:center;padding:48px 20px 56px;display:flex;flex-direction:column;align-items:center;gap:12px}.hero h1{font-size:clamp(30px,6vw,52px);font-weight:800}.hero p{max-width:520px;opacity:.93;line-height:1.5}.cta{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px}.lb2{border:0;border-radius:8px;padding:12px 22px;font-weight:700;cursor:pointer;font-size:14px;background:#fff;color:var(--r)}.lb2.ghost{background:transparent;color:#fff;border:1.5px solid #fff}.lb2.dk{background:#111;color:#fff}.lb2.rd{background:var(--r);color:#fff}.lsec{padding:34px 18px}.lsec h2{text-align:center;margin-bottom:18px;font-size:22px}.l3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.lc{border:1px solid #eee;border-radius:10px;padding:18px;background:#fff;box-shadow:0 1px 3px #0001}.lc b{display:block;margin:8px 0 4px;font-size:16px}.lc p{color:#555;line-height:1.5;font-size:13px}.lc .em{font-size:28px;font-weight:800;color:var(--r)}.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}.chips i{font-style:normal;border:1px solid #333;border-radius:20px;padding:6px 12px;font-size:12px}.lf{background:#111;color:#bbb;text-align:center;padding:24px 18px;font-size:12px;line-height:1.8}
 `;
