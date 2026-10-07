@@ -78,8 +78,8 @@ export default function App() {
   const [matchSearch,setMatchSearch] = useState(""), [pageMatch,setPageMatch] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const isAdmin = me?.role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isStaff = isAdmin || me?.role==="moderator";
-  const authOpenRef = useRef(false), pageRef = useRef(null), dlgRef = useRef(null), swUpdatePending = useRef(false);
-  authOpenRef.current = authOpen; pageRef.current = page; dlgRef.current = dlg;
+  const authOpenRef = useRef(false);
+  authOpenRef.current = authOpen;
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
   const ask = (title,fields,ok,init,extra={}) => setDlg({title,fields,ok,init,...extra});
@@ -93,32 +93,19 @@ export default function App() {
     const h = () => setHash(window.location.hash);
     window.addEventListener("hashchange",h);
 
-    // PWA update: update automatically, but never kick the user out of
-    // Login/Create-account or another open dialog/page.
-    const applyUpdate = () => {
-      if(authOpenRef.current || pageRef.current || dlgRef.current){
-        swUpdatePending.current = true;
-        return;
-      }
-      window.location.reload();
-    };
-    const onControllerChange = () => applyUpdate();
-
+    // PWA: NEVER force location.reload() from service-worker updates.
+    // A controllerchange-triggered reload was causing the app to flash white
+    // and repeatedly kick the user back to the landing page. The browser will
+    // pick up the newest Vercel build on the next navigation/reopen.
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.addEventListener("controllerchange",onControllerChange);
       navigator.serviceWorker.register("/push-sw.js",{updateViaCache:"none"}).then(reg=>{
         reg.update().catch(()=>{});
-        const timer=setInterval(()=>reg.update().catch(()=>{}),60000);
-        reg._x7Timer=timer;
       }).catch(()=>{});
     }
 
     if(!supabase){
       setReady(true);
-      return()=>{
-        window.removeEventListener("hashchange",h);
-        navigator.serviceWorker?.removeEventListener?.("controllerchange",onControllerChange);
-      };
+      return()=>window.removeEventListener("hashchange",h);
     }
 
     supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
@@ -126,16 +113,8 @@ export default function App() {
     return()=>{
       l.subscription.unsubscribe();
       window.removeEventListener("hashchange",h);
-      navigator.serviceWorker?.removeEventListener?.("controllerchange",onControllerChange);
     };
   },[]);
-
-  useEffect(()=>{
-    if(swUpdatePending.current && !authOpen && !page && !dlg){
-      swUpdatePending.current=false;
-      window.location.reload();
-    }
-  },[authOpen,page,dlg]);
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
@@ -157,7 +136,7 @@ export default function App() {
     return()=>{supabase.removeChannel(ch);setLive(false);document.removeEventListener("visibilitychange",vis);clearTimeout(t)};
   },[session,load]);
 
-  const savePush = async () => { const reg = await navigator.serviceWorker.register("/push-sw.js"); await navigator.serviceWorker.ready;
+  const savePush = async () => { const reg = await navigator.serviceWorker.ready;
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID)});
     const {error} = await supabase.from("push_subscriptions").upsert({endpoint:sub.endpoint,user_id:session.user.id,sub:sub.toJSON()}); if(error) throw error };
   useEffect(()=>{ if(me&&pushOK()&&Notification.permission==="granted") savePush().then(()=>setPushOn(true)).catch(()=>{}) },[me?.id]); // already allowed hole chupchap re-register
