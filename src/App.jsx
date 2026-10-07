@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
@@ -78,6 +78,8 @@ export default function App() {
   const [matchSearch,setMatchSearch] = useState(""), [pageMatch,setPageMatch] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const isAdmin = me?.role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isStaff = isAdmin || me?.role==="moderator";
+  const authOpenRef = useRef(false), pageRef = useRef(null), dlgRef = useRef(null), swUpdatePending = useRef(false);
+  authOpenRef.current = authOpen; pageRef.current = page; dlgRef.current = dlg;
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
   const ask = (title,fields,ok,init,extra={}) => setDlg({title,fields,ok,init,...extra});
@@ -88,24 +90,52 @@ export default function App() {
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
 
   useEffect(()=>{
-    const h = () => setHash(window.location.hash); window.addEventListener("hashchange",h);
-    let reloaded = false;
-    const reloadOnce = () => {
-      if(reloaded) return;
-      reloaded = true;
+    const h = () => setHash(window.location.hash);
+    window.addEventListener("hashchange",h);
+
+    // PWA update: update automatically, but never kick the user out of
+    // Login/Create-account or another open dialog/page.
+    const applyUpdate = () => {
+      if(authOpenRef.current || pageRef.current || dlgRef.current){
+        swUpdatePending.current = true;
+        return;
+      }
       window.location.reload();
     };
+    const onControllerChange = () => applyUpdate();
+
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.addEventListener("controllerchange",reloadOnce);
+      navigator.serviceWorker.addEventListener("controllerchange",onControllerChange);
       navigator.serviceWorker.register("/push-sw.js",{updateViaCache:"none"}).then(reg=>{
         reg.update().catch(()=>{});
+        const timer=setInterval(()=>reg.update().catch(()=>{}),60000);
+        reg._x7Timer=timer;
       }).catch(()=>{});
     }
-    if(!supabase){setReady(true);return()=>{window.removeEventListener("hashchange",h);navigator.serviceWorker?.removeEventListener?.("controllerchange",reloadOnce)}}
+
+    if(!supabase){
+      setReady(true);
+      return()=>{
+        window.removeEventListener("hashchange",h);
+        navigator.serviceWorker?.removeEventListener?.("controllerchange",onControllerChange);
+      };
+    }
+
     supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
-    const {data:l} = supabase.auth.onAuthStateChange((_e,s)=>setSession(s));
-    return()=>{l.subscription.unsubscribe();window.removeEventListener("hashchange",h);navigator.serviceWorker?.removeEventListener?.("controllerchange",reloadOnce)};
+    const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));
+    return()=>{
+      l.subscription.unsubscribe();
+      window.removeEventListener("hashchange",h);
+      navigator.serviceWorker?.removeEventListener?.("controllerchange",onControllerChange);
+    };
   },[]);
+
+  useEffect(()=>{
+    if(swUpdatePending.current && !authOpen && !page && !dlg){
+      swUpdatePending.current=false;
+      window.location.reload();
+    }
+  },[authOpen,page,dlg]);
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
