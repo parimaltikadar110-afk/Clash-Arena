@@ -1,8 +1,9 @@
+
 {
   "id": "/",
   "name": "ClashX7",
   "short_name": "ClashX7",
-  "description": "ClashX7 - play tournaments, win prizes, withdraw by UPI",
+  "description": "ClashX7 - Free Fire tournaments, win prizes and withdraw by UPI",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,8 +11,24 @@
   "background_color": "#f5403a",
   "theme_color": "#f5403a",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
+```
