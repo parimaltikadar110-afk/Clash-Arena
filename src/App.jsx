@@ -7,7 +7,10 @@ const SB_URL = env.VITE_SUPABASE_URL, SB_KEY = env.VITE_SUPABASE_ANON_KEY;
 const supabase = SB_URL && SB_KEY ? createClient(SB_URL, SB_KEY, {global:{fetch:(u,o)=>fetch(u,{...o,cache:"no-store"})}}) : null; // no-store = purono cached data kokhono ashbe na
 const ADMIN_EMAIL = "parimaltikadar110@gmail.com"; // UI fallback only; real protection = is_admin() in SQL
 const UPI_ID = env.VITE_UPI_ID || "yourupi@bank", UPI_NAME = env.VITE_UPI_NAME || "ClashX7";
-const SUPPORT_URL = env.VITE_SUPPORT_URL || "", APK_URL = env.VITE_APK_URL || "/clashx7.apk"; // Direct APK download URL
+const SUPPORT_URL = env.VITE_SUPPORT_URL || "";
+// APK lives in Vite's /public folder. BASE_URL also works on GitHub Pages
+// project sites where the app is served from /REPOSITORY_NAME/ instead of /.
+const APK_URL = env.VITE_APK_URL || new URL("clashx7.apk", window.location.origin + import.meta.env.BASE_URL).href;
 const GATEWAYS = (env.VITE_GATEWAYS || "zapupi,manual,razorpay,cashfree").split(",").map(s => s.trim()); // kon gateway dekhabe
 const VAPID = env.VITE_VAPID_PUBLIC_KEY;
 const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://sdk.cashfree.com/js/v3/cashfree.js";
@@ -100,7 +103,27 @@ export default function App() {
   // We instead show manual install/download instructions, so visiting "Download APK"
   // never adds an icon to the home screen by itself.
   const standalone = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone;
-  const download = () => { const a=document.createElement("a"); a.href=APK_URL; a.download="ClashX7.apk"; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); };
+  const download = async () => {
+    try {
+      // Fetch first so an HTML error/404 page is never silently saved as .apk.
+      const r = await fetch(APK_URL, { cache: "no-store" });
+      if (!r.ok) throw new Error(`APK not found (${r.status})`);
+      const type = (r.headers.get("content-type") || "").toLowerCase();
+      if (type.includes("text/html")) throw new Error("APK URL returned an HTML page. Check that clashx7.apk is inside the public folder.");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ClashX7.apk";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      say(e?.message || "APK download failed", 1);
+    }
+  };
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
 
   useEffect(()=>{
