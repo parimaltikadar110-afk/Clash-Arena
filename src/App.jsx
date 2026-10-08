@@ -194,12 +194,14 @@ export default function App() {
     if((m.slots-(m.filled||0))<1) return say("No slot left.",1);
     const gn=(gameName||"").trim();
     if(!gn) return say("Enter your game name first.",1);
-    const {error:pe}=await supabase.from("profiles").update({game_name:gn}).eq("id",me.id);
-    if(pe) return say(pe.message,1);
+
+    // Do NOT update profiles/participants directly from the browser here.
+    // The SECURITY DEFINER RPC owns the profile balance + game_name update
+    // and participant insert atomically. Direct client writes were causing
+    // "permission denied for table profiles" when joining a slot.
     const ok=await rpc("join_match_slot",{p_match:id,p_game_name:gn});
     if(!ok) return;
-    const {error:ce}=await supabase.from("participants").update({game_name:gn}).eq("match_id",id).eq("user_id",me.id);
-    if(ce) console.warn("participant game_name update:",ce.message);
+
     setMe(x=>({...x,game_name:gn}));
     say("Slot booked ✅");
     setF(v=>({...v,game_name:gn}));
