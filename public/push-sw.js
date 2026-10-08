@@ -1,6 +1,7 @@
 /* ClashX7 push service worker
-   No app cache, no page reload.
-   Prevents white-screen flashes / reload loops after Vercel deploys.
+   Does NOT cache the app.
+   Does NOT reload the app.
+   Prevents white-screen / reload loops.
 */
 
 self.addEventListener("install", () => {
