@@ -194,14 +194,12 @@ export default function App() {
     if((m.slots-(m.filled||0))<1) return say("No slot left.",1);
     const gn=(gameName||"").trim();
     if(!gn) return say("Enter your game name first.",1);
-
-    // Do NOT update profiles/participants directly from the browser here.
-    // The SECURITY DEFINER RPC owns the profile balance + game_name update
-    // and participant insert atomically. Direct client writes were causing
-    // "permission denied for table profiles" when joining a slot.
+    const {error:pe}=await supabase.from("profiles").update({game_name:gn}).eq("id",me.id);
+    if(pe) return say(pe.message,1);
     const ok=await rpc("join_match_slot",{p_match:id,p_game_name:gn});
     if(!ok) return;
-
+    const {error:ce}=await supabase.from("participants").update({game_name:gn}).eq("match_id",id).eq("user_id",me.id);
+    if(ce) console.warn("participant game_name update:",ce.message);
     setMe(x=>({...x,game_name:gn}));
     say("Slot booked ✅");
     setF(v=>({...v,game_name:gn}));
@@ -754,7 +752,7 @@ const css = `
 .x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}.x7 nav a.on{color:var(--r)}
 .x7 nav svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .pgh{display:flex;align-items:center;gap:14px;padding:14px;font-weight:700;border-bottom:1px solid #eee;background:#fff;position:sticky;top:0;z-index:18}.pgb{padding:12px}
-.x7 label{display:block;font-size:11px;color:#555;font-weight:600}.x7 input,.x7 select{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0 10px;background:#fafafa}.x7 textarea{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0 10px;background:#fafafa;font-size:14px;resize:vertical}
+.x7 label{display:block;font-size:11px;color:#555;font-weight:600}.x7 input,.x7 select,.x7 textarea{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0 10px;background:#fafafa;color:#111!important;-webkit-text-fill-color:#111!important;opacity:1!important;font-size:14px}.x7 input::placeholder,.x7 textarea::placeholder{color:#777!important;-webkit-text-fill-color:#777!important;opacity:1!important}.x7 select option{color:#111;background:#fff}.x7 input:disabled,.x7 select:disabled,.x7 textarea:disabled{color:#666!important;-webkit-text-fill-color:#666!important;opacity:1!important}
 .btn{width:100%;padding:11px;border:0;border-radius:8px;background:var(--r);color:#fff;font-weight:700;cursor:pointer}.gb{background:var(--g)}
 .kv{display:flex;justify-content:space-between;padding:10px 4px;font-weight:500}
 .mi{display:flex;justify-content:space-between;align-items:center;padding:14px;border:1px solid #eee;border-radius:10px;margin:7px 0;cursor:pointer;background:#fff}
