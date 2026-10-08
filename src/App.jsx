@@ -47,7 +47,7 @@ function Landing({open,download,showDl,support}) {
     <div className="lh"><span className="brand" style={{fontSize:18}}><Logo s={30}/>ClashX7</span><button className="lb2 rd" onClick={()=>open("in")}>Login</button></div>
     <section className="hero"><Logo s={96}/><h1>Play. Win. Withdraw.</h1>
       <p>Join daily custom-room tournaments, compete for real prize pools and cash out your winnings by UPI.</p>
-      <div className="cta"><button className="lb2" onClick={()=>open("up")}>Create account</button><button className="lb2 ghost" onClick={()=>open("in")}>Login</button>{showDl&&<button className="lb2 dk" onClick={download}>⬇ Download App</button>}</div></section>
+      <div className="cta"><button className="lb2" onClick={()=>open("up")}>Create account</button><button className="lb2 ghost" onClick={()=>open("in")}>Login</button>{showDl&&<button className="lb2 dk" onClick={download}>⬇ Install App</button>}</div></section>
     <section className="lsec"><h2>Why players choose ClashX7</h2><div className="l3">{F.map(([e,t,d])=><div className="lc" key={t}><span className="em">{e}</span><b>{t}</b><p>{d}</p></div>)}</div></section>
     <section className="lsec" style={{background:"#f9fafb"}}><h2>How it works</h2><div className="l3">{[["1","Sign up","Create your free account in a minute."],["2","Add money & join","Deposit by UPI and join a match that fits you."],["3","Win & withdraw","Top the room, get paid and withdraw to UPI."]].map(([n,t,d])=><div className="lc" key={n}><span className="em">{n}</span><b>{t}</b><p>{d}</p></div>)}</div></section>
     <section className="lsec"><h2>Game modes</h2><div className="chips">{T.map(t=><i key={t}>{t}</i>)}</div></section>
@@ -85,7 +85,7 @@ export default function App() {
   const [session,setSession] = useState(null), [ready,setReady] = useState(false), [hash,setHash] = useState(window.location.hash);
   const [me,setMe] = useState(null), [M,setM] = useState([]), [rooms,setRooms] = useState({}), [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState([]), [rules,setRules] = useState({}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
-  const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false);
+  const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
@@ -95,9 +95,12 @@ export default function App() {
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
   const ask = (title,fields,ok,init,extra={}) => setDlg({title,fields,ok,init,...extra});
 
-  useEffect(()=>{ const h = e => {e.preventDefault();setInst(e)}; window.addEventListener("beforeinstallprompt",h); return()=>window.removeEventListener("beforeinstallprompt",h) },[]);
+  // Do not trigger the browser install prompt from the landing-page button.
+  // That prompt immediately installs the PWA after the user accepts it.
+  // We instead show manual install/download instructions, so visiting "Install App"
+  // never adds an icon to the home screen by itself.
   const standalone = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone;
-  const download = async () => { if(APK_URL) return window.open(APK_URL,"_blank"); if(inst){ inst.prompt(); await inst.userChoice; return setInst(null) } setHowto(true) };
+  const download = async () => { if(APK_URL) return window.open(APK_URL,"_blank"); setHowto(true) };
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
 
   useEffect(()=>{
@@ -114,9 +117,34 @@ export default function App() {
       }).catch(()=>{});
     }
 
+    // Deployment update check: Vite/Vercel emits content-hashed asset filenames.
+    // We compare the currently loaded bundle URLs with a fresh no-cache index.html.
+    // When they differ, the app waits for a safe point (no open form/dialog) and
+    // then performs exactly one normal navigation reload. This avoids the old
+    // service-worker controllerchange reload loop while still bringing an
+    // installed PWA onto the latest Vercel deployment automatically.
+    const bundleSig = html => {
+      try{
+        const doc = new DOMParser().parseFromString(html,"text/html");
+        return [...doc.scripts].map(x=>x.src).filter(Boolean).sort().join("|");
+      }catch{return ""}
+    };
+    const currentSig = () => [...document.scripts].map(x=>x.src).filter(Boolean).sort().join("|");
+    const checkDeployment = async () => {
+      if(document.visibilityState!=="visible" || updatePending) return;
+      try{
+        const r = await fetch(window.location.pathname + "?x7v=" + Date.now(), {cache:"no-store",headers:{"Cache-Control":"no-cache"}});
+        if(!r.ok) return;
+        const fresh = bundleSig(await r.text());
+        if(fresh && currentSig() && fresh!==currentSig()) setUpdatePending(true);
+      }catch{}
+    };
+    const upTimer = setInterval(checkDeployment,30000);
+    checkDeployment();
+
     if(!supabase){
       setReady(true);
-      return()=>window.removeEventListener("hashchange",h);
+      return()=>{window.removeEventListener("hashchange",h);clearInterval(upTimer)};
     }
 
     supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
@@ -124,8 +152,15 @@ export default function App() {
     return()=>{
       l.subscription.unsubscribe();
       window.removeEventListener("hashchange",h);
+      clearInterval(upTimer);
     };
   },[]);
+
+  useEffect(()=>{
+    if(!updatePending || authOpen || dlg || page || busy || Object.keys(f).length) return;
+    const t=setTimeout(()=>location.reload(),900);
+    return()=>clearTimeout(t);
+  },[updatePending,authOpen,dlg,page,busy,f]);
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
@@ -700,7 +735,7 @@ export default function App() {
       <div className="adminTabs">{TABS.map(x=><button key={x} className={x===cur?"on":""} onClick={()=>{setAt(x);setF({})}}>{x}</button>)}</div>{b}</>;
   };
 
-  const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
+  const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
   if(!ready) return wrap(<div className="bootBlank"/>);
   if(!session && !authOpen) return wrap(<Landing open={open} download={download} showDl={!standalone} support={SUPPORT_URL}/>);
