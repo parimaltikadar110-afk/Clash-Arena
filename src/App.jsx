@@ -64,7 +64,9 @@ function Landing({open,download,showDl,support}) {
 
 /* Popup form (mobile e prompt() block hoy, tai eta) — fields: [key,label,type("text"|"number"|"select"|"area"),options] */
 function Dlg({d, close}) {
-  const [v,setV] = useState(() => Object.fromEntries(d.fields.map(([k,,t,o]) => [k, d.init?.[k] ?? (t==="select"?o[0]:"")])), [busy,setBusy] = useState(false);
+  
+const [v,setV] = useState(() => Object.fromEntries(d.fields.map(([k,,t,o]) => [k, d.init?.[k] ?? (t==="select" ? o[0] : "")])));
+const [busy,setBusy] = useState(false);
   const set = (k,x) => setV(s => ({...s,[k]:x}));
   return (<div className="ov" onClick={close}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:10}}>{d.title}</h3>
     {d.note&&<p style={{fontSize:12,color:"#666",marginBottom:8}}>{d.note}</p>}
