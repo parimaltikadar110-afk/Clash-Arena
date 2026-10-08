@@ -7,7 +7,7 @@ const SB_URL = env.VITE_SUPABASE_URL, SB_KEY = env.VITE_SUPABASE_ANON_KEY;
 const supabase = SB_URL && SB_KEY ? createClient(SB_URL, SB_KEY, {global:{fetch:(u,o)=>fetch(u,{...o,cache:"no-store"})}}) : null; // no-store = purono cached data kokhono ashbe na
 const ADMIN_EMAIL = "parimaltikadar110@gmail.com"; // UI fallback only; real protection = is_admin() in SQL
 const UPI_ID = env.VITE_UPI_ID || "yourupi@bank", UPI_NAME = env.VITE_UPI_NAME || "ClashX7";
-const SUPPORT_URL = env.VITE_SUPPORT_URL || "", APK_URL = env.VITE_APK_URL || ""; // WhatsApp/Telegram link, optional APK link
+const SUPPORT_URL = env.VITE_SUPPORT_URL || "", APK_URL = env.VITE_APK_URL || "/clashx7.apk"; // Direct APK download URL
 const GATEWAYS = (env.VITE_GATEWAYS || "zapupi,manual,razorpay,cashfree").split(",").map(s => s.trim()); // kon gateway dekhabe
 const VAPID = env.VITE_VAPID_PUBLIC_KEY;
 const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://sdk.cashfree.com/js/v3/cashfree.js";
@@ -47,7 +47,7 @@ function Landing({open,download,showDl,support}) {
     <div className="lh"><span className="brand" style={{fontSize:18}}><Logo s={30}/>ClashX7</span><button className="lb2 rd" onClick={()=>open("in")}>Login</button></div>
     <section className="hero"><Logo s={96}/><h1>Play. Win. Withdraw.</h1>
       <p>Join daily custom-room tournaments, compete for real prize pools and cash out your winnings by UPI.</p>
-      <div className="cta"><button className="lb2" onClick={()=>open("up")}>Create account</button><button className="lb2 ghost" onClick={()=>open("in")}>Login</button>{showDl&&<button className="lb2 dk" onClick={download}>⬇ Install App</button>}</div></section>
+      <div className="cta"><button className="lb2" onClick={()=>open("up")}>Create account</button><button className="lb2 ghost" onClick={()=>open("in")}>Login</button>{showDl&&<button className="lb2 dk" onClick={download}>⬇ Download APK</button>}</div></section>
     <section className="lsec"><h2>Why players choose ClashX7</h2><div className="l3">{F.map(([e,t,d])=><div className="lc" key={t}><span className="em">{e}</span><b>{t}</b><p>{d}</p></div>)}</div></section>
     <section className="lsec" style={{background:"#f9fafb"}}><h2>How it works</h2><div className="l3">{[["1","Sign up","Create your free account in a minute."],["2","Add money & join","Deposit by UPI and join a match that fits you."],["3","Win & withdraw","Top the room, get paid and withdraw to UPI."]].map(([n,t,d])=><div className="lc" key={n}><span className="em">{n}</span><b>{t}</b><p>{d}</p></div>)}</div></section>
     <section className="lsec"><h2>Game modes</h2><div className="chips">{T.map(t=><i key={t}>{t}</i>)}</div></section>
@@ -97,10 +97,10 @@ export default function App() {
 
   // Do not trigger the browser install prompt from the landing-page button.
   // That prompt immediately installs the PWA after the user accepts it.
-  // We instead show manual install/download instructions, so visiting "Install App"
+  // We instead show manual install/download instructions, so visiting "Download APK"
   // never adds an icon to the home screen by itself.
   const standalone = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone;
-  const download = async () => { if(APK_URL) return window.open(APK_URL,"_blank"); setHowto(true) };
+  const download = () => { const a=document.createElement("a"); a.href=APK_URL; a.download="ClashX7.apk"; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); };
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
 
   useEffect(()=>{
@@ -738,7 +738,7 @@ export default function App() {
   const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
   if(!ready) return wrap(<div className="bootBlank"/>);
-  if(!session && !authOpen) return wrap(<Landing open={open} download={download} showDl={!standalone} support={SUPPORT_URL}/>);
+  if(!session && !authOpen) return wrap(<Landing open={open} download={download} showDl={true} support={SUPPORT_URL}/>);
   if(!session) return wrap(<div className="login"><Logo s={80}/><h2 style={{margin:"10px 0"}}>ClashX7</h2>
     {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
