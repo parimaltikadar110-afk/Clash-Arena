@@ -1,5 +1,7 @@
+```text
 User-agent: *
 Allow: /
 Disallow: /api/
 
-Sitemap: https://YOUR-SITE.vercel.app/sitemap.xml
+Sitemap: https://clashx7.in/sitemap.xml
+```
