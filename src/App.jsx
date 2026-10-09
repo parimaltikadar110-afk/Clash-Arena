@@ -944,4 +944,7 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 @keyframes spLoad{from{width:0}to{width:100%}}
 @keyframes spPulse{50%{opacity:.55;transform:scale(1.15)}}
 .slotRow{display:flex;align-items:center;gap:8px}.slotRow i{font-style:normal;flex:0 0 26px;height:26px;border-radius:50%;background:#111;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}.slotRow input{margin:4px 0 8px!important}
+.splash{justify-content:flex-start;padding:18vh 24px 24px}
+.spLogo{animation:none}.spLogo svg{display:block}
+.spName,.spTag{margin:0;animation:none}
 `;
