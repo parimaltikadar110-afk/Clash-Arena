@@ -19,7 +19,7 @@ const IS_APP = /ClashX7App/i.test(UA) || /;\s*wv\)/i.test(UA) || (/Version\/[\d.
 const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://sdk.cashfree.com/js/v3/cashfree.js";
 const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","LW HEAD","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
-const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
+const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"],["profile","Profile","M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 const b64 = s => { const r = atob((s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/")); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))) };
@@ -39,12 +39,9 @@ const Logo = ({s=64}) => (
   </svg>
 );
 
-const Avatar = ({name="Player",s=32}) => {
-  const letter = (name||"P").trim().slice(0,1).toUpperCase();
-  return <div className="avatar" style={{width:s,height:s,fontSize:Math.max(12,Math.round(s*.34))}}>
-    <span className="avatarGlow">✦</span><b>{letter}</b>
-  </div>;
-};
+const Avatar = ({url,s=32}) => url
+  ? <img className="avImg" src={url} alt="" style={{width:s,height:s}} onError={e=>{e.currentTarget.style.display="none"}}/>
+  : <div className="avatar avDef" style={{width:s,height:s}}><svg viewBox="0 0 24 24" width={Math.round(s*.6)} height={Math.round(s*.6)} fill="#fff"><circle cx="12" cy="8.5" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></div>;
 
 /* 2-second splash shown every time the app opens */
 function Splash() {
@@ -362,6 +359,20 @@ export default function App() {
     if(error) throw error;
     return supabase.storage.from("public-assets").getPublicUrl(path).data.publicUrl;
   };
+  const uploadAvatar = async file => {
+    if(!file) return;
+    setBusy(true);
+    try{
+      const b=await shrink(file,512,.85);
+      const path=`avatars/${session.user.id}-${Date.now()}.jpg`;
+      const {error}=await supabase.storage.from("public-assets").upload(path,b,{contentType:"image/jpeg",upsert:false});
+      if(error) throw error;
+      const url=supabase.storage.from("public-assets").getPublicUrl(path).data.publicUrl;
+      const {error:ue}=await supabase.from("profiles").update({avatar_url:url}).eq("id",me.id);
+      if(ue) throw ue;
+      setMe(x=>({...x,avatar_url:url})); say("Profile picture updated ✅"); load();
+    }catch(e){say(thumbErr(e),1)} finally{setBusy(false)}
+  };
   const uploadMatchThumb = async file => {
     if(!file) return;
     setBusy(true);
@@ -533,39 +544,65 @@ export default function App() {
     askJoin(m,count);
   };
 
+  // cancel one slot (refund goes back to wallet). Works from home card, detail page.
+  const doCancel = async (m,slot) => {
+    const {error}=await supabase.rpc("cancel_match_slot",{p_slot:String(slot.slot_id)});
+    if(error){say(error.message,1);return false}
+    say(`Slot cancelled · ₹${m.fee} refunded to wallet ✅`); await load(); refreshLists(m.id); return true;
+  };
+  const cancelFromCard = async m => {
+    const {data:ss,error}=await supabase.rpc("my_slots",{p_match:m.id});
+    if(error) return say(error.message,1);
+    const list=ss||[];
+    if(!list.length) return say("No joined slot found for this match.",1);
+    if(list.length===1){ if(!window.confirm(`Cancel your slot "${list[0].game_name}"? ₹${m.fee} will be refunded to your wallet.`)) return; return doCancel(m,list[0]) }
+    ask("Cancel which slot?",[["s","Select slot","select",list.map((x,i)=>[String(i),`Slot ${i+1} · ${x.game_name}`])]],
+      v=>doCancel(m,list[+v.s]||list[0]),{s:"0"},{btn:"Cancel slot",note:`₹${m.fee} will be refunded to your wallet.`});
+  };
+
   const matchCard = m => {
     const left=Math.max(0,(m.slots||0)-(m.filled||0));
     const already=joined.includes(m.id);
     const isDuo=(m.mode||"").toUpperCase().includes("DUO"), myCount=joined.filter(x=>x===m.id).length;
+    const open=m.status==="upcoming", canBook=open&&left>0;
+    const pct=m.slots?Math.min(100,(m.filled||0)/m.slots*100):0;
+    const openM=()=>go("match",{mid:m.id,game_name:me.game_name||""});
     return (
-      <div className="card matchCard" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}>
+      <div className="card matchCard" key={m.id} onClick={openM}>
         <div className="thumbWrap">
           {m.thumbnail_url
             ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy" onError={e=>{e.currentTarget.style.display="none"}}/>
             : <div className="thumbFallback"><Logo s={24}/></div>}
           <div className="thumbShade"/>
-          <div className="thumbTop"><span>#{m.id}</span><span>{m.mode}</span></div>
+          <div className="thumbTop"><span className="chipDark">#{m.id}</span><span className="chipRed">{m.mode}</span></div>
+          {m.status==="live"&&<span className="liveTag">● LIVE</span>}
         </div>
         <div className="matchBody">
-          <div className="tags"><i>{m.map}</i><i>{m.slots} SLOTS</i>{m.is_private&&<i>PRIVATE</i>}</div>
-          <div className="matchTitleRow"><div><h4>{m.title}</h4><p className="pz">Prize Pool · ₹{m.prize}</p></div><b className="matchTime">{fmt(m.starts_at)}</b></div>
-          <div className="bar"><u style={{width:`${m.slots?Math.min(100,(m.filled||0)/m.slots*100):0}%`}}/></div>
-          <div className="foot">
-            <span>{already?`✓ Joined · ${left} left`:`${left} spots left`}</span>
-            {m.status==="upcoming"&&left>0 ? (
-              <div className="quickDuo" onClick={e=>e.stopPropagation()}>
-                {already
-                  ? <><button className="joinPill joinedPill" onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}>✓ Joined{myCount>1?` ×${myCount}`:""}</button><button className="joinPill" onClick={()=>askJoin(m,1)}>+ Slot · ₹{m.fee}</button></>
-                  : isDuo
-                    ? <><button className="joinPill" onClick={()=>joinSlots(m,1)}>1 Slot · ₹{m.fee}</button>{left>1&&<button className="joinPill alt" onClick={()=>joinSlots(m,2)}>2 Slots · ₹{(+m.fee||0)*2}</button>}</>
-                    : <button className="joinPill" onClick={()=>askJoin(m,1)}>₹{m.fee} JOIN</button>}
-              </div>
-            ) : <b className={"joinPill "+(already?"joinedPill":"alt")}>{already?"✓ Joined":left<1?"FULL":String(m.status||"").toUpperCase()}</b>}
+          <div className="mcTitle"><h4>{m.title}</h4><span className="mcTime">{fmt(m.starts_at)}</span></div>
+          <div className="mcStats">
+            <div><small>Prize Pool</small><b className="pz">₹{m.prize}</b></div>
+            <div><small>Entry</small><b>₹{m.fee}</b></div>
+            <div><small>Map</small><b>{m.map}</b></div>
+          </div>
+          <div className="bar"><u style={{width:`${pct}%`}}/></div>
+          <div className="mcSlots"><span>{m.filled||0}/{m.slots} filled</span><span>{left} spots left</span></div>
+          <div className="mcFoot" onClick={e=>e.stopPropagation()}>
+            <span className="mcHint">{already?`✓ You have ${myCount} slot${myCount>1?"s":""}`:(open?(left<1?"Room full":"Tap Join to book"):String(m.status||"").toUpperCase())}</span>
+            <div className="quickDuo">
+              {canBook && (already
+                ? <button className="joinPill alt" onClick={()=>askJoin(m,1)}>+ Slot · ₹{m.fee}</button>
+                : isDuo
+                  ? <><button className="joinPill big" onClick={()=>joinSlots(m,1)}>1 Slot · ₹{m.fee}</button>{left>1&&<button className="joinPill alt" onClick={()=>joinSlots(m,2)}>2 Slots · ₹{(+m.fee||0)*2}</button>}</>
+                  : <button className="joinPill big" onClick={()=>askJoin(m,1)}>Join · ₹{m.fee}</button>)}
+              {already&&open&&<button className="joinPill cancelPill" onClick={()=>cancelFromCard(m)}>Cancel</button>}
+              {already&&!open&&<button className="joinPill joinedPill" onClick={openM}>✓ Joined</button>}
+            </div>
           </div>
         </div>
       </div>
     );
   };
+
 
   const body = () => {
     if(nav==="home"){
@@ -585,11 +622,14 @@ export default function App() {
       {myW.length>0&&<><p className="sh">Withdrawal requests</p>{myW.slice(0,5).map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>)}</>}
       {md.length>0&&<><p className="sh">Deposits</p>{md.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}
       <p className="sh">Transactions</p>{txs.length?txs.slice(0,20).map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty" style={{padding:20}}>No transactions yet</p>}</div> }
-    const r=[...lb].sort((a,b)=>b.total_won-a.total_won), P=x=>x?(<div><Avatar name={x.name} s={64}/><b>{x.name}</b><div className="gn">₹{kf(x.total_won)}</div></div>):<div/>;
+    const r=[...lb].sort((a,b)=>(b.total_won||0)-(a.total_won||0));
     if(!r.length) return <p className="empty">No winners yet. Be the first!</p>;
-    return <><div className="pod">{P(r[1])}<div style={{marginTop:-14}}>{P(r[0])}</div>{P(r[2])}</div>
-      <div className="lr" style={{fontWeight:600}}><b>Name</b>Rank</div>
-      {r.slice(3).map((x,i)=><div key={x.id} className={"lr"+(x.id===me.id?" me":"")}><Avatar name={x.name} s={34}/><b>{x.name}<div className="gn">₹{kf(x.total_won)}</div></b>{i+4}</div>)}</>;
+    const top=[r[1],r[0],r[2]], rk=[2,1,3];
+    return <>
+      <div className="lbPod">{top.map((x,i)=>x?<div key={i}><div className={"lbRk r"+rk[i]}><Avatar url={x.avatar_url} s={rk[i]===1?70:58}/><span>{rk[i]}</span></div><b>{x.name}</b><div className="gn">₹{kf(x.total_won||0)}</div></div>:<div key={i}/>)}</div>
+      {r.length>3&&<><div className="lbHead"><span>Rank</span><span>Player</span><span>Won</span></div>
+      {r.slice(3).map((x,i)=><div key={x.id} className={"lbRow"+(x.id===me.id?" me":"")}><span className="lbNo">{i+4}</span><div className="lbName"><Avatar url={x.avatar_url} s={34}/><b>{x.name}{x.id===me.id?" (You)":""}</b></div><span className="lbWin">₹{kf(x.total_won||0)}</span></div>)}</>}
+    </>;
   };
 
   const stTxt = s => <span style={{color:s==="approved"?"#16a34a":s==="pending"?"#d97706":"#dc2626",fontWeight:600,textTransform:"capitalize"}}>{s}</span>;
@@ -602,27 +642,32 @@ export default function App() {
       const already=joined.includes(m?.id);
       const left=m?Math.max(0,(m.slots||0)-(m.filled||0)):0;
       const canEdit=m?.status==="upcoming", isDuoM=(m?.mode||"").toUpperCase().includes("DUO");
-      t=m?.title||"Match";
+      t=m?.title||"Match"; const tabK=f.mtab||"players";
       if(!m) h=<p className="empty">Match not found.</p>;
       else h=<div className="matchDetail">
-        {m.thumbnail_url?<img className="detailThumb" src={m.thumbnail_url} alt=""/>:<div className="detailFallback"><Logo s={58}/></div>}
-        <div className="detailMeta"><span>#{m.id}</span><span>{m.mode}</span><span>{m.map}</span><span>{left} slots left</span></div>
-        <div className="detailGrid"><div><small>Prize Pool</small><b>₹{m.prize}</b></div><div><small>Entry</small><b>₹{m.fee}</b></div><div><small>Start</small><b>{fmt(m.starts_at)}</b></div><div><small>Status</small><b>{m.status}</b></div></div>
-        <section className="detailSection"><h4>📜 Rules</h4><div className="rulesBox">{ru||"Rules have not been added yet."}</div></section>
-        <section className="detailSection"><h4>👥 Joined players ({players.length}/{m.slots})</h4>{players.length?<ol className="plist">{players.map((p,i)=><li key={i}>{p.game_name}</li>)}</ol>:<p className="hint">No one has joined yet. Be the first!</p>}</section>
+        <div className="mdHero">
+          {m.thumbnail_url?<img className="matchThumb" src={m.thumbnail_url} alt=""/>:<div className="thumbFallback"><Logo s={58}/></div>}
+          <div className="thumbShade"/>
+          {m.status==="live"&&<span className="liveTag">● LIVE</span>}
+          <div className="mdHeroTxt"><span className="chipRed">{m.mode}</span><h2>{m.title}</h2><small>#{m.id} · {m.map} · {fmt(m.starts_at)}</small></div>
+        </div>
+        <div className="mdStats"><div><small>Prize Pool</small><b className="pz">₹{m.prize}</b></div><div><small>Entry</small><b>₹{m.fee}</b></div><div><small>Filled</small><b>{m.filled||0}/{m.slots}</b></div><div><small>Status</small><b className="capz">{m.status}</b></div></div>
+        <div className="bar"><u style={{width:`${m.slots?Math.min(100,(m.filled||0)/m.slots*100):0}%`}}/></div>
+        <p className="hint" style={{marginTop:6}}>{left} spots left</p>
         {already&&r?.room_id&&<section className="detailSection roomBox"><h4>🎮 Room details</h4>
           <div className="copyRow"><span>Room ID<b>{r.room_id}</b></span><button className="sm" onClick={()=>copyText(r.room_id)}>Copy</button></div>
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
         </section>}
-        {already&&m.status==="upcoming"&&<div className="joinedNote">✓ Already joined — you have a slot. You can book another slot while space is available.</div>}
+        <div className="mdTabs">{[["prize","Prize Pool"],["players",`Players (${players.length})`],["rules","Rules"]].map(([k,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{l}</b>)}</div>
+        {tabK==="prize"&&<div className="mdPanel"><div className="prizeBig"><small>Total prize pool</small><b>₹{m.prize}</b></div><p className="hint">The winner's prize is paid to the wallet by admin after results. Entry fees collected so far: ₹{(m.filled||0)*(+m.fee||0)}.</p></div>}
+        {tabK==="players"&&<div className="mdPanel">{players.length?players.map((p,i)=><div className="plyRow" key={i}><i>{i+1}</i><Avatar s={30}/><b>{p.game_name}</b>{mySlots.some(s=>s.game_name===p.game_name)&&<span className="you">You</span>}</div>):<p className="hint">No one has joined yet. Be the first!</p>}</div>}
+        {tabK==="rules"&&<div className="mdPanel"><div className="rulesBox">{ru||"Rules have not been added yet."}</div></div>}
         {already&&<section className="detailSection"><h4>🎟️ Your slots ({mySlots.length})</h4>
-          {mySlots.map((s,i)=><div className="slotRow" key={s.slot_id}><i>{i+1}</i><input disabled={!canEdit} value={f["sn_"+s.slot_id]??s.game_name??""} onChange={e=>setF({...f,["sn_"+s.slot_id]:e.target.value})} placeholder="Game name for this slot"/></div>)}
+          {mySlots.map((s,i)=><div className="slotRow" key={s.slot_id}><i>{i+1}</i><input disabled={!canEdit} value={f["sn_"+s.slot_id]??s.game_name??""} onChange={e=>setF({...f,["sn_"+s.slot_id]:e.target.value})} placeholder="Game name for this slot"/>{canEdit&&<button className="sm no" onClick={()=>window.confirm("Cancel this slot? Entry will be refunded to your wallet.")&&doCancel(m,s)}>Cancel</button>}</div>)}
           {canEdit&&mySlots.length>0&&<button className="btn" style={{background:"#111"}} onClick={saveSlotNames}>Save game names</button>}
           <p className="hint">Every slot has its own game name. You can edit names until the match becomes ongoing.</p></section>}
-        {canEdit&&left>0&&<section className="detailSection"><h4>➕ {already?"Book another slot":"Join this match"}</h4>
-          <button className="btn gb" onClick={()=>askJoin(m,1)}>{already?"Book another slot":"Join match"} · ₹{m.fee}</button>
-          {left>1&&isDuoM&&<button className="btn" style={{marginTop:8,background:"#111"}} onClick={()=>askJoin(m,2)}>Book 2 slots (2 game names) · ₹{(+m.fee||0)*2}</button>}
-          <p className="hint">You can book as many slots as you want, each with a different game name.</p></section>}
+        {already&&m.status==="upcoming"&&<div className="joinedNote">✓ Already joined — you have a slot. You can book another slot while space is available.</div>}
+        {canEdit&&left>0&&<div className="mdAct"><button className="btn gb" onClick={()=>askJoin(m,1)}>{already?"Book another slot":"Join match"} · ₹{m.fee}</button>{left>1&&isDuoM&&<button className="btn" style={{background:"#111"}} onClick={()=>askJoin(m,2)}>Book 2 slots · ₹{(+m.fee||0)*2}</button>}<p className="hint">Each slot can have its own game name. Entry is refunded if you cancel before the match goes live.</p></div>}
         {!canEdit&&<div className="joinedNote">This match is {m.status}. New slots cannot be booked now.</div>}
       </div>;
       return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>go(back)}>←</span>{t}</div><div className="pgb">{h}</div></>;
@@ -652,7 +697,7 @@ export default function App() {
     if(page==="profile"){
       t="Profile";
       const links=S.support_links||{};
-      h=<><div style={{textAlign:"center",margin:"10px 10px 18px"}}><Avatar name={me.name} s={96}/><h3 style={{marginTop:8}}>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
+      h=<><div className="profHero"><label className="avWrap"><Avatar url={me.avatar_url} s={96}/><span className="avEdit">📷</span><input type="file" accept="image/*" hidden disabled={busy} onChange={e=>uploadAvatar(e.target.files[0])}/></label><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}<p className="hint" style={{marginTop:6}}>Tap the photo to change your profile picture</p></div>
       {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={links.telegram} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
@@ -820,7 +865,7 @@ export default function App() {
       </div>;
     }
 
-    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>adjust(x)}>± Balance</button>{isAdmin&&<><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>{x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
+    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>adjust(x)}>± Balance</button>{x.id!==me.id&&x.role!=="admin"&&(isAdmin||x.role!=="acting_admin")&&<button className={"sm "+(x.banned?"ok":"no")} onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned},x.banned?"User unbanned":"User banned")}>{x.banned?"Unban":"Ban"}</button>}{isAdmin&&x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
 
     if(cur==="Withdraw Settings"){ const w=S.withdraw||{}, fv=(k,d)=>f[k]??d;
       b=<div className="pnl"><h3>🏧 Withdrawal rules</h3><p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Players cannot request less than the minimum amount. This is enforced by the database too, not only by the app.</p>
@@ -850,11 +895,12 @@ export default function App() {
   if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
   const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
-  return wrap(page ? sub() : <>
-    <div className="hdr"><span onClick={()=>go("profile")}><Avatar name={me.name} s={34}/></span><span className="brand"><Logo s={24}/>ClashX7</span>
+  const navBar = <nav>{NAV.map(([n,l,d])=>{const on=n==="profile"?page==="profile":(!page&&nav===n); return <a key={n} className={on?"on":""} onClick={()=>n==="profile"?go("profile"):(setPage(null),setNav(n))}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
+  return wrap(<>{page ? sub() : <>
+    <div className="hdr"><span style={{width:34}}/><span className="brand"><Logo s={24}/>ClashX7</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>go("notifs")}>🔔{unread>0&&<sup style={{color:"var(--r)",fontWeight:800}}> {unread}</sup>}</button><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
     {body()}
-    <nav>{NAV.map(([n,l,d])=><a key={n} className={nav===n?"on":""} onClick={()=>setNav(n)}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>)}</nav></>);
+    </>}{(!page||page==="profile")&&navBar}</>);
 }
 
 const css = `
@@ -947,4 +993,69 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .splash{justify-content:flex-start;padding:18vh 24px 24px}
 .spLogo{animation:none}.spLogo svg{display:block}
 .spName,.spTag{margin:0;animation:none}
+
+.avImg{border-radius:50%;object-fit:cover;display:block;flex:0 0 auto;box-shadow:0 3px 10px #0002}
+.avDef{background:radial-gradient(circle at 30% 25%,#ff8a7e 0,#f5403a 40%,#7f1d1d 100%);box-shadow:0 3px 10px #7f1d1d44}
+.x7 .avWrap{position:relative;display:inline-block;cursor:pointer;margin:0 auto}
+.x7 .avEdit{position:absolute;right:-2px;bottom:-2px;width:30px;height:30px;border-radius:50%;background:var(--r);display:grid;place-items:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 6px #0003}
+.profHero{text-align:center;padding:20px 12px 18px;margin:0 0 8px;background:linear-gradient(180deg,#fef2f2,#fff);border-radius:14px}
+.profHero h3{margin-top:10px;font-size:18px}
+.chipDark{background:#000a;color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700}
+.chipRed{display:inline-block;background:var(--r);color:#fff;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+.liveTag{position:absolute;right:10px;bottom:10px;background:#dc2626;color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:5px;letter-spacing:.5px}
+.matchCard .thumbWrap{height:118px}
+.mcTitle{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:10px}
+.mcTitle h4{font-size:15px;margin:0;line-height:1.3;color:#111}
+.mcTime{font-size:10px;color:#555;white-space:nowrap;background:#f3f4f6;border-radius:6px;padding:4px 6px}
+.mcStats{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px;margin-top:9px}
+.mcStats>div{background:#fafafa;border:1px solid #f0f0f0;border-radius:9px;padding:7px 8px;min-width:0}
+.mcStats small{display:block;font-size:9px;color:#777;text-transform:uppercase;letter-spacing:.4px}
+.mcStats b{display:block;font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mcStats .pz{font-size:16px}
+.mcSlots{display:flex;justify-content:space-between;font-size:10px;color:#666;margin-top:6px}
+.mcFoot{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:9px 0 10px}
+.mcHint{font-size:10px;color:#777;min-width:0}
+.joinPill.big{padding:9px 14px;font-size:12px}
+.joinPill.cancelPill{background:#fff;color:#dc2626;border:1px solid #fecaca}
+.joinPill.joinedPill{background:#16a34a}
+.mdHero{position:relative;height:170px;background:#111;overflow:hidden}
+.mdHero .liveTag{top:12px;bottom:auto}
+.mdHeroTxt{position:absolute;left:12px;right:12px;bottom:12px;color:#fff;z-index:2}
+.mdHeroTxt h2{font-size:20px;margin:6px 0 3px;text-shadow:0 1px 4px #0008}
+.mdHeroTxt small{font-size:11px;opacity:.92}
+.mdStats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0 8px}
+.mdStats>div{border:1px solid #eee;border-radius:10px;padding:8px 4px;text-align:center;min-width:0}
+.mdStats small{display:block;font-size:9px;color:#777;text-transform:uppercase}
+.mdStats b{display:block;font-size:13px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mdStats .pz{font-size:14px;color:var(--r)}
+.capz{text-transform:capitalize}
+.mdTabs{display:flex;border-bottom:1px solid #eee;margin:14px -12px 0}
+.mdTabs b{flex:1;text-align:center;padding:11px 4px;font-size:12px;font-weight:700;color:#666;border-bottom:2px solid transparent;cursor:pointer}
+.mdTabs b.on{color:var(--r);border-color:var(--r)}
+.mdPanel{padding:12px 0}
+.prizeBig{background:linear-gradient(135deg,#f5403a,#7f1d1d);color:#fff;border-radius:12px;padding:16px;text-align:center}
+.prizeBig small{font-size:11px;opacity:.9}
+.prizeBig b{display:block;font-size:30px;margin-top:4px}
+.plyRow{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #f3f3f3}
+.plyRow i{font-style:normal;width:20px;font-size:12px;color:#777;text-align:center}
+.plyRow b{flex:1;font-size:13px;word-break:break-word}
+.plyRow .you{font-size:10px;background:#dbeafe;color:#1d4ed8;border-radius:6px;padding:2px 6px;font-weight:700}
+.mdAct{display:grid;gap:8px;margin-top:14px}
+.mdAct .btn{margin:0}
+.slotRow .sm{flex:0 0 auto;margin:0 0 8px}
+.lbPod{display:flex;justify-content:space-around;align-items:flex-end;padding:22px 6px 16px;gap:6px;background:linear-gradient(180deg,#fef2f2,#fff);border-radius:14px;margin-bottom:10px}
+.lbPod>div{flex:1;text-align:center;font-size:12px;min-width:0}
+.lbPod b{display:block;margin-top:6px;font-size:13px;word-break:break-word}
+.lbRk{position:relative;display:inline-block}
+.lbRk>span{position:absolute;right:-4px;bottom:-4px;width:24px;height:24px;border-radius:50%;background:#111;color:#fff;font-weight:800;font-size:11px;display:grid;place-items:center;border:2px solid #fff}
+.lbRk.r1>span{background:#f5b301}.lbRk.r2>span{background:#9ca3af}.lbRk.r3>span{background:#b45309}
+.lbHead,.lbRow{display:grid;grid-template-columns:48px 1fr auto;align-items:center;gap:10px;padding:10px 12px}
+.lbHead{font-size:11px;color:#777;font-weight:700;text-transform:uppercase;border-bottom:1px solid #eee}
+.lbHead span:first-child{text-align:center}
+.lbRow{border-bottom:1px solid #f1f1f1}
+.lbRow.me{background:#dbeafe}
+.lbNo{font-weight:800;color:#444;text-align:center}
+.lbName{display:flex;align-items:center;gap:10px;min-width:0}
+.lbName b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lbWin{font-weight:800;color:#16a34a;font-size:13px;white-space:nowrap}
 `;
