@@ -116,6 +116,7 @@ export default function App() {
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(window.location.hash!=="#admin");
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
+  const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
   const authOpenRef = useRef(false);
   authOpenRef.current = authOpen;
@@ -227,6 +228,16 @@ export default function App() {
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
   useEffect(()=>{load();const i=setInterval(load,15000);return()=>clearInterval(i)},[load]);
+  useEffect(()=>{
+    const id=slotUI?.m?.id; if(!id) return;
+    const t=setInterval(async()=>{
+      const {data}=await supabase.rpc("match_taken_slots",{p_match:id});
+      if(!data) return;
+      const tk=data.map(Number);
+      setSlotUI(u=>u&&u.m.id===id?{...u,taken:tk,sel:u.sel.filter(x=>!tk.includes(x))}:u);
+    },4000);
+    return()=>clearInterval(t);
+  },[slotUI?.m?.id]);
 
   // LIVE: match create / room / balance / notification change hole sathe sathe screen update (refresh/redeploy lagbe na)
   useEffect(()=>{
@@ -278,32 +289,39 @@ export default function App() {
 
   // ---- player actions ----
   // every slot has its OWN game name (one player can book as many slots as they like)
-  const doJoin = async (m,names) => {
-    const list=names.map(x=>(x||"").trim());
-    if(!list.length||list.some(x=>!x)){ say("Enter a game name for every slot",1); return false }
-    if((me.balance||0)+(me.winnings||0)<(+m.fee||0)*list.length){ say("Not enough balance. Add money in Wallet.",1); return false }
-    await supabase.rpc("save_game_name",{p_name:list[0]});
-    let done=0;
-    for(const gn of list){
-      const {error}=await supabase.rpc("join_match_slot",{p_match:m.id,p_game_name:gn});
-      if(error){ say((done?`${done} of ${list.length} slots booked. `:"")+error.message,1); break }
-      await supabase.rpc("name_new_slot",{p_match:m.id,p_name:gn}); // makes sure THIS slot carries THIS name
-      done++;
-    }
-    if(done){ setMe(x=>({...x,game_name:list[0]})); if(done===list.length) say(done>1?`${done} slots booked ✅`:"Slot booked ✅"); await load(); refreshLists(m.id) }
-    return done>0;
-  };
-  // join straight from the match list: popup asks one game name per slot
-  const askJoin = (m,count=1) => {
+  // Join now opens the slot picker. Step 1: pick slots. Step 2: game names. Then pay & join.
+  const openSlots = async m => {
     if(!m||m.status!=="upcoming") return say("This match is not open for booking.",1);
     const left=Math.max(0,(m.slots||0)-(m.filled||0));
-    if(left<count) return say(left?`Only ${left} slot${left===1?"":"s"} left.`:"No slot left.",1);
-    const have=joined.filter(x=>x===m.id).length, tot=(+m.fee||0)*count;
-    const fields=Array.from({length:count},(_,i)=>["g"+i,count>1?`Slot ${i+1} · game name`:(have?`Slot ${have+1} · game name`:"Your in-game name"),"text"]);
-    const init=Object.fromEntries(fields.map(([k],i)=>[k,(i===0&&!have)?(me.game_name||""):""]));
-    ask(`Join · ${m.title}`,fields,v=>doJoin(m,fields.map(([k])=>v[k])),init,
-      {note:`₹${tot}${count>1?` (${count} slots)`:""} will be deducted from your wallet. Each slot can have a different game name, and you can change names until the match goes live.`,btn:`Pay ₹${tot} & join`});
+    if(left<1) return say("No slot left.",1);
+    const {data,error}=await supabase.rpc("match_taken_slots",{p_match:m.id});
+    if(error) return say(error.message,1);
+    setSlotUI({m,taken:(data||[]).map(Number),sel:[],names:{},step:1});
   };
+  const askJoin = m => openSlots(m);
+  const joinSlots = m => openSlots(m);
+  const toggleSlot = n => setSlotUI(u=>{
+    if(!u||u.taken.includes(n)) return u;
+    const on=u.sel.includes(n), left=Math.max(0,(u.m.slots||0)-(u.m.filled||0));
+    if(!on && u.sel.length>=left){ say(`Only ${left} slot${left===1?"":"s"} left.`,1); return u }
+    return {...u, sel: on ? u.sel.filter(x=>x!==n) : [...u.sel,n]};
+  });
+  const payJoin = async () => {
+    const u=slotUI; if(!u) return;
+    const sel=[...u.sel].sort((a,b)=>a-b);
+    const names=sel.map(n=>String(u.names[n]??me.game_name??"").trim());
+    if(!sel.length||names.some(x=>!x)) return say("Every slot needs a game name",1);
+    const total=(+u.m.fee||0)*sel.length;
+    if((me.balance||0)+(me.winnings||0)<total) return say("Not enough balance. Add money in Wallet.",1);
+    await supabase.rpc("save_game_name",{p_name:names[0]});
+    const {error}=await supabase.rpc("join_match_slots",{p_match:u.m.id,p_slots:sel,p_names:names});
+    if(error) return say(error.message,1);
+    setMe(x=>({...x,game_name:names[0]}));
+    setSlotUI(null);
+    say(sel.length>1?`${sel.length} slots booked ✅`:"Slot booked ✅");
+    await load(); refreshLists(u.m.id);
+  };
+
   const saveSlotNames = async () => {
     for(const s of mySlots){
       const v=(f["sn_"+s.slot_id]??s.game_name??"").trim();
@@ -538,13 +556,6 @@ export default function App() {
     return Math.max(0, (hh||0)*60 + (mm||0));
   };
 
-  const joinSlots = (m,count) => {
-    count=Math.max(1,Math.min(2,+count||1));
-    if(!(m.mode||"").toUpperCase().includes("DUO") && count>1) return say("Two-slot booking is only available for DUO matches.",1);
-    askJoin(m,count);
-  };
-
-  // cancel one slot (refund goes back to wallet). Works from home card, detail page.
   const doCancel = async (m,slot) => {
     const {error}=await supabase.rpc("cancel_match_slot",{p_slot:String(slot.slot_id)});
     if(error){say(error.message,1);return false}
@@ -604,11 +615,10 @@ export default function App() {
     const openM=()=>go("match",{mid:m.id,game_name:me.game_name||""});
     const stop=fn=>e=>{e.stopPropagation();fn()};
     let ribbon;
-    if(already&&open&&left>0) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m,1))}>+ SLOT ₹{m.fee}</div>;
+    if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}><i className="cxPlus">+</i>₹{m.fee} JOIN</div>;
     else if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
-    else if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>isDuo?joinSlots(m,1):askJoin(m,1))}>₹{m.fee} JOIN</div>;
     else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
-    const cancelEl = null;
+    const cancelEl = already&&open ? <button className="cxCx" onClick={stop(()=>cancelFromCard(m))}>✕ Cancel</button> : null;
     return <div className="cx" key={m.id} onClick={openM}>{cxBody(m,ribbon,cancelEl)}</div>;
   };
 
@@ -882,7 +892,31 @@ export default function App() {
       <div className="adminTabs">{TABS.map(x=><button key={x} className={x===cur?"on":""} onClick={()=>{setAt(x);setF({})}}>{x==="Users"&&isActingAdmin?"User Search":x}</button>)}</div>{b}</>;
   };
 
-  const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen&&!IS_APP)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
+  const slotOv = slotUI ? (()=>{
+    const u=slotUI, m=u.m, left=Math.max(0,(m.slots||0)-(m.filled||0)), sel=[...u.sel].sort((a,b)=>a-b), total=(+m.fee||0)*sel.length;
+    return <div className="spOv"><div className="spBox">
+      <div className="spHead">
+        <span className="spBack" onClick={()=>u.step===2?setSlotUI(x=>x&&{...x,step:1}):setSlotUI(null)}>←</span>
+        <div><b>{u.step===1?"Select Match Position":"Enter Game Names"}</b><small>{m.title}</small></div>
+      </div>
+      {u.step===1 ? <>
+        <div className="spHint">{left} slot{left===1?"":"s"} left · tap to select</div>
+        <div className="spGrid">{Array.from({length:m.slots||0},(_,i)=>i+1).map(n=>{
+          const tk=u.taken.includes(n), on=u.sel.includes(n);
+          return <button key={n} disabled={tk} className={"spCell"+(on?" on":"")+(tk?" tk":"")} onClick={()=>toggleSlot(n)}>{n}</button>;
+        })}</div>
+      </> : <div className="spNames">
+        {sel.map(n=><div className="spName" key={n}><label>Slot {n}</label><input value={u.names[n]??(me.game_name||"")} placeholder="Game name" onChange={e=>{const v=e.target.value; setSlotUI(x=>x&&{...x,names:{...x.names,[n]:v}})}}/></div>)}
+      </div>}
+      <div className="spFoot">
+        {u.step===1
+          ? <button className="spBtn" disabled={!sel.length} onClick={()=>setSlotUI(x=>x&&{...x,step:2})}>{sel.length?`NEXT · ${sel.length} slot${sel.length>1?"s":""} · ₹${total}`:"SELECT SLOT"}</button>
+          : <button className="spBtn" onClick={payJoin}>Pay ₹{total} & join</button>}
+      </div>
+    </div></div>;
+  })() : null;
+
+  const wrap = c => (<div className="x7"><style>{css}</style>{slotOv}<div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen&&!IS_APP)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
   if(splash) return wrap(<Splash/>);
   if(!ready) return wrap(<Skeleton/>);
@@ -1128,4 +1162,24 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 
 .hdrIcon{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#ff6a5c,#c4161c);box-shadow:0 4px 12px #c4161c55,inset 0 0 0 2px #fff;cursor:pointer;flex:0 0 auto;transition:transform .15s}
 .hdrIcon:active{transform:scale(.92)}
+
+.cxPlus{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#fff;color:var(--r);font-style:normal;font-weight:900;font-size:14px;line-height:1;margin-right:6px}
+.cxCx{display:inline-block;background:#fff;border:1px solid #fecaca;color:#dc2626;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;margin-top:6px;cursor:pointer;font-family:inherit}
+.spOv{position:fixed;inset:0;background:#0008;z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.spBox{background:#fff;width:100%;max-width:480px;max-height:92vh;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden}
+.spHead{background:#c4161c;color:#fff;padding:14px;display:flex;gap:12px;align-items:center}
+.spHead b{display:block;font-size:15px}
+.spHead small{opacity:.9;font-size:11px}
+.spBack{font-size:22px;cursor:pointer;padding:0 4px}
+.spHint{font-size:12px;color:#666;padding:12px 14px 4px}
+.spGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:10px 14px;overflow:auto;flex:1}
+.spCell{height:46px;border-radius:10px;border:1.5px solid #e5e7eb;background:#fff;font-weight:700;font-size:15px;color:#111;cursor:pointer;font-family:inherit}
+.spCell.on{background:#f5403a;border-color:#f5403a;color:#fff}
+.spCell.tk{background:#f3f4f6;color:#bbb;text-decoration:line-through;border-color:#f3f4f6;cursor:not-allowed}
+.spNames{padding:14px;overflow:auto;display:grid;gap:10px;flex:1}
+.spName label{display:block;font-size:12px;color:#666;margin-bottom:4px}
+.spName input{width:100%;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:16px;box-sizing:border-box;font-family:inherit}
+.spFoot{padding:12px 14px;border-top:1px solid #eee}
+.spBtn{width:100%;height:50px;border:0;border-radius:12px;background:#c4161c;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit}
+.spBtn:disabled{background:#d1d5db;cursor:not-allowed}
 `;
