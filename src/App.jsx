@@ -608,7 +608,7 @@ export default function App() {
     else if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
     else if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>isDuo?joinSlots(m,1):askJoin(m,1))}>₹{m.fee} JOIN</div>;
     else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
-    const cancelEl = already&&open ? <span className="cxCx" onClick={stop(()=>cancelFromCard(m))}>Cancel my slot</span> : null;
+    const cancelEl = null;
     return <div className="cx" key={m.id} onClick={openM}>{cxBody(m,ribbon,cancelEl)}</div>;
   };
 
@@ -897,7 +897,7 @@ export default function App() {
   const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
   const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
   return wrap(<>{page ? sub() : <>
-    <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span><span className="brand"><Logo s={24}/>ClashX7</span>
+    <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></span><span className="brand"><Logo s={24}/>ClashX7</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>go("notifs")}>🔔{unread>0&&<sup style={{color:"var(--r)",fontWeight:800}}> {unread}</sup>}</button><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
     {body()}
     </>}{!page&&navBar}</>);
@@ -1125,4 +1125,7 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .cxRib{flex:0 0 auto;height:38px;padding:0 16px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--r);color:#fff;font-weight:800;font-size:13px;box-shadow:0 4px 10px #f5403a44;white-space:nowrap;cursor:pointer}
 .cxRib.done{background:#16a34a;box-shadow:0 4px 10px #16a34a44}
 .cxRib.off{background:#9ca3af;box-shadow:none}
+
+.hdrIcon{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#ff6a5c,#c4161c);box-shadow:0 4px 12px #c4161c55,inset 0 0 0 2px #fff;cursor:pointer;flex:0 0 auto;transition:transform .15s}
+.hdrIcon:active{transform:scale(.92)}
 `;
