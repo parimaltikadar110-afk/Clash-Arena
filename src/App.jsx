@@ -377,20 +377,6 @@ export default function App() {
     if(error) throw error;
     return supabase.storage.from("public-assets").getPublicUrl(path).data.publicUrl;
   };
-  const uploadAvatar = async file => {
-    if(!file) return;
-    setBusy(true);
-    try{
-      const b=await shrink(file,512,.85);
-      const path=`avatars/${session.user.id}-${Date.now()}.jpg`;
-      const {error}=await supabase.storage.from("public-assets").upload(path,b,{contentType:"image/jpeg",upsert:false});
-      if(error) throw error;
-      const url=supabase.storage.from("public-assets").getPublicUrl(path).data.publicUrl;
-      const {error:ue}=await supabase.from("profiles").update({avatar_url:url}).eq("id",me.id);
-      if(ue) throw ue;
-      setMe(x=>({...x,avatar_url:url})); say("Profile picture updated ✅"); load();
-    }catch(e){say(thumbErr(e),1)} finally{setBusy(false)}
-  };
   const uploadMatchThumb = async file => {
     if(!file) return;
     setBusy(true);
@@ -707,7 +693,7 @@ export default function App() {
     if(page==="profile"){
       t="Profile";
       const links=S.support_links||{};
-      h=<><div className="profHero"><label className="avWrap"><Avatar url={me.avatar_url} s={96}/><span className="avEdit">📷</span><input type="file" accept="image/*" hidden disabled={busy} onChange={e=>uploadAvatar(e.target.files[0])}/></label><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}<p className="hint" style={{marginTop:6}}>Tap the photo to change your profile picture</p></div>
+      h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
       {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={links.telegram} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
