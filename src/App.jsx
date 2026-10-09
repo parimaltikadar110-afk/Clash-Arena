@@ -673,7 +673,7 @@ export default function App() {
         {tabK==="players"&&<div className="mdPanel">{players.length?players.map((p,i)=><div className="plyRow" key={i}><i>{i+1}</i><Avatar s={30}/><b>{p.game_name}</b>{mySlots.some(s=>s.game_name===p.game_name)&&<span className="you">You</span>}</div>):<p className="hint">No one has joined yet. Be the first!</p>}</div>}
         {tabK==="rules"&&<div className="mdPanel"><div className="rulesBox">{ru||"Rules have not been added yet."}</div></div>}
         {already&&<section className="detailSection"><h4>🎟️ Your slots ({mySlots.length})</h4>
-          {mySlots.map((s,i)=><div className="slotRow" key={s.slot_id}><i>{i+1}</i><input disabled={!canEdit} value={f["sn_"+s.slot_id]??s.game_name??""} onChange={e=>setF({...f,["sn_"+s.slot_id]:e.target.value})} placeholder="Game name for this slot"/>{canEdit&&<button className="sm no" onClick={()=>window.confirm("Cancel this slot? Entry will be refunded to your wallet.")&&doCancel(m,s)}>Cancel</button>}</div>)}
+          {mySlots.map((s,i)=><div className="slotRow" key={s.slot_id}><i>{i+1}</i><input disabled={!canEdit} value={f["sn_"+s.slot_id]??s.game_name??""} onChange={e=>setF({...f,["sn_"+s.slot_id]:e.target.value})} placeholder="Game name for this slot"/></div>)}
           {canEdit&&mySlots.length>0&&<button className="btn" style={{background:"#111"}} onClick={saveSlotNames}>Save game names</button>}
           <p className="hint">Every slot has its own game name. You can edit names until the match becomes ongoing.</p></section>}
         {already&&m.status==="upcoming"&&<div className="joinedNote">✓ Already joined — you have a slot. You can book another slot while space is available.</div>}
