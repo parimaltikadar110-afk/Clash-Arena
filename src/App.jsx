@@ -19,7 +19,7 @@ const IS_APP = /ClashX7App/i.test(UA) || /;\s*wv\)/i.test(UA) || (/Version\/[\d.
 const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://sdk.cashfree.com/js/v3/cashfree.js";
 const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","LW HEAD","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
-const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"],["profile","Profile","M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"]];
+const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 const b64 = s => { const r = atob((s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/")); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))) };
@@ -895,12 +895,12 @@ export default function App() {
   if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
   const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
-  const navBar = <nav>{NAV.map(([n,l,d])=>{const on=n==="profile"?page==="profile":(!page&&nav===n); return <a key={n} className={on?"on":""} onClick={()=>n==="profile"?go("profile"):(setPage(null),setNav(n))}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
+  const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
   return wrap(<>{page ? sub() : <>
-    <div className="hdr"><span style={{width:34}}/><span className="brand"><Logo s={24}/>ClashX7</span>
+    <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span><span className="brand"><Logo s={24}/>ClashX7</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>go("notifs")}>🔔{unread>0&&<sup style={{color:"var(--r)",fontWeight:800}}> {unread}</sup>}</button><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
     {body()}
-    </>}{(!page||page==="profile")&&navBar}</>);
+    </>}{!page&&navBar}</>);
 }
 
 const css = `
@@ -1117,4 +1117,12 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .pzRow.g{background:#fffbea}
 .pzRow.s{background:#f3f4f6}
 .pzRow .amt{color:#16a34a;font-weight:700}
+
+.hdrIcon{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:1px solid #e5e7eb;color:#111;cursor:pointer;background:#fff;flex:0 0 auto}
+.cx{padding:12px 12px 12px}
+.cxBot{display:flex;align-items:center;gap:10px;margin:12px 0 0;min-height:40px}
+.cxBL{flex:1;min-width:0;padding:0}
+.cxRib{flex:0 0 auto;height:38px;padding:0 16px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--r);color:#fff;font-weight:800;font-size:13px;box-shadow:0 4px 10px #f5403a44;white-space:nowrap;cursor:pointer}
+.cxRib.done{background:#16a34a;box-shadow:0 4px 10px #16a34a44}
+.cxRib.off{background:#9ca3af;box-shadow:none}
 `;
