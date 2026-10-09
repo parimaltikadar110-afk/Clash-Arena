@@ -70,6 +70,7 @@ function Dlg({d, close}) {
     {d.fields.map(([k,l,t,o]) => <div key={k}><label>{l}</label>
       {t==="select" ? <select value={v[k]} onChange={e=>set(k,e.target.value)}>{o.map(x=>Array.isArray(x)?<option key={x[0]} value={x[0]}>{x[1]}</option>:<option key={x}>{x}</option>)}</select>
       : t==="area" ? <textarea rows={6} value={v[k]} onChange={e=>set(k,e.target.value)}/>
+      : t==="file" ? <input type="file" accept="image/*" onChange={e=>set(k,e.target.files[0]||"")}/>
       : <input type={t} value={v[k]} onChange={e=>set(k,e.target.value)}/>}</div>)}
     <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button></div></div>);
 }
@@ -85,11 +86,27 @@ const Tabs = ({list,cur,set,flex}) => (
   </div>
 );
 
+/* Instant open: last known data is shown immediately, fresh data replaces it a moment later (no blank/splash screen). */
+const readLS = k => { try{ return JSON.parse(localStorage.getItem(k)) }catch{ return null } };
+const storedSession = () => { try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(/^sb-.*-auth-token$/.test(k)){ const v=JSON.parse(localStorage.getItem(k)); if(v?.user) return v } } }catch{} return null };
+const BOOT = (() => { const s=storedSession(), c=readLS("x7cache"); return { s, c: s && c && c.uid===s.user.id ? c : null } })();
+
+function Skeleton({onRetry,onLogout}) {
+  const [slow,setSlow] = useState(false);
+  useEffect(()=>{ const t=setTimeout(()=>setSlow(true),9000); return()=>clearTimeout(t) },[]);
+  return (<div>
+    <div className="hdr"><span className="sk skc"/><span className="brand"><Logo s={24}/>ClashX7</span><span className="sk skp"/></div>
+    <div className="tabs">{[0,1,2,3,4].map(i=><b key={i}><span className="sk skt"/></b>)}</div>
+    {[0,1,2].map(i=><div className="card" key={i} style={{cursor:"default"}}><div className="sk skimg"/><div className="matchBody"><div className="sk skl"/><div className="sk skl s"/><div style={{height:14}}/></div></div>)}
+    {slow&&onRetry&&<div style={{padding:16,textAlign:"center"}}><p style={{fontSize:13,color:"#555",marginBottom:10}}>Taking longer than usual…</p><button className="btn" onClick={onRetry}>Try again</button><button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:8}} onClick={onLogout}>Logout</button></div>}
+  </div>);
+}
+
 export default function App() {
-  const [session,setSession] = useState(null), [ready,setReady] = useState(false), [hash,setHash] = useState(window.location.hash);
-  const [me,setMe] = useState(null), [M,setM] = useState([]), [rooms,setRooms] = useState({}), [joined,setJoined] = useState([]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
-  const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState([]), [rules,setRules] = useState({}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
-  const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
+  const [session,setSession] = useState(BOOT.c?BOOT.s:null), [ready,setReady] = useState(!!BOOT.c || !BOOT.s), [hash,setHash] = useState(window.location.hash);
+  const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(BOOT.c?.M||[]), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
+  const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState(BOOT.c?.notifs||[]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
+  const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
@@ -197,6 +214,7 @@ export default function App() {
       q("notifications").order("created_at",{ascending:false}).limit(30), q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
     setMe(p.data); setM(m.data||[]); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     setNotifs(n.data||[]); setRules(Object.fromEntries((ru.data||[]).map(x=>[x.mode,x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:m.data||[],joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[x.mode,x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])),notifs:(n.data||[]).slice(0,20)})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
@@ -248,7 +266,7 @@ export default function App() {
     if(!r.ok) return say(j.error||"Login failed",1);
     const {error} = await supabase.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); if(error) say(error.message,1) };
   const logout = async () => { try{const s=await (await navigator.serviceWorker?.getRegistration())?.pushManager.getSubscription(); if(s) await supabase.from("push_subscriptions").delete().eq("endpoint",s.endpoint)}catch{}
-    await supabase.auth.signOut(); setMe(null); setPage(null); setF({}) };
+    await supabase.auth.signOut(); try{localStorage.removeItem("x7cache")}catch{} setMe(null); setPage(null); setF({}) };
 
   // ---- player actions ----
   const doJoin = async (m,count,gn) => {
@@ -286,7 +304,17 @@ export default function App() {
     "Saved"
   ).then(ok=>{ if(ok){setMe(x=>({...x,name:f.n||x.name,game_name:f.gn||"",game_id:f.g||"",phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null}));go("profile")} });
 
-  const withdraw = async () => { if(await rpc("request_withdrawal",{p_amt:+f.a,p_upi:f.u||""})){say("Withdrawal request sent");go(null)} };
+  const withdraw = async () => { const wd=S.withdraw||{}, a=+f.a;
+    if(wd.enabled===false) return say("Withdrawals are temporarily closed.",1);
+    if(!(a>0)) return say("Enter the amount to withdraw",1);
+    if(a<(+wd.min||0)) return say(`Minimum withdrawal is ₹${wd.min}`,1);
+    if(+wd.max&&a>+wd.max) return say(`Maximum withdrawal per request is ₹${wd.max}`,1);
+    if(a>(me.winnings||0)) return say("You can withdraw only from your Winning Balance",1);
+    if(!(f.u||"").trim()) return say("Enter your UPI ID",1);
+    if(await rpc("request_withdrawal",{p_amt:a,p_upi:f.u.trim()})){say("Withdrawal request sent");go(null)} };
+  const saveWithdraw = () => { const w=S.withdraw||{}, mn=+(f.wmin??w.min??50), mx=+(f.wmax??w.max??0);
+    if(!(mn>=0)||!(mx>=0)) return say("Enter valid amounts",1); if(mx&&mx<mn) return say("Maximum cannot be less than minimum",1);
+    return run(supabase.from("app_settings").upsert({key:"withdraw",value:{enabled:(f.we??(w.enabled===false?"0":"1"))==="1",min:mn,max:mx,note:(f.wnote??w.note??"").trim()},updated_at:new Date().toISOString()}),"Withdrawal rules saved") };
   const gwActive = () => { const key = g => g==="manual"?"manual":"gw_"+g, ALL=["zapupi","manual","razorpay","cashfree"];
     const cfg = ALL.some(g=>S[key(g)]); return ALL.filter(g => cfg ? S[key(g)]?.enabled===true : GATEWAYS.includes(g)) };
   const manualDep = async () => { const a=+f.a, u=(f.u||"").trim(), mn=+(S.manual?.min||10), mx=+(S.manual?.max||0);
@@ -302,24 +330,31 @@ export default function App() {
   const viewProof = async path => { const {data,error}=await supabase.storage.from("proofs").createSignedUrl(path,300); if(error) return say(error.message,1); setPv(data.signedUrl) };
   const uploadQr = async file => { if(!file) return; setBusy(true); try{ const b=await shrink(file,800,.92); const {error}=await supabase.storage.from("public-assets").upload("pay-qr.jpg",b,{contentType:"image/jpeg",upsert:true}); if(error) throw error;
       const {data}=supabase.storage.from("public-assets").getPublicUrl("pay-qr.jpg"); setF(x=>({...x,qr:data.publicUrl+"?v="+Date.now()})); say("QR uploaded — now press Save") }catch(e){say(e.message,1)} setBusy(false) };
+  const thumbErr = e => { const m=e?.message||"Upload failed";
+    if(/row-level security|policy|not authorized|unauthorized|permission/i.test(m)) return "No permission to upload images. Run fix_patch.sql in the Supabase SQL Editor (storage policy), then try again.";
+    if(/bucket/i.test(m)) return "Storage bucket 'public-assets' is missing. Run fix_patch.sql in the Supabase SQL Editor.";
+    return m };
+  const uploadThumbFile = async file => {
+    const b=await shrink(file,1200,.86);
+    const path=`match-thumbnails/${session.user.id}-${Date.now()}.jpg`;
+    const {error}=await supabase.storage.from("public-assets").upload(path,b,{contentType:"image/jpeg",upsert:false});
+    if(error) throw error;
+    return supabase.storage.from("public-assets").getPublicUrl(path).data.publicUrl;
+  };
   const uploadMatchThumb = async file => {
     if(!file) return;
     setBusy(true);
+    try{ const url=await uploadThumbFile(file); setF(x=>({...x,th:url})); say("Thumbnail ready ✅") }
+    catch(e){ say(thumbErr(e),1) } finally{ setBusy(false) }
+  };
+  const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["file","Upload image","file"],["url","…or paste image URL","text"]],async v=>{
     try{
-      const b=await shrink(file,1200,.86);
-      const path=`match-thumbnails/${session.user.id}-${Date.now()}.jpg`;
-      const {error}=await supabase.storage.from("public-assets").upload(path,b,{contentType:"image/jpeg",upsert:false});
-      if(error) throw error;
-      const {data}=supabase.storage.from("public-assets").getPublicUrl(path);
-      setF(x=>({...x,th:data.publicUrl+"?v="+Date.now()}));
-      say("Thumbnail ready ✅");
-    }catch(e){say(e.message,1)} finally{setBusy(false)}
-  };
-  const setThumbForMatch = async m => {
-    const v=prompt("Paste thumbnail image URL",m.thumbnail_url||"");
-    if(v===null) return;
-    await run(supabase.from("matches").update({thumbnail_url:v.trim()||null}).eq("id",m.id),"Thumbnail updated");
-  };
+      let url=(v.url||"").trim();
+      if(v.file) url=await uploadThumbFile(v.file);
+      if(!url){ say("Choose an image or paste an image URL",1); return false }
+      return await run(supabase.from("matches").update({thumbnail_url:url}).eq("id",m.id),"Thumbnail updated ✅");
+    }catch(e){ say(thumbErr(e),1); return false }
+  },{url:m.thumbnail_url||""},{btn:"Save thumbnail",note:"A wide image (16:9) looks best on the match card."});
   const saveManual = () => { const m=S.manual||{}, v=(k,d="")=>f[k]??m[k]??d;
     return run(supabase.from("app_settings").upsert({key:"manual",value:{enabled:v("me_en",m.enabled===false?"0":"1")==="1",upi_id:v("upi_id").trim(),upi_name:v("upi_name").trim(),qr_url:f.qr??m.qr_url??"",note:v("note"),min:+v("min",10)||10,max:+v("max",0)||0},updated_at:new Date().toISOString()}),"Manual payment settings saved") };
   const saveGw = async (n,keys) => { const sec={}; keys.forEach(k=>{const v=(f[`gs_${n}_${k}`]||"").trim(); if(v) sec[k]=v}); const en=(f[`ge_${n}`]??(S["gw_"+n]?.enabled===true?"1":"0"))==="1";
@@ -480,12 +515,12 @@ export default function App() {
   const matchCard = m => {
     const left=Math.max(0,(m.slots||0)-(m.filled||0));
     const already=joined.includes(m.id);
-    const isDuo=(m.mode||"").toUpperCase().includes("DUO");
+    const isDuo=(m.mode||"").toUpperCase().includes("DUO"), myCount=joined.filter(x=>x===m.id).length;
     return (
       <div className="card matchCard" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}>
         <div className="thumbWrap">
           {m.thumbnail_url
-            ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy"/>
+            ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy" onError={e=>{e.currentTarget.style.display="none"}}/>
             : <div className="thumbFallback"><Logo s={24}/></div>}
           <div className="thumbShade"/>
           <div className="thumbTop"><span>#{m.id}</span><span>{m.mode}</span></div>
@@ -498,11 +533,13 @@ export default function App() {
             <span>{already?`✓ Joined · ${left} left`:`${left} spots left`}</span>
             {m.status==="upcoming"&&left>0 ? (
               <div className="quickDuo" onClick={e=>e.stopPropagation()}>
-                {isDuo
-                  ? <><button className="joinPill" onClick={()=>joinSlots(m,1)}>{already?"+ ":""}1 Slot · ₹{m.fee}</button>{left>1&&<button className="joinPill alt" onClick={()=>joinSlots(m,2)}>2 Slots · ₹{(+m.fee||0)*2}</button>}</>
-                  : <button className="joinPill" onClick={()=>askJoin(m,1)}>{already?"+ Slot · ":""}₹{m.fee} JOIN</button>}
+                {already
+                  ? <button className="joinPill joinedPill" onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}>✓ Joined{myCount>1?` ×${myCount}`:""}<em>+1</em></button>
+                  : isDuo
+                    ? <><button className="joinPill" onClick={()=>joinSlots(m,1)}>1 Slot · ₹{m.fee}</button>{left>1&&<button className="joinPill alt" onClick={()=>joinSlots(m,2)}>2 Slots · ₹{(+m.fee||0)*2}</button>}</>
+                    : <button className="joinPill" onClick={()=>askJoin(m,1)}>₹{m.fee} JOIN</button>}
               </div>
-            ) : <b className="joinPill alt">{left<1?"FULL":String(m.status||"").toUpperCase()}</b>}
+            ) : <b className={"joinPill "+(already?"joinedPill":"alt")}>{already?"✓ Joined":left<1?"FULL":String(m.status||"").toUpperCase()}</b>}
           </div>
         </div>
       </div>
@@ -543,7 +580,7 @@ export default function App() {
       const m=M.find(x=>x.id===+f.mid), r=m?rooms[m.id]:null, ru=m?rules[m.mode]?.rules:"";
       const already=joined.includes(m?.id);
       const left=m?Math.max(0,(m.slots||0)-(m.filled||0)):0;
-      const canEdit=m?.status==="upcoming";
+      const canEdit=m?.status==="upcoming", isDuoM=(m?.mode||"").toUpperCase().includes("DUO");
       t=m?.title||"Match";
       if(!m) h=<p className="empty">Match not found.</p>;
       else h=<div className="matchDetail">
@@ -561,6 +598,7 @@ export default function App() {
           <h4>👤 Your game name</h4>
           <input value={f.game_name??me.game_name??""} onChange={e=>setF({...f,game_name:e.target.value})} placeholder="Enter the game name shown in the match"/>
           {left>0&&<button className="btn gb" onClick={()=>join(m.id,f.game_name??me.game_name??"")}>{already?`Book another slot · ₹${m.fee}`:`Join match · ₹${m.fee}`}</button>}
+          {left>1&&isDuoM&&<button className="btn" style={{marginTop:8,background:"#111"}} onClick={()=>{const gn=(f.game_name??me.game_name??"").trim(); if(!gn) return say("Enter your game name first.",1); doJoin(m,2,gn)}}>{already?"Book 2 more slots":"Book 2 slots"} · ₹{(+m.fee||0)*2}</button>}
           {already&&<button className="btn" style={{marginTop:8,background:"#111"}} onClick={async()=>{const n=(f.game_name??me.game_name??"").trim(); if(!n) return say("Enter a game name",1); if(await rpc("set_slot_name",{p_match:m.id,p_name:n},"Game name updated ✅")) setMe(x=>({...x,game_name:n}))}}>Update my game name</button>}
           <p className="hint">You can edit the game name until the match becomes ongoing.</p>
         </section>}
@@ -601,7 +639,11 @@ export default function App() {
     }
     if(page==="account"){t="Account";h=<>{inp("n","Name")}{inp("gn","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
     if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={async()=>{if(await rpc("join_by_code",{p_code:f.c||""}))setPage(null)}}>Join</button></>}
-    if(page==="withdraw"){t="Withdrawal";h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>{inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" onClick={withdraw}>Withdraw</button></>}
+    if(page==="withdraw"){t="Withdrawal";const wd=S.withdraw||{}, mn=+(wd.min??0), mx=+(wd.max||0);
+      h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>
+        <div className="hint" style={{marginBottom:10}}>Minimum withdrawal: <b>₹{mn}</b>{mx?` · Maximum per request: ₹${mx}`:""}{wd.note?<><br/>{wd.note}</>:null}</div>
+        {wd.enabled===false&&<div className="hint" style={{background:"#fef2f2",color:"#b91c1c",marginBottom:10}}>Withdrawals are temporarily closed.</div>}
+        {inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" disabled={wd.enabled===false} onClick={withdraw}>Withdraw</button></>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
     if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={links.telegram} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={links.whatsapp} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
@@ -613,7 +655,7 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Withdrawals","Users","Staff"]
+      ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Withdrawals","Withdraw Settings","Users","Staff"]
       : isActingAdmin
         ? ["Matches","Rules","Notify","Users"]
         : ["Matches","Rules","Notify"];
@@ -753,11 +795,20 @@ export default function App() {
         <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Only the main Admin can change staff roles. Acting Admin sits between Moderator and Admin.</p>
         {staffers.length ? <div className="acards">{staffers.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}</b><span className={"pill "+x.role}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span></div><div className="uact"><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></div></div>)}</div> : <p className="empty">No moderators or acting admins yet.</p>}
         <p className="sh">Role powers</p>
-        <div className="roleInfo"><div><b>Moderator</b><small>Matches, room ID/Pass, rules and notifications.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search/profile view. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
+        <div className="roleInfo"><div><b>Moderator</b><small>Matches, room ID/Pass, rules and notifications.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
       </div>;
     }
 
-    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · view only":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{isAdmin&&<div className="uact"><button className="sm" onClick={()=>adjust(x)}>± Balance</button><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>{x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
+    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>adjust(x)}>± Balance</button>{isAdmin&&<><button className="sm" onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned})}>{x.banned?"Unban":"Ban"}</button>{x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
+
+    if(cur==="Withdraw Settings"){ const w=S.withdraw||{}, fv=(k,d)=>f[k]??d;
+      b=<div className="pnl"><h3>🏧 Withdrawal rules</h3><p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Players cannot request less than the minimum amount. This is enforced by the database too, not only by the app.</p>
+        <label>Withdrawals</label><select value={fv("we",w.enabled===false?"0":"1")} onChange={e=>setF({...f,we:e.target.value})}><option value="1">Open</option><option value="0">Closed (pause all withdrawals)</option></select>
+        <label>Minimum withdrawal ₹</label><input type="number" value={fv("wmin",w.min??50)} onChange={e=>setF({...f,wmin:e.target.value})}/>
+        <label>Maximum per request ₹ (0 = no limit)</label><input type="number" value={fv("wmax",w.max??0)} onChange={e=>setF({...f,wmax:e.target.value})}/>
+        <label>Note shown to players (optional)</label><textarea rows={2} value={fv("wnote",w.note||"")} onChange={e=>setF({...f,wnote:e.target.value})} placeholder="e.g. Withdrawals are paid within 24 hours"/>
+        <button className="btn" onClick={saveWithdraw}>Save withdrawal rules</button></div>;
+    }
 
     if(cur==="Withdrawals") b=W.length?<div className="acards">{W.map(w=><div className="ucard" key={w.id}><div className="uhead"><b>{allU.find(x=>x.id===w.user_id)?.name||"User"}</b>{stTxt(w.status)}</div><div className="ugrid"><span>Amount<b>₹{w.amount}</b></span><span>UPI<b>{w.upi}</b></span><span>Date<b>{fmt(w.created_at)}</b></span></div>{w.status==="pending"&&<div className="uact"><button className="sm ok" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true},"Approved")}>Approve</button><button className="sm no" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false},"Rejected")}>Reject</button></div>}</div>)}</div>:<p className="empty">No withdrawal requests</p>;
 
@@ -767,14 +818,14 @@ export default function App() {
 
   const wrap = c => (<div className="x7"><style>{css}</style><div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
-  if(!ready) return wrap(<div className="bootBlank"/>);
+  if(!ready) return wrap(<Skeleton/>);
   if(!session && !authOpen) return wrap(<Landing open={open} download={download} showDl={true} support={SUPPORT_URL}/>);
   if(!session) return wrap(<div className="login"><Logo s={80}/><h2 style={{margin:"10px 0"}}>ClashX7</h2>
     {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p>
     <p style={{marginTop:10,color:"#666",cursor:"pointer",fontSize:12}} onClick={()=>setAuthOpen(false)}>← Back to home</p></div>);
-  if(!me) return wrap(<div className="bootBlank"/>);
+  if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
   const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
   return wrap(page ? sub() : <>
@@ -853,4 +904,7 @@ const css = `
 .roleBadge{display:inline-block;margin-top:6px;padding:3px 12px;border-radius:20px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:700}
 button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;background:var(--r);padding:7px 10px;border-radius:8px}.joinPill.alt{background:#111;color:#fff}.quickDuo{display:flex;gap:6px}
 @media(min-width:700px){.acards{grid-template-columns:1fr 1fr}.ugrid{grid-template-columns:repeat(3,1fr)}}
+.sk{background:linear-gradient(90deg,#eceef1 25%,#f6f7f9 37%,#eceef1 63%);background-size:400% 100%;animation:x7sk 1.3s ease infinite;border-radius:8px}@keyframes x7sk{0%{background-position:100% 0}100%{background-position:0 0}}
+.skc{width:34px;height:34px;border-radius:50%;display:block}.skp{width:72px;height:30px;display:block;border-radius:15px}.skt{display:block;width:62px;height:12px}.skimg{height:82px;border-radius:0}.skl{height:14px;margin:12px 0 6px}.skl.s{width:50%;height:10px}
+.joinPill.joinedPill{background:#16a34a}.joinPill em{font-style:normal;background:#ffffff33;border-radius:6px;padding:1px 6px;margin-left:6px}
 `;
