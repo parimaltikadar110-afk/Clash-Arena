@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
   <head>
@@ -64,9 +63,23 @@
       ]
     }
     </script>
+
+    <!-- Boot cover: hides the static text below until the app has loaded, then App.jsx removes it -->
+    <style>
+      #x7-boot{position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:18vh;gap:8px;color:#fff;text-align:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:radial-gradient(circle at 50% 16%,#ff6a5c 0,#d62828 40%,#5b0f12 100%)}
+      #x7-boot svg{display:block}
+      #x7-boot h1{margin:0;font-size:34px;font-weight:900;letter-spacing:.5px}
+      #x7-boot p{margin:0;opacity:.92;font-size:12px;letter-spacing:3px;text-transform:uppercase}
+    </style>
+    <noscript><style>#x7-boot{display:none}</style></noscript>
   </head>
 
   <body>
+    <div id="x7-boot">
+      <svg width="92" height="92" viewBox="0 0 100 100"><defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6a5c"/><stop offset="1" stop-color="#c4161c"/></linearGradient></defs><path d="M50 4l40 23v46L50 96 10 73V27z" fill="url(#bg1)" stroke="#fff" stroke-width="3"/><path d="M24 34l28 32M52 34L24 66" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M62 34h20l-13 32" stroke="#111" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <h1>ClashX7</h1><p>Play · Win · Withdraw</p>
+    </div>
+    <script>setTimeout(function(){var e=document.getElementById("x7-boot");if(e)e.style.display="none"},15000)</script>
     <div id="root">
       <main style="font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.6">
         <h1>ClashX7</h1>
