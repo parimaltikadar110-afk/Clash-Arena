@@ -615,10 +615,10 @@ export default function App() {
     const openM=()=>go("match",{mid:m.id,game_name:me.game_name||""});
     const stop=fn=>e=>{e.stopPropagation();fn()};
     let ribbon;
-    if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}><i className="cxPlus">+</i>₹{m.fee} JOIN</div>;
+    if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}>₹{m.fee} JOIN</div>;
     else if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
     else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
-    const cancelEl = already&&open ? <button className="cxCx" onClick={stop(()=>cancelFromCard(m))}>✕ Cancel</button> : null;
+    const cancelEl = null;
     return <div className="cx" key={m.id} onClick={openM}>{cxBody(m,ribbon,cancelEl)}</div>;
   };
 
