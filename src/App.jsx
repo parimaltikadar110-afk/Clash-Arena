@@ -560,49 +560,57 @@ export default function App() {
       v=>doCancel(m,list[+v.s]||list[0]),{s:"0"},{btn:"Cancel slot",note:`₹${m.fee} will be refunded to your wallet.`});
   };
 
+  const splitPrize = pool => {
+    const W=[9,8,6,5,4,3,3,2,2,2,1], T=45, P=+pool||0;
+    const out=W.map(w=>Math.floor(P*w/T));
+    out[0]+=P-out.reduce((a,b)=>a+b,0);
+    return out;
+  };
+
+  // shared card layout: tags + title + prize on the left, thumbnail + time on the right, bar + ribbon at the bottom
+  const cxBody = (m, ribbon, cancelEl) => {
+    const left=Math.max(0,(m.slots||0)-(m.filled||0));
+    const pct=m.slots?Math.min(100,(m.filled||0)/m.slots*100):0;
+    return <>
+      <div className="cxTop">
+        <div className="cxL">
+          <div className="cxTags">{[m.mode,m.map,`${m.slots} SLOTS`].filter(Boolean).map((t,i)=><span key={i}>{t}</span>)}</div>
+          <div className="cxTitle">{m.title}</div>
+          <div className="cxPrize">Prize Pool - ₹{m.prize}</div>
+        </div>
+        <div className="cxR">
+          {m.thumbnail_url
+            ? <img src={m.thumbnail_url} alt="" loading="lazy" onError={e=>{e.currentTarget.style.display="none"}}/>
+            : <div className="thumbFallback"><Logo s={36}/></div>}
+          <div className="cxTime">{fmt(m.starts_at)}</div>
+        </div>
+      </div>
+      <div className="cxBot">
+        <div className="cxBL">
+          <div className="cxBar"><u style={{width:`${pct}%`}}/></div>
+          <div className="cxRow"><span>#{m.id}{m.status==="live"?" · LIVE":""}</span><span className="red">{left} spots left</span></div>
+          {cancelEl}
+        </div>
+        {ribbon}
+      </div>
+    </>;
+  };
+
   const matchCard = m => {
     const left=Math.max(0,(m.slots||0)-(m.filled||0));
     const already=joined.includes(m.id);
-    const isDuo=(m.mode||"").toUpperCase().includes("DUO"), myCount=joined.filter(x=>x===m.id).length;
+    const isDuo=(m.mode||"").toUpperCase().includes("DUO");
     const open=m.status==="upcoming", canBook=open&&left>0;
-    const pct=m.slots?Math.min(100,(m.filled||0)/m.slots*100):0;
     const openM=()=>go("match",{mid:m.id,game_name:me.game_name||""});
-    return (
-      <div className="card matchCard" key={m.id} onClick={openM}>
-        <div className="thumbWrap">
-          {m.thumbnail_url
-            ? <img className="matchThumb" src={m.thumbnail_url} alt="" loading="lazy" onError={e=>{e.currentTarget.style.display="none"}}/>
-            : <div className="thumbFallback"><Logo s={24}/></div>}
-          <div className="thumbShade"/>
-          <div className="thumbTop"><span className="chipDark">#{m.id}</span><span className="chipRed">{m.mode}</span></div>
-          {m.status==="live"&&<span className="liveTag">● LIVE</span>}
-        </div>
-        <div className="matchBody">
-          <div className="mcTitle"><h4>{m.title}</h4><span className="mcTime">{fmt(m.starts_at)}</span></div>
-          <div className="mcStats">
-            <div><small>Prize Pool</small><b className="pz">₹{m.prize}</b></div>
-            <div><small>Entry</small><b>₹{m.fee}</b></div>
-            <div><small>Map</small><b>{m.map}</b></div>
-          </div>
-          <div className="bar"><u style={{width:`${pct}%`}}/></div>
-          <div className="mcSlots"><span>{m.filled||0}/{m.slots} filled</span><span>{left} spots left</span></div>
-          <div className="mcFoot" onClick={e=>e.stopPropagation()}>
-            <span className="mcHint">{already?`✓ You have ${myCount} slot${myCount>1?"s":""}`:(open?(left<1?"Room full":"Tap Join to book"):String(m.status||"").toUpperCase())}</span>
-            <div className="quickDuo">
-              {canBook && (already
-                ? <button className="joinPill alt" onClick={()=>askJoin(m,1)}>+ Slot · ₹{m.fee}</button>
-                : isDuo
-                  ? <><button className="joinPill big" onClick={()=>joinSlots(m,1)}>1 Slot · ₹{m.fee}</button>{left>1&&<button className="joinPill alt" onClick={()=>joinSlots(m,2)}>2 Slots · ₹{(+m.fee||0)*2}</button>}</>
-                  : <button className="joinPill big" onClick={()=>askJoin(m,1)}>Join · ₹{m.fee}</button>)}
-              {already&&open&&<button className="joinPill cancelPill" onClick={()=>cancelFromCard(m)}>Cancel</button>}
-              {already&&!open&&<button className="joinPill joinedPill" onClick={openM}>✓ Joined</button>}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    const stop=fn=>e=>{e.stopPropagation();fn()};
+    let ribbon;
+    if(already&&open&&left>0) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m,1))}>+ SLOT ₹{m.fee}</div>;
+    else if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
+    else if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>isDuo?joinSlots(m,1):askJoin(m,1))}>₹{m.fee} JOIN</div>;
+    else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
+    const cancelEl = already&&open ? <span className="cxCx" onClick={stop(()=>cancelFromCard(m))}>Cancel my slot</span> : null;
+    return <div className="cx" key={m.id} onClick={openM}>{cxBody(m,ribbon,cancelEl)}</div>;
   };
-
 
   const body = () => {
     if(nav==="home"){
@@ -642,24 +650,16 @@ export default function App() {
       const already=joined.includes(m?.id);
       const left=m?Math.max(0,(m.slots||0)-(m.filled||0)):0;
       const canEdit=m?.status==="upcoming", isDuoM=(m?.mode||"").toUpperCase().includes("DUO");
-      t=m?.title||"Match"; const tabK=f.mtab||"players";
+      t=m?.title||"Match"; const tabK=f.mtab||"prize";
       if(!m) h=<p className="empty">Match not found.</p>;
       else h=<div className="matchDetail">
-        <div className="mdHero">
-          {m.thumbnail_url?<img className="matchThumb" src={m.thumbnail_url} alt=""/>:<div className="thumbFallback"><Logo s={58}/></div>}
-          <div className="thumbShade"/>
-          {m.status==="live"&&<span className="liveTag">● LIVE</span>}
-          <div className="mdHeroTxt"><span className="chipRed">{m.mode}</span><h2>{m.title}</h2><small>#{m.id} · {m.map} · {fmt(m.starts_at)}</small></div>
-        </div>
-        <div className="mdStats"><div><small>Prize Pool</small><b className="pz">₹{m.prize}</b></div><div><small>Entry</small><b>₹{m.fee}</b></div><div><small>Filled</small><b>{m.filled||0}/{m.slots}</b></div><div><small>Status</small><b className="capz">{m.status}</b></div></div>
-        <div className="bar"><u style={{width:`${m.slots?Math.min(100,(m.filled||0)/m.slots*100):0}%`}}/></div>
-        <p className="hint" style={{marginTop:6}}>{left} spots left</p>
+        <div className="cx cxStatic">{cxBody(m,<div className={"cxRib"+(already?" done":"")+(canEdit&&left>0||already?"":" off")}>{already?"✓ JOINED":canEdit&&left>0?`₹${m.fee} JOIN`:String(m.status||"").toUpperCase()}</div>,null)}</div>
         {already&&r?.room_id&&<section className="detailSection roomBox"><h4>🎮 Room details</h4>
           <div className="copyRow"><span>Room ID<b>{r.room_id}</b></span><button className="sm" onClick={()=>copyText(r.room_id)}>Copy</button></div>
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
         </section>}
-        <div className="mdTabs">{[["prize","Prize Pool"],["players",`Players (${players.length})`],["rules","Rules"]].map(([k,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{l}</b>)}</div>
-        {tabK==="prize"&&<div className="mdPanel"><div className="prizeBig"><small>Total prize pool</small><b>₹{m.prize}</b></div><p className="hint">The winner's prize is paid to the wallet by admin after results. Entry fees collected so far: ₹{(m.filled||0)*(+m.fee||0)}.</p></div>}
+        <div className="tabsX">{[["prize","🏆","Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
+        {tabK==="prize"&&<div className="prizeCard"><h4>Prize Distribution</h4>{splitPrize(m.prize).map((a,i)=><div key={i} className={"pzRow"+(i===0||i===2?" g":i===1?" s":"")}><span>{i<3?["🥇","🥈","🥉"][i]:"🎖️"} {i+1}</span><b className="amt">₹{a}</b></div>)}<p className="hint">Winners are paid to wallet by admin after results.</p></div>}
         {tabK==="players"&&<div className="mdPanel">{players.length?players.map((p,i)=><div className="plyRow" key={i}><i>{i+1}</i><Avatar s={30}/><b>{p.game_name}</b>{mySlots.some(s=>s.game_name===p.game_name)&&<span className="you">You</span>}</div>):<p className="hint">No one has joined yet. Be the first!</p>}</div>}
         {tabK==="rules"&&<div className="mdPanel"><div className="rulesBox">{ru||"Rules have not been added yet."}</div></div>}
         {already&&<section className="detailSection"><h4>🎟️ Your slots ({mySlots.length})</h4>
@@ -1058,4 +1058,63 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .lbName{display:flex;align-items:center;gap:10px;min-width:0}
 .lbName b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lbWin{font-weight:800;color:#16a34a;font-size:13px;white-space:nowrap}
+
+.mc2{margin:10px 10px 14px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 22px #7f1d1d1f;border:1px solid #f1e4e4;cursor:pointer}
+.mc2Img{position:relative;height:150px;background:#111;overflow:hidden}
+.mc2Img img{width:100%;height:100%;object-fit:cover;display:block}
+.mc2Shade{position:absolute;inset:0;background:linear-gradient(180deg,#0007 0%,#0000 35%,#000d 100%)}
+.mc2Mode{position:absolute;top:10px;left:10px;background:var(--r);color:#fff;font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;letter-spacing:.5px;text-transform:uppercase}
+.mc2Id{position:absolute;top:10px;right:10px;background:#000a;color:#fff;font-size:10px;font-weight:700;padding:4px 9px;border-radius:999px}
+.mc2Live{position:absolute;top:40px;left:10px;background:#dc2626;color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px}
+.mc2Title{position:absolute;left:12px;right:12px;bottom:10px;color:#fff}
+.mc2Title h4{margin:0;font-size:18px;font-weight:800;line-height:1.2;text-shadow:0 2px 6px #000a}
+.mc2Title small{font-size:11px;opacity:.92}
+.mc2Body{padding:12px}
+.mc2Stats{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}
+.mc2Stats>div{background:#faf7f7;border-radius:12px;padding:9px 6px;text-align:center;min-width:0;border:1px solid #f2eaea}
+.mc2Stats small{display:block;font-size:9px;font-weight:700;color:#8a6b6b;letter-spacing:.5px}
+.mc2Stats b{display:block;font-size:14px;color:#111;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc2Stats .mc2Prize{background:linear-gradient(135deg,#fff1f0,#ffe0dd);border-color:#fecaca}
+.mc2Stats .mc2Prize b{font-size:18px;color:var(--r)}
+.mc2Prog{height:8px;background:#f1f1f1;border-radius:99px;overflow:hidden;margin-top:12px}
+.mc2Prog u{display:block;height:100%;background:linear-gradient(90deg,#f5403a,#ff8a7e);border-radius:99px}
+.mc2Meta{display:flex;justify-content:space-between;font-size:11px;color:#666;margin-top:6px;font-weight:600}
+.mc2Act{display:flex;gap:8px;margin-top:12px}
+.mc2Act button{border:0;font:inherit;cursor:pointer;border-radius:12px;padding:12px 10px;font-size:13px;font-weight:800;min-height:44px}
+.mc2Act .mc2Join{flex:1;color:#fff;background:linear-gradient(135deg,#f5403a,#c4161c);box-shadow:0 6px 14px #c4161c55}
+.mc2Act .mc2Join.done{background:linear-gradient(135deg,#22c55e,#15803d);box-shadow:0 6px 14px #15803d55}
+.mc2Act .mc2Join.ghost{background:#111;box-shadow:none}
+.mc2Act .mc2Cancel{flex:0 0 auto;background:#fff;color:#dc2626;border:1.5px solid #fca5a5}
+.mc2Act .mc2Plus{flex:0 0 auto;background:#111;color:#fff}
+
+.cx{margin:10px 10px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 12px 0;overflow:hidden;cursor:pointer;box-shadow:0 2px 8px #0000000d}
+.cx.cxStatic{cursor:default;margin:10px 0 0}
+.cxTop{display:flex;justify-content:space-between;gap:10px}
+.cxL{flex:1;min-width:0}
+.cxTags{display:flex;flex-wrap:wrap;gap:6px}
+.cxTags span{border:1px solid #d1d5db;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:600;color:#333;text-transform:uppercase;white-space:nowrap}
+.cxTitle{font-size:15px;font-weight:700;color:#111;margin-top:12px;line-height:1.3;text-transform:uppercase}
+.cxPrize{color:var(--r);font-size:15px;font-weight:700;margin-top:10px}
+.cxR{width:112px;flex:0 0 112px;text-align:center}
+.cxR img,.cxR .thumbFallback{width:112px;height:100px;border-radius:10px;object-fit:cover;display:block}
+.cxTime{font-size:12px;color:#111;margin-top:4px;white-space:nowrap}
+.cxBot{display:flex;align-items:stretch;margin:12px -12px 0;height:54px}
+.cxBL{flex:1;padding:10px 12px 0;min-width:0}
+.cxBar{height:4px;background:#fde2e2;border-radius:4px;overflow:hidden}
+.cxBar u{display:block;height:100%;background:var(--r);border-radius:4px}
+.cxRow{display:flex;justify-content:space-between;font-size:11px;margin-top:6px;color:#999}
+.cxRow .red{color:var(--r)}
+.cxCx{display:inline-block;font-size:10px;color:#dc2626;text-decoration:underline;margin-top:4px;cursor:pointer}
+.cxRib{flex:0 0 46%;background:var(--r);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;clip-path:polygon(14% 0,100% 0,100% 100%,0 100%);padding-left:14%;cursor:pointer;white-space:nowrap}
+.cxRib.done{background:#16a34a}
+.cxRib.off{background:#9ca3af}
+.tabsX{display:flex;gap:6px;margin-top:14px}
+.tabsX b{flex:1;text-align:center;padding:11px 4px;border-radius:10px;font-size:13px;font-weight:600;color:#444;cursor:pointer;white-space:nowrap}
+.tabsX b.on{background:#fdecec;color:var(--r)}
+.prizeCard{border:1px solid #e5e7eb;border-radius:14px;padding:14px 12px;margin-top:12px}
+.prizeCard h4{margin:0 0 10px;font-size:16px;color:#111}
+.pzRow{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:10px;margin-bottom:6px;background:#f9fafb;font-size:15px}
+.pzRow.g{background:#fffbea}
+.pzRow.s{background:#f3f4f6}
+.pzRow .amt{color:#16a34a;font-weight:700}
 `;
