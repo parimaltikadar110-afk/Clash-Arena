@@ -44,10 +44,19 @@ const Avatar = ({url,s=32}) => url
 
 /* 2-second splash shown every time the app opens */
 function Splash() {
-  const F = [["🛡️","Fair Play","Verified results & strict anti-cheat"],["⚡","Fast Withdrawal","Winnings paid straight to your UPI"],["💬","Good Customer Service","Real people ready to help you"],["🏆","Daily Tournaments","Solo, Duo & Clash Squad rooms"]];
-  return (<div className="splash"><div className="spGlow"/><div className="spLogo"><img className="spCut" src={LOGO_CUT} alt="ClashX7"/></div><p className="spTag">Play · Win · Withdraw</p>
-    <div className="spList">{F.map(([e,t,d],i)=><div className="spItem" style={{animationDelay:`${.3+i*.22}s`}} key={t}><span>{e}</span><div><b>{t}</b><small>{d}</small></div></div>)}</div>
-    <div className="spBar"><i/></div><small className="spFoot">18+ only · Play responsibly</small></div>);
+  const F=[["🛡️","FAIR PLAY","REAL RESULTS · ANTI-CHEAT"],["⚡","FAST UPI","WINNINGS PAID STRAIGHT TO YOU"],["🏆","DAILY TOURNAMENTS","SOLO · DUO · CLASH SQUAD"]];
+  return (<div className="cxsRoot">
+    <div className="cxsSlash"/>
+    <div className="cxsGlow"/>
+    <img className="cxsLogo" src={LOGO_CUT} alt="ClashX7"/>
+    <h1 className="cxsHead"><span>WHERE SKILLS MEETS</span><b>REWARD</b></h1>
+    <div className="cxsFeat">{F.map(([e,t,d],i)=><div className="cxsRow" style={{animationDelay:`${.4+i*.18}s`}} key={t}><span className="cxsIc">{e}</span><div><b>{t}</b><small>{d}</small></div></div>)}</div>
+    <div className="cxsFoot">
+      <div className="cxsStrip">FAIR PLAY · REAL REWARD · EVERY TIME</div>
+      <small>18+ only · Play responsibly</small>
+      <div className="cxsBar"><i/></div>
+    </div>
+  </div>);
 }
 
 /* Visitor landing page (login korar age) */
@@ -994,24 +1003,7 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .sk{background:linear-gradient(90deg,#eceef1 25%,#f6f7f9 37%,#eceef1 63%);background-size:400% 100%;animation:x7sk 1.3s ease infinite;border-radius:8px}@keyframes x7sk{0%{background-position:100% 0}100%{background-position:0 0}}
 .skc{width:34px;height:34px;border-radius:50%;display:block}.skp{width:72px;height:30px;display:block;border-radius:15px}.skt{display:block;width:62px;height:12px}.skimg{height:82px;border-radius:0}.skl{height:14px;margin:12px 0 6px}.skl.s{width:50%;height:10px}
 .joinPill.joinedPill{background:#16a34a}.joinPill em{font-style:normal;background:#ffffff33;border-radius:6px;padding:1px 6px;margin-left:6px}
-.splash{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;color:#fff;background:radial-gradient(circle at 50% 16%,#ff6a5c 0,#d62828 40%,#5b0f12 100%);overflow:hidden;text-align:center}
-.spGlow{position:absolute;width:420px;height:420px;border-radius:50%;background:#ffffff40;filter:blur(64px);top:-140px;animation:spPulse 2s ease-in-out infinite}
-.spLogo{position:relative;animation:spPop .6s cubic-bezier(.2,1.4,.4,1) both;filter:drop-shadow(0 10px 24px #0006)}
-.spName{position:relative;font-size:34px;font-weight:900;letter-spacing:.5px;animation:spUp .6s .1s both}
-.spTag{position:relative;opacity:.92;font-size:12px;letter-spacing:3px;text-transform:uppercase;animation:spUp .6s .2s both}
-.spList{position:relative;display:grid;gap:10px;width:100%;max-width:340px;margin-top:20px;text-align:left}
-.spItem{display:flex;gap:12px;align-items:center;background:#ffffff1f;border:1px solid #ffffff38;backdrop-filter:blur(6px);border-radius:14px;padding:11px 14px;opacity:0;animation:spUp .55s both}
-.spItem span{font-size:24px}.spItem b{display:block;font-size:14px}.spItem small{opacity:.88;font-size:11px}
-.spBar{position:relative;width:150px;height:4px;border-radius:4px;background:#ffffff40;overflow:hidden;margin-top:24px}.spBar i{display:block;height:100%;background:#fff;animation:spLoad 2s linear forwards}
-.spFoot{position:relative;opacity:.75;font-size:10px;margin-top:8px}
-@keyframes spUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-@keyframes spPop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
-@keyframes spLoad{from{width:0}to{width:100%}}
-@keyframes spPulse{50%{opacity:.55;transform:scale(1.15)}}
 .slotRow{display:flex;align-items:center;gap:8px}.slotRow i{font-style:normal;flex:0 0 26px;height:26px;border-radius:50%;background:#111;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}.slotRow input{margin:4px 0 8px!important}
-.splash{justify-content:flex-start;padding:18vh 24px 24px}
-.spLogo{animation:none}.spLogo svg{display:block}
-.spName,.spTag{margin:0;animation:none}
 
 .avImg{border-radius:50%;object-fit:cover;display:block;flex:0 0 auto;box-shadow:0 3px 10px #0002}
 .avDef{background:radial-gradient(circle at 30% 25%,#ff8a7e 0,#f5403a 40%,#7f1d1d 100%);box-shadow:0 3px 10px #7f1d1d44}
@@ -1168,10 +1160,29 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .spBtn{width:100%;height:50px;border:0;border-radius:12px;background:#c4161c;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit}
 .spBtn:disabled{background:#d1d5db;cursor:not-allowed}
 
-.spBanner{display:block;width:min(64vw,260px);height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:28px;box-shadow:0 0 0 2px #ffffff26,0 0 40px #ff2a2a66,0 18px 40px #0009}
-.spCut{display:block;width:min(78vw,320px);height:auto;filter:drop-shadow(0 0 1px #3d0000) drop-shadow(0 0 1px #3d0000) drop-shadow(0 12px 22px #0009);animation:spPop .7s cubic-bezier(.2,1.3,.4,1) both}
-.spCut{animation-name:spPop}
 
 .logoCenter{display:flex;justify-content:center;margin:0 auto 10px;width:100%}
 .logoCenter img{margin:0 auto}
+
+.cxsRoot{position:fixed;inset:0;z-index:300;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:6vh 22px 22px;color:#fff;background:radial-gradient(circle at 50% 22%,#ff8a7a 0,#ff4a3d 28%,#e11d22 62%,#a8101a 100%)}
+.cxsSlash{position:absolute;inset:-25%;background:repeating-linear-gradient(115deg,#ffffff00 0 34px,#ffffff1c 34px 42px,#ffffff00 42px 96px);transform:rotate(-8deg);pointer-events:none;animation:cxsDrift 7s linear infinite alternate}
+.cxsGlow{position:absolute;width:520px;height:520px;border-radius:50%;background:#ffb4a455;filter:blur(70px);top:-180px;left:50%;transform:translateX(-50%);pointer-events:none}
+.cxsLogo{position:relative;z-index:1;width:min(64vw,250px);height:auto;filter:drop-shadow(0 0 1px #3d0000) drop-shadow(0 0 1px #3d0000) drop-shadow(0 14px 26px #5a000099);animation:cxsPop .8s cubic-bezier(.2,1.3,.4,1) both}
+.cxsHead{position:relative;z-index:1;margin:8px 0 0;text-align:center;font-style:italic;font-weight:900;line-height:.95;text-transform:uppercase;text-shadow:0 3px 0 #7a0a10,0 8px 22px #0006}
+.cxsHead span{display:block;font-size:21px;letter-spacing:1px}
+.cxsHead b{display:block;font-size:62px;letter-spacing:2px;color:#ffd23f;text-shadow:0 3px 0 #b8560a,0 10px 26px #0008;animation:cxsUp .7s .3s both}
+.cxsFeat{position:relative;z-index:1;width:100%;max-width:340px;margin-top:22px;display:grid;gap:10px}
+.cxsRow{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;background:#ffffff24;border:1px solid #ffffff44;animation:cxsUp .6s both}
+.cxsIc{width:40px;height:40px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:20px;flex:0 0 auto;box-shadow:0 4px 10px #0004}
+.cxsRow b{display:block;font-size:14px;letter-spacing:.5px}
+.cxsRow small{font-size:11px;opacity:.92;letter-spacing:.3px}
+.cxsFoot{position:relative;z-index:1;margin-top:auto;width:100%;display:flex;flex-direction:column;align-items:center;gap:10px}
+.cxsStrip{width:100%;text-align:center;background:#ffd23f;color:#7a0a10;font-weight:900;font-size:12px;letter-spacing:1px;padding:10px 8px;border-radius:10px;box-shadow:0 6px 16px #5a000066}
+.cxsFoot small{font-size:10px;opacity:.9}
+.cxsBar{width:160px;height:4px;border-radius:4px;background:#ffffff40;overflow:hidden}
+.cxsBar i{display:block;height:100%;background:#fff;animation:cxsLoad 2s linear forwards}
+@keyframes cxsUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes cxsPop{from{opacity:0;transform:scale(.7) rotate(-4deg)}to{opacity:1;transform:none}}
+@keyframes cxsLoad{from{width:0}to{width:100%}}
+@keyframes cxsDrift{from{transform:rotate(-8deg) translateX(-30px)}to{transform:rotate(-8deg) translateX(30px)}}
 `;
