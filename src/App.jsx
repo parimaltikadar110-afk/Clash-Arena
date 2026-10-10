@@ -442,7 +442,6 @@ export default function App() {
     if(error) return say(error.message,1);
     setM(a=>[...a.filter(x=>x.id!==nm.id),nm].sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at)));
     say("Match created — players can see it now ✅");
-    if(f.nf!=="0") notify({title:"🔥 New match: "+row.title,body:`${row.mode} · Prize ₹${row.prize} · Entry ₹${row.fee} · ${fmt(row.starts_at)}`});
     setF({}); load()
   };
 
@@ -479,7 +478,6 @@ export default function App() {
       const {error}=await supabase.from("matches").insert(rows);
       if(error) throw error;
       say(`${count} matches created ✅`);
-      if(f.bulkNotify!=="0") notify({title:`🔥 ${count} new matches added`,body:`${f.bulkModeGame||T[0]} matches are now available in ClashX7.`});
       setF({}); await load();
     }catch(e){say(e.message,1)} finally{setBusy(false)}
   };
@@ -815,7 +813,7 @@ export default function App() {
         <div className="acards">{list.map(m=><div className="ucard" key={m.id}>
           <div className="uhead"><b>#{m.id} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
           <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
-          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete match?")&&run(supabase.from("matches").delete().eq("id",m.id),"Deleted")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
+          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
       </div>;
     }
 
