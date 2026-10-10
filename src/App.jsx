@@ -55,7 +55,7 @@ function Landing({open,download,showDl,support}) {
   const F = [["🛡️","Fair Play","Strict anti-cheat rules, verified room results and transparent prize pools. Everyone plays by the same rules."],["⚡","Fast Withdrawal","Winnings land in your wallet. Request a withdrawal and get paid straight to your UPI ID."],["💬","Good Customer Support","Real people on WhatsApp / Telegram to help with deposits, matches and withdrawals."]];
   return (<div>
     <div className="lh"><span className="brand" style={{fontSize:18}}><Logo s={34}/>ClashX7</span><button className="lb2 rd" onClick={()=>open("in")}>Login</button></div>
-    <section className="hero"><Logo s={96}/><h1>Play. Win. Withdraw.</h1>
+    <section className="hero"><div className="logoCenter"><Logo s={104}/></div><h1>Play. Win. Withdraw.</h1>
       <p>Join daily custom-room tournaments, compete for real prize pools and cash out your winnings by UPI.</p>
       <div className="cta"><button className="lb2" onClick={()=>open("up")}>Create account</button><button className="lb2 ghost" onClick={()=>open("in")}>Login</button>{showDl&&<button className="lb2 dk" onClick={download}>⬇ Download APK</button>}</div></section>
     <section className="lsec"><h2>Why players choose ClashX7</h2><div className="l3">{F.map(([e,t,d])=><div className="lc" key={t}><span className="em">{e}</span><b>{t}</b><p>{d}</p></div>)}</div></section>
@@ -906,7 +906,7 @@ export default function App() {
   if(splash) return wrap(<Splash/>);
   if(!ready) return wrap(<Skeleton/>);
   if(!session && !authOpen && !IS_APP) return wrap(<Landing open={open} download={download} showDl={!IS_APP} support={SUPPORT_URL}/>);
-  if(!session) return wrap(<div className="login"><Logo s={80}/><h2 style={{margin:"10px 0"}}>ClashX7</h2>
+  if(!session) return wrap(<div className="login"><div className="logoCenter"><Logo s={112}/></div><h2 style={{margin:"10px 0"}}>ClashX7</h2>
     {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p>
@@ -1171,4 +1171,7 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .spBanner{display:block;width:min(64vw,260px);height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:28px;box-shadow:0 0 0 2px #ffffff26,0 0 40px #ff2a2a66,0 18px 40px #0009}
 .spCut{display:block;width:min(78vw,320px);height:auto;filter:drop-shadow(0 0 1px #3d0000) drop-shadow(0 0 1px #3d0000) drop-shadow(0 12px 22px #0009);animation:spPop .7s cubic-bezier(.2,1.3,.4,1) both}
 .spCut{animation-name:spPop}
+
+.logoCenter{display:flex;justify-content:center;margin:0 auto 10px;width:100%}
+.logoCenter img{margin:0 auto}
 `;
