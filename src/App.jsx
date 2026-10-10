@@ -31,12 +31,8 @@ const shrink = (file,max=1000,q=.72) => new Promise((ok,no)=>{ const img=new Ima
 const R = n => (n<0?"-":"")+"₹"+Math.abs(Math.round(+n||0)).toLocaleString("en-IN");
 
 const Logo = ({s=64}) => (
-  <svg width={s} height={s} viewBox="0 0 100 100">
-    <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff6a5c"/><stop offset="1" stopColor="#c4161c"/></linearGradient></defs>
-    <path d="M50 4l40 23v46L50 96 10 73V27z" fill="url(#lg)" stroke="#fff" strokeWidth="3"/>
-    <path d="M24 34l28 32M52 34L24 66" stroke="#fff" strokeWidth="10" strokeLinecap="round"/>
-    <path d="M62 34h20l-13 32" stroke="#111" strokeWidth="9" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
+  <img src="/logo-icon.png" alt="ClashX7" width={s} height={s} draggable={false}
+    style={{width:s,height:s,objectFit:"cover",display:"block",borderRadius:Math.round(s*.22),boxShadow:"0 2px 8px #7f1d1d40"}}/>
 );
 
 const Avatar = ({url,s=32}) => url
@@ -46,7 +42,7 @@ const Avatar = ({url,s=32}) => url
 /* 2-second splash shown every time the app opens */
 function Splash() {
   const F = [["🛡️","Fair Play","Verified results & strict anti-cheat"],["⚡","Fast Withdrawal","Winnings paid straight to your UPI"],["💬","Good Customer Service","Real people ready to help you"],["🏆","Daily Tournaments","Solo, Duo & Clash Squad rooms"]];
-  return (<div className="splash"><div className="spGlow"/><div className="spLogo"><Logo s={92}/></div><h1 className="spName">ClashX7</h1><p className="spTag">Play · Win · Withdraw</p>
+  return (<div className="splash"><div className="spGlow"/><div className="spLogo"><img className="spBanner" src="/logo-banner.jpg" alt="ClashX7"/></div><p className="spTag">Play · Win · Withdraw</p>
     <div className="spList">{F.map(([e,t,d],i)=><div className="spItem" style={{animationDelay:`${.3+i*.22}s`}} key={t}><span>{e}</span><div><b>{t}</b><small>{d}</small></div></div>)}</div>
     <div className="spBar"><i/></div><small className="spFoot">18+ only · Play responsibly</small></div>);
 }
@@ -1168,4 +1164,6 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .spFoot{padding:12px 14px;border-top:1px solid #eee}
 .spBtn{width:100%;height:50px;border:0;border-radius:12px;background:#c4161c;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit}
 .spBtn:disabled{background:#d1d5db;cursor:not-allowed}
+
+.spBanner{display:block;width:min(70vw,300px);height:auto;aspect-ratio:1/1;object-fit:cover;border-radius:24px;box-shadow:0 14px 34px #0008}
 `;
