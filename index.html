@@ -54,23 +54,11 @@
       "logo": "https://clashx7.in/favicon-512.png"
     }
     </script>
-
-    <!-- Boot cover: hides the static text below until the app has loaded, then App.jsx removes it -->
-    <style>
-      #x7-boot{position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:6vh;gap:8px;color:#fff;text-align:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:radial-gradient(circle at 50% 22%,#ff8a7a 0,#ff4a3d 28%,#e11d22 62%,#a8101a 100%)}
-      #x7-boot svg{display:block}
-      #x7-boot img{display:block;width:min(74vw,300px);height:auto;filter:drop-shadow(0 0 1px #3d0000) drop-shadow(0 0 1px #3d0000) drop-shadow(0 12px 22px #0009)}
-      #x7-boot p{margin:0;opacity:.92;font-size:12px;letter-spacing:3px;text-transform:uppercase}
-    </style>
-    <noscript><style>#x7-boot{display:none}</style></noscript>
+    <style>html,body{margin:0;background:#e11d22}</style>
   </head>
 
   <body>
-    <div id="x7-boot">
-      <img src="/logo-splash-cutout.png" alt="ClashX7" width="300" height="300" />
-      <p>Play · Win · Withdraw</p>
-    </div>
-    <script>setTimeout(function(){var e=document.getElementById("x7-boot");if(e)e.style.display="none"},15000)</script>
+
     <div id="root">
       <main style="font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.6">
         <h1>ClashX7</h1>
