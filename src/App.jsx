@@ -573,7 +573,7 @@ export default function App() {
   };
 
   // shared card layout: tags + title + prize on the left, thumbnail + time on the right, bar + ribbon at the bottom
-  const cxBody = (m, ribbon, cancelEl) => {
+  const cxBody = (m, ribbon, cancelEl, note) => {
     const left=Math.max(0,(m.slots||0)-(m.filled||0));
     const pct=m.slots?Math.min(100,(m.filled||0)/m.slots*100):0;
     return <>
@@ -593,7 +593,7 @@ export default function App() {
       <div className="cxBot">
         <div className="cxBL">
           <div className="cxBar"><u style={{width:`${pct}%`}}/></div>
-          <div className="cxRow"><span>#{m.id}{m.status==="live"?" · LIVE":""}</span><span className="red">{left} spots left</span></div>
+          <div className="cxRow"><span>#{m.id}{m.status==="live"?" · LIVE":""}{note?` · ${note}`:""}</span><span className="red">{left} spots left</span></div>
           {cancelEl}
         </div>
         {ribbon}
@@ -609,11 +609,13 @@ export default function App() {
     const openM=()=>go("match",{mid:m.id,game_name:me.game_name||""});
     const stop=fn=>e=>{e.stopPropagation();fn()};
     let ribbon;
-    if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}>₹{m.fee} JOIN</div>;
-    else if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
+    const myCount=joined.filter(x=>x===m.id).length;
+    const note = already ? `${myCount} slot${myCount>1?"s":""} booked` : "";
+    if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
+    else if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}>₹{m.fee} JOIN</div>;
     else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
     const cancelEl = null;
-    return <div className="cx" key={m.id} onClick={openM}>{cxBody(m,ribbon,cancelEl)}</div>;
+    return <div className="cx" key={m.id} onClick={openM}>{cxBody(m,ribbon,cancelEl,note)}</div>;
   };
 
   const body = () => {
@@ -1185,4 +1187,6 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 @keyframes cxsPop{from{opacity:1;transform:scale(.92)}to{opacity:1;transform:none}}
 @keyframes cxsLoad{from{width:0}to{width:100%}}
 @keyframes cxsDrift{from{transform:rotate(-8deg) translateX(-30px)}to{transform:rotate(-8deg) translateX(30px)}}
+
+.cxR .thumbFallback{display:grid;place-items:center}
 `;
