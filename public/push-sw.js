@@ -27,8 +27,8 @@ self.addEventListener("push", event => {
 
   const options = {
     body: data.body || "You have a new ClashX7 notification.",
-    icon: data.icon || "/icon-192.png",
-    badge: data.badge || "/icon-192.png",
+    icon: data.icon || "/favicon-192.png",
+    badge: data.badge || "/favicon-192.png",
     data: {
       url: data.url || "/"
     },
