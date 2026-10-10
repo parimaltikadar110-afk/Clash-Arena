@@ -54,7 +54,9 @@
       "logo": "https://clashx7.in/favicon-512.png"
     }
     </script>
-    <style>html,body{margin:0;background:#e11d22}</style>
+    <style>html,body,#root{margin:0;background:radial-gradient(circle at 50% 22%,#ff8a7a 0,#ff4a3d 28%,#e11d22 62%,#a8101a 100%);min-height:100%}
+      /* static SEO text stays in the DOM but is hidden, so nothing shows before the splash; React replaces it on mount */
+      #root>main{display:none}</style>
   </head>
 
   <body>
