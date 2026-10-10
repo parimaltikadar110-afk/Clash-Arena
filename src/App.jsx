@@ -1182,7 +1182,7 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 .cxsBar{width:160px;height:4px;border-radius:4px;background:#ffffff40;overflow:hidden}
 .cxsBar i{display:block;height:100%;background:#fff;animation:cxsLoad 2s linear forwards}
 @keyframes cxsUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-@keyframes cxsPop{from{opacity:0;transform:scale(.7) rotate(-4deg)}to{opacity:1;transform:none}}
+@keyframes cxsPop{from{opacity:1;transform:scale(.92)}to{opacity:1;transform:none}}
 @keyframes cxsLoad{from{width:0}to{width:100%}}
 @keyframes cxsDrift{from{transform:rotate(-8deg) translateX(-30px)}to{transform:rotate(-8deg) translateX(30px)}}
 `;
