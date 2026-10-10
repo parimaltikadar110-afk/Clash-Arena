@@ -413,7 +413,12 @@ export default function App() {
     }catch(e){say(e.message,1)} setBusy(false) };
 
   // ---- admin / moderator actions ----
-  const notify = async (body) => { try{ const r = await api("notify",body); say(`Notification sent · ${r.sent} phone(s) reached`); return true }catch(e){ say("Notification failed: "+e.message,1); return false } };
+  const notify = async (body) => { try{ const r = await api("notify",body);
+    if(r.note) { say(r.note,1); return false }
+    const codes = Object.keys(r.codes||{}).length ? " · errors: "+JSON.stringify(r.codes) : "";
+    if(!r.subscribers) say("Saved, but no phone is subscribed for notifications yet",1);
+    else say(`Sent to ${r.sent} of ${r.subscribers} phone(s)${codes}`, r.sent===0);
+    return true }catch(e){ say("Notification failed: "+e.message,1); return false } };
 
   const buildMatchRow = (src={}) => {
     const pv=String(src.private||src.type||"0").toLowerCase();
