@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { WebSplash, WebLanding, WebAuth } from "./webSite";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 const env = import.meta.env;
@@ -126,6 +127,7 @@ export default function App() {
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
+  const canManageMatches = isAdmin || isActingAdmin; // only Admin + Acting Admin create / edit match details
   const authOpenRef = useRef(false);
   authOpenRef.current = authOpen;
 
@@ -278,8 +280,8 @@ export default function App() {
 
   // ---- auth ----
   const auth = async () => { const id=(f.em||"").trim(), p=f.pw||"";
-    if(mode==="up"){ const un=(f.un||"").trim().toLowerCase(), ph=(f.ph||"").replace(/\D/g,"").slice(-10);
-      if(!/^[a-z0-9_]{3,20}$/.test(un)) return say("Username: 3-20 letters, numbers or _",1);
+    if(mode==="up"){ const un=(f.un||"").trim().replace(/\s+/g," ").toLowerCase(), ph=(f.ph||"").replace(/\D/g,"").slice(-10);
+      if(un.length<3||un.length>30) return say("Username must be 3-30 characters",1);
       if(ph.length!==10) return say("Enter a valid 10-digit mobile number",1);
       if(!id.includes("@")||p.length<6) return say("Enter a valid email and a password (min 6 characters)",1);
       const {data:av} = await supabase.rpc("signup_available",{p_username:un,p_phone:ph});
@@ -440,6 +442,7 @@ export default function App() {
   };
 
   const addMatch = async () => {
+    if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     if(!f.t||!f.d) return say("Title and start time are required",1);
     const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
     if(!row.starts_at) return say("Start time is invalid",1);
@@ -474,6 +477,7 @@ export default function App() {
   };
 
   const bulkCreate = async () => {
+    if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     const rows=bulkRows();
     if(!rows.length) return say("Fill title and first start time first.",1);
     if(rows.some(r=>!r.title||!r.starts_at)) return say("Please check the bulk match details.",1);
@@ -525,6 +529,23 @@ export default function App() {
         if(v.r!==oldR||v.p!==oldP) await notify({match_id:m.id,title:"🎮 Room ID & password updated",body:`${m.title} room is ready. Room ID: ${v.r} · Pass: ${v.p}`});
       },{r:o.room_id||"",p:o.room_pass||""});
   };
+
+  const toLocalInput = t => { const d=new Date(t); if(isNaN(d)) return ""; d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16) };
+
+  const editMatch = m => ask(`Edit match · #${m.id}`,
+    [["title","Match title"],["g","Mode","select",T.map(t=>[t,t])],["m","Map"],["s","Slots","number"],["p","Prize pool ₹","number"],["fee","Entry fee ₹","number"],["d","Start time","datetime-local"]],
+    async v => {
+      if(!canManageMatches) { say("Only Admin or Acting Admin can edit matches",1); return false }
+      const starts = new Date(v.d);
+      if(!v.title?.trim() || isNaN(starts)) { say("Title and valid start time are required",1); return false }
+      if((+v.s||0) < (m.filled||0)) { say(`Slots cannot be less than ${m.filled} (already joined)`,1); return false }
+      return run(supabase.from("matches").update({
+        title:v.title.trim(), mode:v.g, map:v.m||"BERMUDA", slots:+v.s||m.slots,
+        prize:+v.p||0, fee:+v.fee||0, starts_at:starts.toISOString()
+      }).eq("id",m.id), "Match updated ✅");
+    },
+    {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), fee:String(m.fee), d:toLocalInput(m.starts_at)},
+    {btn:"Save changes", note:"Prize/fee changes affect new joins and payouts. Check before saving."});
 
   const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s).then(ok=>{ if(ok&&s==="live") notify({match_id:m.id,title:"🔴 Match is LIVE",body:m.title+" has started. Join the room now!"}) });
   const pay = m => openPayWinner(m);
@@ -760,6 +781,7 @@ export default function App() {
       const list=[...M].filter(m=>!q||String(m.id).includes(q)||String(m.code||"").toLowerCase().includes(q)||String(m.title||"").toLowerCase().includes(q)).reverse();
       const single= !f.bulkMode;
       b=<div className="matchAdmin">
+        {canManageMatches&&<>
         <div className="adminModeRow"><button className={"modeBtn"+(single?" active":"")} onClick={()=>setF(x=>({...x,bulkMode:false}))}>Single Create</button><button className={"modeBtn"+(!single?" active":"")} onClick={()=>setF(x=>({...x,bulkMode:true}))}>Bulk Create</button></div>
         {single
           ? <div className="createPanel">
@@ -814,11 +836,12 @@ export default function App() {
               <label>Send one notification after bulk create</label><select value={f.bulkNotify||"1"} onChange={e=>setF({...f,bulkNotify:e.target.value})}><option value="1">Yes</option><option value="0">No</option></select>
               <button className="btn" disabled={busy||!bulkRows().length} onClick={bulkCreate}>{busy?"Creating…":`Create ${Math.max(1,+f.bulkCount||1)} matches`}</button>
             </div>}
+        </>}
         <div className="adminSearch"><input value={f.ms||""} onChange={e=>setF({...f,ms:e.target.value})} placeholder="Search match code / #ID / title"/></div>
         <div className="acards">{list.map(m=><div className="ucard" key={m.id}>
           <div className="uhead"><b>#{m.id} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
           <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
-          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
+          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button>{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
       </div>;
     }
 
@@ -870,7 +893,7 @@ export default function App() {
         <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Only the main Admin can change staff roles. Acting Admin sits between Moderator and Admin.</p>
         {staffers.length ? <div className="acards">{staffers.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}</b><span className={"pill "+x.role}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span></div><div className="uact"><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></div></div>)}</div> : <p className="empty">No moderators or acting admins yet.</p>}
         <p className="sh">Role powers</p>
-        <div className="roleInfo"><div><b>Moderator</b><small>Matches, room ID/Pass, rules and notifications.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
+        <div className="roleInfo"><div><b>Moderator</b><small>Room ID/Pass, rules, notifications and Live/Done status. Cannot create or edit match details.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
       </div>;
     }
 
@@ -917,9 +940,10 @@ export default function App() {
 
   const wrap = c => (<div className="x7"><style>{css}</style>{slotOv}<div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen&&!IS_APP)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
-  if(splash) return wrap(<Splash/>);
+  if(splash) return wrap(IS_APP ? <Splash/> : <WebSplash logo={LOGO_CUT}/>);
   if(!ready) return wrap(<Skeleton/>);
-  if(!session && !authOpen && !IS_APP) return wrap(<Landing open={open} download={download} showDl={!IS_APP} support={SUPPORT_URL}/>);
+  if(!session && !authOpen && !IS_APP) return wrap(<WebLanding logo={LOGO_ICON} modes={T} open={open} download={download} showDl support={SUPPORT_URL}/>);
+  if(!session && !IS_APP) return wrap(<WebAuth mode={mode} setMode={setMode} f={f} onChange={(k,v)=>setF(x=>({...x,[k]:v}))} onSubmit={auth} onBack={()=>setAuthOpen(false)} logo={LOGO_ICON} download={download} showDl/>);
   if(!session) return wrap(<div className="login"><div className="logoCenter"><Logo s={112}/></div><h2 style={{margin:"10px 0"}}>ClashX7</h2>
     {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
