@@ -220,10 +220,10 @@ export default function App() {
     const bundleSig = html => {
       try{
         const doc = new DOMParser().parseFromString(html,"text/html");
-        return [...doc.scripts].map(x=>x.src).filter(Boolean).sort().join("|");
+        return [...doc.scripts].map(x=>x.getAttribute("src")).filter(Boolean).sort().join("|");
       }catch{return ""}
     };
-    const currentSig = () => [...document.scripts].map(x=>x.src).filter(Boolean).sort().join("|");
+    const currentSig = () => [...document.scripts].map(x=>x.getAttribute("src")).filter(Boolean).sort().join("|");
     const checkDeployment = async () => {
       if(document.visibilityState!=="visible" || updatePending) return;
       try{
@@ -252,6 +252,8 @@ export default function App() {
 
   useEffect(()=>{
     if(!updatePending || authOpen || dlg || page || busy || Object.keys(f).length) return;
+    const sig=[...document.scripts].map(x=>x.getAttribute("src")).filter(Boolean).sort().join("|");
+    try{ if(sessionStorage.getItem("x7reloaded")===sig) return; sessionStorage.setItem("x7reloaded",sig) }catch{}
     const t=setTimeout(()=>location.reload(),900);
     return()=>clearTimeout(t);
   },[updatePending,authOpen,dlg,page,busy,f]);
