@@ -123,7 +123,7 @@ export default function App() {
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(BOOT.c?.M||[]), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState(BOOT.c?.notifs||[]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
-  const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(window.location.hash!=="#admin");
+  const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
@@ -254,6 +254,7 @@ export default function App() {
     if(!updatePending || authOpen || dlg || page || busy || Object.keys(f).length) return;
     const sig=[...document.scripts].map(x=>x.getAttribute("src")).filter(Boolean).sort().join("|");
     try{ if(sessionStorage.getItem("x7reloaded")===sig) return; sessionStorage.setItem("x7reloaded",sig) }catch{}
+    try{ sessionStorage.setItem("x7skipSplash","1") }catch{}
     const t=setTimeout(()=>location.reload(),900);
     return()=>clearTimeout(t);
   },[updatePending,authOpen,dlg,page,busy,f]);
