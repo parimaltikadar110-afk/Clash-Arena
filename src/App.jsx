@@ -281,6 +281,7 @@ export default function App() {
   // ---- auth ----
   const auth = async () => { const id=(f.em||"").trim(), p=f.pw||"";
     if(mode==="up"){ const un=(f.un||"").trim().replace(/\s+/g," ").toLowerCase(), ph=(f.ph||"").replace(/\D/g,"").slice(-10);
+      if(un.includes("@")) return say("Username cannot contain @",1);
       if(un.length<3||un.length>30) return say("Username must be 3-30 characters",1);
       if(ph.length!==10) return say("Enter a valid 10-digit mobile number",1);
       if(!id.includes("@")||p.length<6) return say("Enter a valid email and a password (min 6 characters)",1);
