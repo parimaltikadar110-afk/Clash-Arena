@@ -140,6 +140,35 @@ export default function App() {
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
   const ask = (title,fields,ok,init,extra={}) => setDlg({title,fields,ok,init,...extra});
 
+  // Payment gateway script ager thekei load kore rakha: deposit button chapla sathe sathe kaj kore
+  useEffect(()=>{ if(!supabase) return; loadScript(RZP_JS,()=>window.Razorpay).catch(()=>{}); loadScript(CF_JS,()=>window.Cashfree).catch(()=>{}) },[]);
+
+  // Phone back button: prothome overlay/page bondho hobe, tarpor tab home-e, home-e 2 bar back = app bondho
+  const closeTop = () => {
+    if(pv){ setPv(null); return true }
+    if(howto){ setHowto(false); return true }
+    if(slotUI){ setSlotUI(null); return true }
+    if(dlg){ setDlg(null); return true }
+    if(page){ setPage(null); return true }
+    if(nav!=="home"){ setNav("home"); return true }
+    return false;
+  };
+  const closeRef = useRef(closeTop); closeRef.current = closeTop;
+  useEffect(()=>{
+    const bk = { last:0, exiting:false };
+    const push = () => { try{ history.pushState({x7:1},"") }catch{} };
+    push();
+    const onPop = () => {
+      if(bk.exiting) return;
+      if(closeRef.current()){ push(); return }
+      const now = Date.now();
+      if(now - bk.last < 2000){ bk.exiting = true; history.back(); return }
+      bk.last = now; push(); say("Back চাপলে app বন্ধ হবে — আবার চাপুন");
+    };
+    window.addEventListener("popstate", onPop);
+    return ()=>window.removeEventListener("popstate", onPop);
+  },[]);
+
   // Do not trigger the browser install prompt from the landing-page button.
   // That prompt immediately installs the PWA after the user accepts it.
   // We instead show manual install/download instructions, so visiting "Download APK"
@@ -407,7 +436,7 @@ export default function App() {
   const saveGw = async (n,keys) => { const sec={}; keys.forEach(k=>{const v=(f[`gs_${n}_${k}`]||"").trim(); if(v) sec[k]=v}); const en=(f[`ge_${n}`]??(S["gw_"+n]?.enabled===true?"1":"0"))==="1";
     if(await rpc("admin_save_gateway",{p_name:n,p_enabled:en,p_secrets:sec},`${n} ${en?"enabled":"disabled"} & saved`)) setF(x=>Object.fromEntries(Object.entries(x).filter(([k])=>!k.startsWith("gs_"+n)))) };
 
-  const gwDep = async g => { const a=+f.a; if(!(a>=10)) return say("Minimum deposit is ₹10",1); setBusy(true);
+  const gwDep = async g => { const a=+f.a; if(!(a>=10)) return say("Minimum deposit is ₹10",1); setBusy(true); say("Payment khola hocche, ektu opekkha korun…");
     try{ const d = await api("deposit",{gateway:g,amount:a,phone:me.phone||DEFAULT_PHONE||undefined});
       const done = () => { say("Payment received. Wallet updates in a few seconds…"); [2500,6000,12000].forEach(ms=>setTimeout(load,ms)) };
       if(g==="zapupi"){ window.location.href = d.url; return }
