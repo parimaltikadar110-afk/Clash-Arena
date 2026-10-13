@@ -21,6 +21,7 @@ const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://
 const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","LW HEAD","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
+const keepNote = x => !/cancel/i.test(x.title||""); // "Match cancelled" notice user-er inbox-e dekhabe na
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 const b64 = s => { const r = atob((s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/")); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))) };
@@ -125,6 +126,7 @@ export default function App() {
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
+  const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
   const [payReturn,setPayReturn] = useState(()=>{ try{ return new URLSearchParams(window.location.search).get("zp") || null }catch{ return null } });
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
@@ -243,11 +245,11 @@ export default function App() {
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
-    const [p,m,j,t,l,r,n,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
+    const [p,m,j,t,l,r,n,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
       q("notifications").order("created_at",{ascending:false}).limit(30), q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
     setMe(p.data); setM(m.data||[]); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
-    setNotifs(n.data||[]); setRules(Object.fromEntries((ru.data||[]).map(x=>[x.mode,x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
-    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:m.data||[],joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[x.mode,x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])),notifs:(n.data||[]).slice(0,20)})) }catch{}
+    setNotifs((n.data||[]).filter(keepNote)); setRules(Object.fromEntries((ru.data||[]).map(x=>[x.mode,x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:m.data||[],joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[x.mode,x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])),notifs:(n.data||[]).filter(keepNote).slice(0,20)})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
@@ -564,6 +566,16 @@ export default function App() {
 
   const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s).then(ok=>{ if(ok&&s==="live") notify({match_id:m.id,title:"🔴 Match is LIVE",body:m.title+" has started. Join the room now!"}) });
   const pay = m => openPayWinner(m);
+  const showHistory = async x => {
+    const [t,d,w] = await Promise.all([
+      supabase.from("transactions").select("*").eq("user_id",x.id).order("created_at",{ascending:false}).limit(100),
+      supabase.from("deposits").select("*").eq("user_id",x.id).order("created_at",{ascending:false}).limit(100),
+      supabase.from("withdrawals").select("*").eq("user_id",x.id).order("created_at",{ascending:false}).limit(100),
+    ]);
+    const err = t.error||d.error||w.error;
+    if(err) return say("History load failed: "+err.message,1);
+    setHist({user:x,txs:t.data||[],deps:d.data||[],wds:w.data||[]});
+  };
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
   const setStaffRole = async (u, nextRole) => {
     if(!isAdmin) return say("Only the main Admin can change staff roles",1);
@@ -912,7 +924,12 @@ export default function App() {
       </div>;
     }
 
-    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>adjust(x)}>± Balance</button>{x.id!==me.id&&x.role!=="admin"&&(isAdmin||x.role!=="acting_admin")&&<button className={"sm "+(x.banned?"ok":"no")} onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned},x.banned?"User unbanned":"User banned")}>{x.banned?"Unban":"Ban"}</button>}{isAdmin&&x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
+    if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}{hist&&<div className="pnl"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><h3 style={{margin:0}}>📜 {hist.user.name||hist.user.email||"User"}</h3><button className="sm" onClick={()=>setHist(null)}>Close</button></div>
+<p className="sh">Transactions</p>{hist.txs.length?hist.txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="hint">No transactions</p>}
+<p className="sh">Deposits</p>{hist.deps.length?hist.deps.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>):<p className="hint">No deposits</p>}
+<p className="sh">Withdrawals</p>{hist.wds.length?hist.wds.map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>):<p className="hint">No withdrawals</p>}
+</div>}
+<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>showHistory(x)}>History</button><button className="sm" onClick={()=>adjust(x)}>± Balance</button>{x.id!==me.id&&x.role!=="admin"&&(isAdmin||x.role!=="acting_admin")&&<button className={"sm "+(x.banned?"ok":"no")} onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned},x.banned?"User unbanned":"User banned")}>{x.banned?"Unban":"Ban"}</button>}{isAdmin&&x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
 
     if(cur==="Withdraw Settings"){ const w=S.withdraw||{}, fv=(k,d)=>f[k]??d;
       b=<div className="pnl"><h3>🏧 Withdrawal rules</h3><p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Players cannot request less than the minimum amount. This is enforced by the database too, not only by the app.</p>
