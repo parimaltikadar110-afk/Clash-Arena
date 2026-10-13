@@ -59,13 +59,16 @@ export default async function handler(req, res) {
     if (!k.zap_key) return res.status(500).json({ error: "ZapUPI key not set in Admin → Deposit Settings" });
     if (ph.length !== 10) return res.status(400).json({ error: "Enter a valid 10-digit mobile number" });
     const orderId = `ZU${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    const back = `${origin}/?zp=${orderId}`;
+    // ZapUPI Create Order: success_url / failed_url / timeout_url (cancel = failed_url)
+    const back = (st) => `${origin}/?zp=${orderId}&status=${st}`;
     const r = await fetch("https://pay.zapupi.com/api/create-order", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         zap_key: k.zap_key, order_id: orderId, amount: String(amt), customer_mobile: ph,
         remark: "ClashX7 wallet deposit",
-        redirect_url: back, return_url: back, success_url: back, failure_url: back, cancel_url: back,
+        success_url: back("success"),
+        failed_url: back("failed"),
+        timeout_url: back("timeout"),
         webhook_url: `${origin}/api/webhook?g=zapupi`,
       }),
     });
