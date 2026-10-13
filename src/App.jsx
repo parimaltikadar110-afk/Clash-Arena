@@ -126,6 +126,7 @@ export default function App() {
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
+  const [payReturn,setPayReturn] = useState(()=>{ try{ return new URLSearchParams(window.location.search).get("zp") || null }catch{ return null } });
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
   const canManageMatches = isAdmin || isActingAdmin; // only Admin + Acting Admin create / edit match details
   const authOpenRef = useRef(false);
@@ -308,7 +309,7 @@ export default function App() {
 
   useEffect(()=>{ if(!session) return; const o = new URLSearchParams(window.location.search).get("zp"); if(!o) return;   // ZapUPI payment theke ferar por
     window.history.replaceState({},"",window.location.pathname+window.location.hash);
-    api("deposit-check",{ref:o}).then(r=>{ if(r.credited) say("Payment successful ✅ Balance updated"); else if(r.pending) say("Payment is processing. Balance will update shortly."); else say("Transaction failed. No money was added.",1); load() }).catch(()=>say("Transaction failed. No money was added.",1)) },[session]);
+    api("deposit-check",{ref:o}).then(r=>{ if(r.credited) say("Payment successful ✅ Balance updated"); else if(r.pending) say("Payment is processing. Balance will update shortly."); else say("Transaction failed. No money was added.",1); setPayReturn(null); setNav("wallet"); load() }).catch(()=>{ say("Transaction failed. No money was added.",1); setPayReturn(null); setNav("wallet") }) },[session]);
 
   // ---- auth ----
   const auth = async () => { const id=(f.em||"").trim(), p=f.pw||"";
@@ -983,6 +984,7 @@ export default function App() {
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p>
     {!IS_APP&&<p style={{marginTop:10,color:"#666",cursor:"pointer",fontSize:12}} onClick={()=>setAuthOpen(false)}>← Back to home</p>}</div>);
   if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
+  if(payReturn) return wrap(<div className="pgb" style={{textAlign:"center",padding:"80px 20px"}}><div style={{fontSize:44}}>⏳</div><h3 style={{marginTop:14}}>Checking your payment…</h3><p className="hint">Please wait. Your balance will update shortly.</p><button className="btn" style={{marginTop:18}} onClick={()=>{setPayReturn(null);setNav("wallet")}}>Go to Wallet</button></div>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
   const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
   const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
