@@ -1,22 +1,21 @@
 {
-  "name": "clash-arena-backend",
+  "name": "clash-arena",
+  "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
     "@supabase/supabase-js": "^2.45.4",
-    "axios": "^1.6.0",
-    "razorpay": "^2.9.1",
-    "cashfree-pg": "^3.9.5",
-    "body-parser": "^1.20.2"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.21"
   }
 }
