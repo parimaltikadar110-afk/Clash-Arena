@@ -984,7 +984,6 @@ export default function App() {
   return wrap(<>{page ? sub() : <>
     <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></span><span className="brand"><Logo s={34}/>ClashX7</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>go("notifs")}>🔔{unread>0&&<sup style={{color:"var(--r)",fontWeight:800}}> {unread}</sup>}</button><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
-    {updatePending&&<div className="bn" onClick={()=>location.reload()}>🔄 New update ready — tap to refresh</div>}
     {body()}
     </>}{!page&&navBar}</>);
 }
