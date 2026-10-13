@@ -566,6 +566,15 @@ export default function App() {
 
   const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s).then(ok=>{ if(ok&&s==="live") notify({match_id:m.id,title:"🔴 Match is LIVE",body:m.title+" has started. Join the room now!"}) });
   const pay = m => openPayWinner(m);
+  const convertBal = x => ask(`Convert balance · ${x.name||x.email||"User"}`,
+    [["dir","Direction","select",[["winnings","Winnings → Deposit balance"],["balance","Deposit balance → Winnings"]]],["a","Amount ₹","number"]],
+    async v => {
+      const a = +v.a;
+      if(!(a>0)) { say("Enter a valid amount",1); return false }
+      return rpc("admin_convert_balance",{p_user:x.id,p_from:v.dir,p_amt:a},`₹${a} converted ✅`);
+    },
+    {dir:"winnings",a:""},
+    {btn:"Convert",note:`Deposit balance: ₹${x.balance??0} · Winnings: ₹${x.winnings??0}`});
   const showHistory = async x => {
     const [t,d,w] = await Promise.all([
       supabase.from("transactions").select("*").eq("user_id",x.id).order("created_at",{ascending:false}).limit(100),
@@ -929,7 +938,7 @@ export default function App() {
 <p className="sh">Deposits</p>{hist.deps.length?hist.deps.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>):<p className="hint">No deposits</p>}
 <p className="sh">Withdrawals</p>{hist.wds.length?hist.wds.map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>):<p className="hint">No withdrawals</p>}
 </div>}
-<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>showHistory(x)}>History</button><button className="sm" onClick={()=>adjust(x)}>± Balance</button>{x.id!==me.id&&x.role!=="admin"&&(isAdmin||x.role!=="acting_admin")&&<button className={"sm "+(x.banned?"ok":"no")} onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned},x.banned?"User unbanned":"User banned")}>{x.banned?"Unban":"Ban"}</button>}{isAdmin&&x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
+<p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>showHistory(x)}>History</button>{isAdmin&&<button className="sm" onClick={()=>convertBal(x)}>Convert</button>}<button className="sm" onClick={()=>adjust(x)}>± Balance</button>{x.id!==me.id&&x.role!=="admin"&&(isAdmin||x.role!=="acting_admin")&&<button className={"sm "+(x.banned?"ok":"no")} onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned},x.banned?"User unbanned":"User banned")}>{x.banned?"Unban":"Ban"}</button>}{isAdmin&&x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
 
     if(cur==="Withdraw Settings"){ const w=S.withdraw||{}, fv=(k,d)=>f[k]??d;
       b=<div className="pnl"><h3>🏧 Withdrawal rules</h3><p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Players cannot request less than the minimum amount. This is enforced by the database too, not only by the app.</p>
