@@ -155,20 +155,8 @@ export default function App() {
     return false;
   };
   const closeRef = useRef(closeTop); closeRef.current = closeTop;
-  useEffect(()=>{
-    const bk = { last:0, exiting:false };
-    const push = () => { try{ history.pushState({x7:1},"") }catch{} };
-    push();
-    const onPop = () => {
-      if(bk.exiting) return;
-      if(closeRef.current()){ push(); return }
-      const now = Date.now();
-      if(now - bk.last < 2000){ bk.exiting = true; history.back(); return }
-      bk.last = now; push(); say("Back চাপলে app বন্ধ হবে — আবার চাপুন");
-    };
-    window.addEventListener("popstate", onPop);
-    return ()=>window.removeEventListener("popstate", onPop);
-  },[]);
+  // Phone back button: web-er overlay/page/tab age bondho hobe. Kichu na thakle Android wrapper double-back handle korbe.
+  useEffect(()=>{ window.x7Back = () => closeRef.current(); return ()=>{ delete window.x7Back } },[]);
 
   // Do not trigger the browser install prompt from the landing-page button.
   // That prompt immediately installs the PWA after the user accepts it.
