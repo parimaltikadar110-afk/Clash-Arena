@@ -1,6 +1,10 @@
 // POST /api/deposit  { gateway: "zapupi" | "razorpay" | "cashfree", amount, phone? }
 import { sb, authed, gwSecrets, gwEnabled } from "./_lib.js";
 
+// Payment shesh hole user ei domain-e ferbe. APP_URL Vercel env-e set kora thakle sheta-i use hobe
+const appOrigin = (req) =>
+  (process.env.APP_URL || req.headers.origin || `https://${req.headers.host}`).replace(/\/$/, "");
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   try {
@@ -13,7 +17,7 @@ export default async function handler(req, res) {
     if (!(await gwEnabled(gateway))) return res.status(400).json({ error: "This payment method is disabled" });
     const k = await gwSecrets(gateway);
     const ph = String(phone || "").replace(/\D/g, "").slice(-10);
-    const origin = req.headers.origin || `https://${req.headers.host}`;
+    const origin = appOrigin(req);
 
     if (gateway === "razorpay") {
       if (!k.key_id || !k.key_secret) return res.status(500).json({ error: "Razorpay keys not set in Admin → Deposit Settings" });
@@ -55,11 +59,14 @@ export default async function handler(req, res) {
     if (!k.zap_key) return res.status(500).json({ error: "ZapUPI key not set in Admin → Deposit Settings" });
     if (ph.length !== 10) return res.status(400).json({ error: "Enter a valid 10-digit mobile number" });
     const orderId = `ZU${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const back = `${origin}/?zp=${orderId}`;
     const r = await fetch("https://pay.zapupi.com/api/create-order", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         zap_key: k.zap_key, order_id: orderId, amount: String(amt), customer_mobile: ph,
-        remark: "ClashX7 wallet deposit", redirect_url: `${origin}/?zp=${orderId}`, webhook_url: `${origin}/api/webhook?g=zapupi`,
+        remark: "ClashX7 wallet deposit",
+        redirect_url: back, return_url: back, success_url: back, failure_url: back, cancel_url: back,
+        webhook_url: `${origin}/api/webhook?g=zapupi`,
       }),
     });
     const o = await r.json().catch(() => ({}));
