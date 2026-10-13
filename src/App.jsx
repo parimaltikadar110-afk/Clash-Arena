@@ -308,7 +308,7 @@ export default function App() {
 
   useEffect(()=>{ if(!session) return; const o = new URLSearchParams(window.location.search).get("zp"); if(!o) return;   // ZapUPI payment theke ferar por
     window.history.replaceState({},"",window.location.pathname+window.location.hash);
-    api("deposit-check",{ref:o}).then(r=>{ say(r.credited?"Payment received — wallet updated ✅":"Payment not confirmed yet. If money was deducted it will be added shortly.",!r.credited&&!r.pending); load() }).catch(e=>say(e.message,1)) },[session]);
+    api("deposit-check",{ref:o}).then(r=>{ if(r.credited) say("Payment successful ✅ Balance updated"); else if(r.pending) say("Payment is processing. Balance will update shortly."); else say("Transaction failed. No money was added.",1); load() }).catch(()=>say("Transaction failed. No money was added.",1)) },[session]);
 
   // ---- auth ----
   const auth = async () => { const id=(f.em||"").trim(), p=f.pw||"";
@@ -439,7 +439,7 @@ export default function App() {
   const saveGw = async (n,keys) => { const sec={}; keys.forEach(k=>{const v=(f[`gs_${n}_${k}`]||"").trim(); if(v) sec[k]=v}); const en=(f[`ge_${n}`]??(S["gw_"+n]?.enabled===true?"1":"0"))==="1";
     if(await rpc("admin_save_gateway",{p_name:n,p_enabled:en,p_secrets:sec},`${n} ${en?"enabled":"disabled"} & saved`)) setF(x=>Object.fromEntries(Object.entries(x).filter(([k])=>!k.startsWith("gs_"+n)))) };
 
-  const gwDep = async g => { const a=+f.a; if(!(a>=10)) return say("Minimum deposit is ₹10",1); setBusy(true); say("Payment khola hocche, ektu opekkha korun…");
+  const gwDep = async g => { const a=+f.a; if(!(a>=10)) return say("Minimum deposit is ₹10",1); setBusy(true); say("Opening payment, please wait…");
     try{ const d = await api("deposit",{gateway:g,amount:a,phone:me.phone||DEFAULT_PHONE||undefined});
       const done = () => { say("Payment received. Wallet updates in a few seconds…"); [2500,6000,12000].forEach(ms=>setTimeout(load,ms)) };
       if(g==="zapupi"){ window.location.href = d.url; return }
