@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
+import OneSignal from "react-onesignal";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 const env = import.meta.env;
@@ -187,6 +188,14 @@ export default function App() {
     }
   };
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
+
+  // OneSignal Web Push setup (runs once when the app loads)
+  useEffect(() => {
+    OneSignal.init({
+      appId: "dda5795c-3990-4713-9500-43a57eae0896",
+      allowLocalhostAsSecureOrigin: true,
+    });
+  }, []);
 
   useEffect(()=>{
     const h = () => setHash(window.location.hash);
