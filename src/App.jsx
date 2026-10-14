@@ -194,6 +194,8 @@ export default function App() {
     OneSignal.init({
       appId: "dda5795c-3990-4713-9500-43a57eae0896",
       allowLocalhostAsSecureOrigin: true,
+      serviceWorkerPath: 'OneSignalSDKWorker.js',
+      serviceWorkerParam: { scope: '/' }
     });
   }, []);
 
