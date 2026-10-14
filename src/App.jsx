@@ -132,6 +132,34 @@ export default function App() {
   const [payReturn,setPayReturn] = useState(()=>{ try{ return new URLSearchParams(window.location.search).get("zp") || null }catch{ return null } });
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
   const canManageMatches = isAdmin || isActingAdmin; // only Admin + Acting Admin create / edit match details
+
+  // ---- Gift codes ----
+  const [gifts,setGifts] = useState([]);
+  const loadGifts = async () => { const {data,error} = await supabase.rpc("admin_list_gift_codes"); if(error) return say(error.message,1); setGifts(data||[]) };
+  const createGift = async () => {
+    const amt = +f.gc_amt, max = +f.gc_max || 1;
+    if(!(amt>0)) return say("Enter a valid amount",1);
+    const {data,error} = await supabase.rpc("admin_create_gift_code",{p_code:(f.gc_code||"").trim(),p_amount:amt,p_max_uses:max});
+    if(error) return say(error.message,1);
+    say(`Gift code created: ${data}`);
+    setF(x=>({...x,gc_code:"",gc_amt:"",gc_max:""}));
+    loadGifts();
+  };
+  const toggleGift = async g => {
+    const {error} = await supabase.rpc("admin_set_gift_code_active",{p_id:g.id,p_active:!g.active});
+    if(error) return say(error.message,1);
+    loadGifts();
+  };
+  const redeemGift = async () => {
+    const code = (f.gc||"").trim();
+    if(!code) return say("Enter a gift code",1);
+    const {data,error} = await supabase.rpc("redeem_gift_code",{p_code:code});
+    if(error) return say(error.message,1);
+    say(`₹${data} added to your balance 🎉`);
+    go("profile");
+    load();
+  };
+  useEffect(()=>{ if(isAdmin && hash==="#admin" && at==="Gift Codes") loadGifts() },[at,isAdmin,hash]);
   const authOpenRef = useRef(false);
   authOpenRef.current = authOpen;
 
@@ -719,7 +747,7 @@ export default function App() {
 
   const stTxt = s => <span style={{color:s==="approved"?"#16a34a":s==="pending"?"#d97706":"#dc2626",fontWeight:600,textTransform:"capitalize"}}>{s}</span>;
   const sub = () => {
-    const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",notifs:"profile",match:null,deposit:null,withdraw:null}[page]??null;
+    const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",notifs:"profile",giftcode:"profile",match:null,deposit:null,withdraw:null}[page]??null;
     let t="",h=null;
 
     if(page==="match"){
@@ -775,12 +803,13 @@ export default function App() {
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+      {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={links.telegram} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
     }
     if(page==="account"){t="Account";h=<>{inp("n","Name")}{inp("gn","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
+    if(page==="giftcode"){t="Gift Code";h=<>{inp("gc","Enter gift code")}<button className="btn" onClick={redeemGift}>Redeem</button><p className="hint">Each gift code can be used once by you. The amount is added to your Deposit balance.</p></>}
     if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={async()=>{if(await rpc("join_by_code",{p_code:f.c||""}))setPage(null)}}>Join</button></>}
     if(page==="withdraw"){t="Withdrawal";const wd=S.withdraw||{}, mn=+(wd.min??0), mx=+(wd.max||0);
       h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>
@@ -798,7 +827,7 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Withdrawals","Withdraw Settings","Users","Staff"]
+      ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
       : isActingAdmin
         ? ["Matches","Rules","Notify","Users"]
         : ["Matches","Rules","Notify"];
@@ -944,6 +973,16 @@ export default function App() {
       </div>;
     }
 
+    if(cur==="Gift Codes"){
+      b=<div className="pnl"><h3>🎁 Gift codes</h3>
+        <p className="hint">Users redeem these from Profile → Gift Code. Each user can redeem a code only once.</p>
+        {inp("gc_code","Code (leave blank to auto-generate)")}
+        {inp("gc_amt","Amount ₹","number")}
+        {inp("gc_max","How many people can redeem","number")}
+        <button className="btn" onClick={createGift}>Create gift code</button>
+        <div className="acards" style={{marginTop:14}}>{gifts.length? gifts.map(g=><div className="ucard" key={g.id}><div className="uhead"><b>{g.code}</b><span className={"pill "+(g.active?"upcoming":"")}>{g.active?"Active":"Off"}</span></div><small>₹{g.amount} · used {g.used_count}/{g.max_uses}</small><div className="uact"><button className="sm" onClick={()=>toggleGift(g)}>{g.active?"Turn off":"Turn on"}</button></div></div>) : <p className="hint">No gift codes yet</p>}</div>
+      </div>;
+    }
     if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}{hist&&<div className="pnl"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><h3 style={{margin:0}}>📜 {hist.user.name||hist.user.email||"User"}</h3><button className="sm" onClick={()=>setHist(null)}>Close</button></div>
 <p className="sh">Transactions</p>{hist.txs.length?hist.txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="hint">No transactions</p>}
 <p className="sh">Deposits</p>{hist.deps.length?hist.deps.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>):<p className="hint">No deposits</p>}
