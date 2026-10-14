@@ -1,3 +1,4 @@
+
 {
   "name": "clash-arena",
   "private": true,
@@ -13,10 +14,12 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-onesignal": "^3.0.1",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.28.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.2",
     "vite": "^5.4.10"
   }
 }
+
