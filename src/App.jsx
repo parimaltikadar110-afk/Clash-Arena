@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
-import OneSignal from "react-onesignal";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 const env = import.meta.env;
@@ -14,7 +13,6 @@ const SUPPORT_URL = env.VITE_SUPPORT_URL || "";
 // project sites where the app is served from /REPOSITORY_NAME/ instead of /.
 const APK_URL = env.VITE_APK_URL || new URL("clashx7.apk", window.location.origin + import.meta.env.BASE_URL).href;
 const GATEWAYS = (env.VITE_GATEWAYS || "zapupi,manual,razorpay,cashfree").split(",").map(s => s.trim()); // kon gateway dekhabe
-const VAPID = env.VITE_VAPID_PUBLIC_KEY;
 const DEFAULT_PHONE = (env.VITE_DEPOSIT_PHONE||"").replace(/\D/g,"").slice(-10); // optional: used only when a player has no mobile saved, so deposit never asks for a number
 const UA = navigator.userAgent || "";
 const IS_APP = /ClashX7App/i.test(UA) || /;\s*wv\)/i.test(UA) || (/Version\/[\d.]+/.test(UA) && /Chrome\//.test(UA)) || !!window.matchMedia?.("(display-mode: standalone)").matches || !!navigator.standalone; // true inside the APK / installed app
@@ -25,8 +23,15 @@ const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Mat
 const keepNote = x => !/cancel/i.test(x.title||""); // "Match cancelled" notice user-er inbox-e dekhabe na
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
-const b64 = s => { const r = atob((s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/")); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))) };
-const pushOK = () => !!VAPID && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+// ---- Native push: Median.co wrapper + OneSignal native SDK (Android). Browser web push is intentionally disabled. ----
+const MEDIAN = (typeof window !== "undefined" && (window.median || window.gonative)) || null;
+const IS_NATIVE = !!MEDIAN || /gonative|ClashX7App/i.test(UA); // true only inside the Android app wrapper
+const OS_NATIVE = () => (window.median || window.gonative)?.onesignal || null; // Median JS bridge to OneSignal
+const nativePush = {
+  register: async () => { const os = OS_NATIVE(); if(!os?.registerForPush) return false; try{ await os.registerForPush(); return true }catch{ return false } }, // Android only shows the permission prompt if not granted yet
+  login: async id => { const os = OS_NATIVE(); if(!os?.login || !id) return; try{ await os.login(String(id)) }catch{} }, // links this phone to the player's Supabase user id
+  logout: async () => { const os = OS_NATIVE(); if(!os?.logout) return; try{ await os.logout() }catch{} },
+};
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
 
 const shrink = (file,max=1000,q=.72) => new Promise((ok,no)=>{ const img=new Image(); img.onload=()=>{ const k=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
@@ -123,7 +128,7 @@ function Skeleton({onRetry,onLogout}) {
 export default function App() {
   const [session,setSession] = useState(BOOT.c?BOOT.s:null), [ready,setReady] = useState(!!BOOT.c || !BOOT.s), [hash,setHash] = useState(window.location.hash);
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(BOOT.c?.M||[]), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
-  const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState(BOOT.c?.notifs||[]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(pushOK() && Notification.permission==="granted");
+  const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState(BOOT.c?.notifs||[]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
@@ -217,14 +222,9 @@ export default function App() {
   };
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
 
-  // OneSignal Web Push setup (runs once when the app loads)
-  useEffect(() => {
-    OneSignal.init({
-      appId: "dda5795c-3990-4713-9500-43a57eae0896",
-      allowLocalhostAsSecureOrigin: true,
-      serviceWorkerPath: 'OneSignalSDKWorker.js',
-      serviceWorkerParam: { scope: '/' }
-    });
+  // Native only: on launch, register with the OneSignal SDK and request notification permission if not granted yet
+  useEffect(() => { if(!IS_NATIVE) return; nativePush.register().then(setPushOn).catch(()=>{}) }, []);
+  }, []);
   }, []);
 
   useEffect(()=>{
@@ -314,13 +314,10 @@ export default function App() {
     return()=>{supabase.removeChannel(ch);setLive(false);document.removeEventListener("visibilitychange",vis);clearTimeout(t)};
   },[session,load]);
 
-  const savePush = async () => { const reg = await navigator.serviceWorker.ready;
-    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID)});
-    const {error} = await supabase.from("push_subscriptions").upsert({endpoint:sub.endpoint,user_id:session.user.id,sub:sub.toJSON()}); if(error) throw error };
-  useEffect(()=>{ if(me&&pushOK()&&Notification.permission==="granted") savePush().then(()=>setPushOn(true)).catch(()=>{}) },[me?.id]); // already allowed hole chupchap re-register
-  const enablePush = async () => { try{ if(!pushOK()) return say("This browser/phone can't receive push. On iPhone: Add to Home Screen first.",1);
-    if(await Notification.requestPermission()!=="granted") return say("Notification permission was denied. Allow it from browser settings.",1);
-    await savePush(); setPushOn(true); say("Phone notifications turned on ✅") }catch(e){say(e.message,1)} };
+  // Tie this phone to the signed-in player so notifications can be targeted to the native app
+  useEffect(() => { if(IS_NATIVE && me?.id) nativePush.login(me.id) }, [me?.id]);
+  const enablePush = async () => { const ok = await nativePush.register(); setPushOn(ok);
+    say(ok ? "Phone notifications turned on ✅" : "Notifications are only available in the ClashX7 Android app.", !ok) };
 
   const go = (p,init={}) => {setF(init);setPage(p)};
   const inp = (k,l,t="text") => (<div className="field"><label>{l}</label><input type={t} value={f[k]??""} onChange={e=>setF({...f,[k]:e.target.value})}/></div>);
@@ -350,7 +347,7 @@ export default function App() {
     const r = await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,password:p})}); const j = await r.json().catch(()=>({}));
     if(!r.ok) return say(j.error||"Login failed",1);
     const {error} = await supabase.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); if(error) say(error.message,1) };
-  const logout = async () => { try{const s=await (await navigator.serviceWorker?.getRegistration())?.pushManager.getSubscription(); if(s) await supabase.from("push_subscriptions").delete().eq("endpoint",s.endpoint)}catch{}
+  const logout = async () => { await nativePush.logout();
     await supabase.auth.signOut(); try{localStorage.removeItem("x7cache")}catch{} setMe(null); setPage(null); setF({}) };
 
   // ---- player actions ----
@@ -721,7 +718,7 @@ export default function App() {
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
-        {pushOK()&&!pushOn&&Notification.permission!=="denied"&&<div className="bn" onClick={enablePush}>🔔 Turn on match & room notifications</div>}
+        {IS_NATIVE&&!pushOn&&<div className="bn" onClick={enablePush}>🔔 Turn on match & room notifications</div>}
         {ms.length?ms.map(matchCard):<p className="empty">No matches available in {tab}.</p>}
       </>;
     }
@@ -796,7 +793,7 @@ export default function App() {
     }
 
     if(page==="notifs"){t="Notifications";localStorage.setItem("x7seen",Date.now());
-      h=<>{pushOK()&&!pushOn&&<button className="btn" style={{marginBottom:12}} onClick={enablePush}>🔔 Turn on phone notifications</button>}{pushOn&&<p style={{fontSize:11,color:"#16a34a",marginBottom:8}}>✅ Phone notifications are on</p>}
+      h=<>{IS_NATIVE&&!pushOn&&<button className="btn" style={{marginBottom:12}} onClick={enablePush}>🔔 Turn on phone notifications</button>}{pushOn&&<p style={{fontSize:11,color:"#16a34a",marginBottom:8}}>✅ Phone notifications are on</p>}
         {notifs.length?notifs.map(n=><div className="mi" key={n.id} style={{cursor:"default",display:"block"}}><b>{n.title}</b><div style={{fontSize:12,color:"#444",marginTop:2}}>{n.body}</div><div style={{fontSize:10,color:"#999",marginTop:4}}>{fmt(n.created_at)}</div></div>):<p className="empty">No notifications yet.</p>}</>}
 
     if(page==="profile"){
