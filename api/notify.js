@@ -1,65 +1,101 @@
-// POST /api/notify  { title, body, email?, match_id? } — admin / acting admin / moderator
-import webpush from "web-push";
-import { sb, authed } from "./_lib.js";
+// POST /api/notify  (Vercel serverless function)
+// Sends OneSignal push ONLY to Google Android native app subscribers.
+// Chrome, Safari and every other web push target are excluded.
 
-// VAPID setup is done per request, so a missing env var gives a readable JSON error instead of crashing the function
-function setupVapid() {
-  const pub = process.env.VAPID_PUBLIC_KEY, priv = process.env.VAPID_PRIVATE_KEY;
-  if (!pub || !priv) throw new Error("VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY is missing in Vercel env");
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:admin@clashx7.in", pub, priv);
-}
+const ONESIGNAL_APP_ID = "dda5795c-3990-4713-9500-43a57eae0896";
+const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const SB_ANON = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const OS_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-  try {
-    const u = await authed(req);
-    // acting_admin was missing here, so acting admins got "Staff only"
-    if (!u || !["admin", "acting_admin", "moderator"].includes(u.role)) return res.status(403).json({ error: "Staff only" });
-    setupVapid();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    const { title, body, email, match_id } = req.body || {};
-    if (!title) return res.status(400).json({ error: "Title required" });
+  // 1) Who is calling? Verify the Supabase session token sent by the admin panel.
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!token) return res.status(401).json({ note: "Not signed in" });
 
-    let ids = null; // null = sobar kache
-    if (match_id) {
-      const { data } = await sb.from("participants").select("user_id").eq("match_id", match_id);
-      ids = (data || []).map(x => x.user_id);
-    } else if (email) {
-      const { data } = await sb.from("profiles").select("id").ilike("email", email.trim()).maybeSingle();
-      if (!data) return res.status(404).json({ error: "User not found" });
-      ids = [data.id];
-    }
-    if (ids && !ids.length) return res.json({ sent: 0, failed: 0, subscribers: 0, note: "No joined players for this match" });
+  const who = await fetch(`${SB_URL}/auth/v1/user`, {
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${token}` },
+  });
+  if (!who.ok) return res.status(401).json({ note: "Session expired, please sign in again" });
 
-    const rows = ids ? ids.map(id => ({ user_id: id, title, body })) : [{ user_id: null, title, body }];
-    const { error: insErr } = await sb.from("notifications").insert(rows);
-    if (insErr) console.error("notifications insert:", insErr.message);
+  // 2) Only admins / moderators may send. is_admin() is the real SQL-side check.
+  const isStaff = await rpcBool("is_admin", token) || await rpcBool("is_moderator", token);
+  if (!isStaff) return res.status(403).json({ note: "Not allowed" });
 
-    let q = sb.from("push_subscriptions").select("endpoint,sub");
-    if (ids) q = q.in("user_id", ids);
-    const { data: subs, error: subErr } = await q;
-    if (subErr) throw new Error("push_subscriptions read failed: " + subErr.message);
+  // 3) Validate input
+  const { title, body, email } = req.body || {};
+  if (!title || !String(title).trim()) return res.status(400).json({ note: "Title required" });
 
-    const payload = JSON.stringify({ title, body: body || "", url: "/" });
-    let sent = 0; const dead = []; const codes = {};
-    await Promise.allSettled((subs || []).map(s =>
-      webpush.sendNotification(s.sub, payload).then(() => sent++).catch(e => {
-        const c = e.statusCode || "error";
-        codes[c] = (codes[c] || 0) + 1;
-        // 404/410 = phone unsubscribed; 403 = VAPID key mismatch between frontend and server
-        if ([404, 410].includes(e.statusCode)) dead.push(s.endpoint);
-        console.error("push failed", c, e.body || e.message);
-      })
-    ));
-    if (dead.length) await sb.from("push_subscriptions").delete().in("endpoint", dead);
+  // 4) Build the OneSignal payload. Platform flags restrict delivery to Android native.
+  const payload = {
+    app_id: ONESIGNAL_APP_ID,
+    isAndroid: true,
+    isChromeWeb: false,
+    isSafari: false,
+    isAnyWeb: false,
+    headings: { en: String(title) },
+    contents: { en: String(body || title) },
+  };
 
-    res.json({
-      sent,
-      failed: (subs?.length || 0) - sent,
-      subscribers: subs?.length || 0,
-      codes,            // e.g. {"403":3} = VAPID mismatch, {"410":2} = old phones
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+  if (email) {
+    // Single player: resolve email -> user id, then target the id the app
+    // registered with median.onesignal.login(userId) on sign-in.
+    const userId = await findUserIdByEmail(String(email).trim().toLowerCase());
+    if (!userId) return res.status(200).json({ note: "No player found with that email" });
+    payload.include_aliases = { external_id: [userId] };
+    payload.target_channel = "push";
+  } else {
+    // Everyone subscribed. The platform flags above still limit it to Android native.
+    payload.included_segments = ["Subscribed Users"];
   }
+
+  // 5) Send to OneSignal
+  const r = await fetch("https://onesignal.com/api/v1/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Key ${OS_KEY}` },
+    body: JSON.stringify(payload),
+  });
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok) {
+    const msg = Array.isArray(j.errors) ? j.errors.join(", ") : (j.errors ? JSON.stringify(j.errors) : "unknown");
+    return res.status(502).json({ note: "OneSignal error: " + msg, codes: {} });
+  }
+
+  const recipients = j.recipients || 0;
+  return res.status(200).json({
+    sent: recipients,
+    subscribers: recipients,
+    codes: j.errors && !Array.isArray(j.errors) ? j.errors : {},
+    id: j.id,
+  });
+}
+
+// Calls a boolean Postgres function as the signed-in user (so auth.uid() is theirs).
+async function rpcBool(fn, token) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: { apikey: SB_ANON, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!r.ok) return false;
+    return (await r.json()) === true;
+  } catch {
+    return false;
+  }
+}
+
+// Looks up a player by email with the service role (server-only, never sent to browser).
+// Assumes a `profiles` table with `id` and `email` columns. Change if your schema differs.
+async function findUserIdByEmail(email) {
+  const r = await fetch(
+    `${SB_URL}/rest/v1/profiles?select=id&email=eq.${encodeURIComponent(email)}&limit=1`,
+    { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } }
+  );
+  if (!r.ok) return null;
+  const rows = await r.json();
+  return rows[0]?.id || null;
 }
