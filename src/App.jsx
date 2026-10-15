@@ -270,6 +270,8 @@ export default function App() {
       return()=>{window.removeEventListener("hashchange",h);clearInterval(upTimer)};
     }
 
+    // Config missing (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not set at build time) -> show a message instead of a blank page
+    if(!supabase){ setReady(true); say("Server config missing: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not set. Add them in Vercel and redeploy.",1); return }
     supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
     const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));
     return()=>{
