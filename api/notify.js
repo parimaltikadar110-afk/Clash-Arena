@@ -40,9 +40,9 @@ export default async function handler(req, res) {
     const payload = {
       app_id: APP_ID,
       included_segments: ["Subscribed Users"],
-      headings: { en: title },
-      contents: { en: message || title },
-      target_channel: "push",
+      headings: { en: title || "Test" },
+      contents: { en: message || "Test" },
+      isAndroid: true,
     };
 
     // Single-player send only: replace the segment with a filter for that player
