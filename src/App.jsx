@@ -31,6 +31,7 @@ const nativePush = {
   register: async () => { const os = OS_NATIVE(); if(!os?.registerForPush) return false; try{ await os.registerForPush(); return true }catch{ return false } }, // Android only shows the permission prompt if not granted yet
   login: async id => { const os = OS_NATIVE(); if(!os?.login || !id) return; try{ await os.login(String(id)) }catch{} }, // links this phone to the player's Supabase user id
   logout: async () => { const os = OS_NATIVE(); if(!os?.logout) return; try{ await os.logout() }catch{} },
+  info: async () => { const os = OS_NATIVE(); if(!os?.info) return null; try{ return await os.info() }catch{ return null } }, // includes the OneSignal subscription id
 };
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
 
@@ -314,6 +315,31 @@ export default function App() {
 
   // Tie this phone to the signed-in player so notifications can be targeted to the native app
   useEffect(() => { if(IS_NATIVE && me?.id) nativePush.login(me.id) }, [me?.id]);
+
+  // Read the OneSignal Subscription (Player) ID from the native SDK and store it on the backend for this user.
+  // Retries for a short while (permission may be granted a moment later), and again when the app comes back to the foreground.
+  useEffect(() => {
+    if(!IS_NATIVE || !me?.id || !session?.access_token) return;
+    let stopped = false, tries = 0, timer;
+    const syncOnce = async () => {
+      const info = await nativePush.info();
+      const playerId = info?.oneSignalUserId || info?.oneSignalPlayerId || info?.playerId || null;
+      if(!playerId) return false;
+      try{
+        const r = await fetch("/api/subscribe-push",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({playerId,platform:"android"})});
+        return r.ok;
+      }catch{ return false }
+    };
+    const loop = async () => {
+      if(stopped) return;
+      if((await syncOnce()) || ++tries >= 10) return;
+      timer = setTimeout(loop, 3000);
+    };
+    loop();
+    const onVisible = () => { if(document.visibilityState==="visible") syncOnce() };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", onVisible) };
+  }, [me?.id, session?.access_token]);
   const enablePush = async () => { const ok = await nativePush.register(); setPushOn(ok);
     say(ok ? "Phone notifications turned on ✅" : "Notifications are only available in the ClashX7 Android app.", !ok) };
 
