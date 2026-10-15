@@ -466,7 +466,7 @@ export default function App() {
     }catch(e){say(e.message,1)} setBusy(false) };
 
   // ---- admin / moderator actions ----
-  const notify = async (body) => { try{ const r = await api("notify",body);
+  const notify = async (body) => { try{ const r = await api("notify",{...body,channel:"android_native"});
     if(r.note) { say(r.note,1); return false }
     const codes = Object.keys(r.codes||{}).length ? " · errors: "+JSON.stringify(r.codes) : "";
     if(!r.subscribers) say("Saved, but no phone is subscribed for notifications yet",1);
