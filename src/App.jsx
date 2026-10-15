@@ -224,8 +224,6 @@ export default function App() {
 
   // Native only: on launch, register with the OneSignal SDK and request notification permission if not granted yet
   useEffect(() => { if(!IS_NATIVE) return; nativePush.register().then(setPushOn).catch(()=>{}) }, []);
-  }, []);
-  }, []);
 
   useEffect(()=>{
     const h = () => setHash(window.location.hash);
