@@ -494,9 +494,7 @@ export default function App() {
   // ---- admin / moderator actions ----
   const notify = async (body) => { try{ const r = await api("notify",{...body,channel:"android_native"});
     if(r.note) { say(r.note,1); return false }
-    const codes = Object.keys(r.codes||{}).length ? " · errors: "+JSON.stringify(r.codes) : "";
-    if(!r.subscribers) say("Saved, but no phone is subscribed for notifications yet",1);
-    else say(`Sent to ${r.sent} of ${r.subscribers} phone(s)${codes}`, r.sent===0);
+    say(r.message || "Notification sent successfully!");
     return true }catch(e){ say("Notification failed: "+e.message,1); return false } };
 
   const buildMatchRow = (src={}) => {
