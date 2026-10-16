@@ -767,7 +767,6 @@ export default function App() {
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
-        {IS_NATIVE&&!pushOn&&<div className="bn" onClick={enablePush}>🔔 Turn on match & room notifications</div>}
         {ms.length?ms.map(matchCard):<p className="empty">No matches available in {tab}.</p>}
       </>;
     }
