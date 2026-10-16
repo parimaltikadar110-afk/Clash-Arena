@@ -35,6 +35,17 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png?v=3" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3" />
 
+    <!-- OneSignal Web SDK Script -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "YOUR_ONESIGNAL_APP_ID", // এখানে আপনার আসল OneSignal App ID বসিয়ে দিন
+        });
+      });
+    </script>
+
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -92,41 +103,5 @@
 
     <noscript>Please enable JavaScript to use the ClashX7 app.</noscript>
     <script type="module" src="/src/main.jsx"></script>
-
-    <!-- Firebase Push Notification Script -->
-    <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js";
-      import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging.js";
-
-      const firebaseConfig = {
-        apiKey: "AIzaSyBSXD78Ghvt7IDP83i46alGaV46ceB9Zq8",
-        authDomain: "clashx7.firebaseapp.com",
-        projectId: "clashx7",
-        storageBucket: "clashx7.firebasestorage.app",
-        messagingSenderId: "199379966933",
-        appId: "1:199379966933:web:f05e046c07ef7e41567b5c"
-      };
-
-      const app = initializeApp(firebaseConfig);
-      const messaging = getMessaging(app);
-
-      function requestNotificationPermission() {
-        Notification.requestPermission().then((permission) => {
-          if (permission === 'granted') {
-            getToken(messaging, { vapidKey: 'BMC4nns71Wp6quR_Cu5VDt-AN2ZSZUOzHk_RkhIXqvaBhjA77PExN9MATYr7pb4eZUKaeSQlCPWqNnJKhuMzoqk' }).then((currentToken) => {
-              if (currentToken) {
-                console.log('FCM Token:', currentToken);
-              } else {
-                console.log('No registration token available.');
-              }
-            }).catch((err) => {
-              console.log('An error occurred while retrieving token: ', err);
-            });
-          }
-        });
-      }
-
-      requestNotificationPermission();
-    </script>
   </body>
 </html>
