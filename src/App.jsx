@@ -144,6 +144,7 @@ export default function App() {
   const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState(BOOT.c?.notifs||[]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
+  const [pushInfo,setPushInfo] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
@@ -329,6 +330,18 @@ export default function App() {
 
   // Tie this phone to the signed-in player so notifications can be targeted to the native app
   useEffect(() => { if(IS_NATIVE && me?.id) nativePush.login(me.id) }, [me?.id]);
+
+  // OneSignal connection status for the admin Notify tab (phone side only; the REST key stays on the server)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const native = IS_NATIVE;
+      const info = native ? await nativePush.info() : null;
+      const id = info?.oneSignalUserId || info?.oneSignalPlayerId || info?.playerId || null;
+      if (alive) setPushInfo({ native, bridge: !!OS_NATIVE(), id });
+    })();
+    return () => { alive = false };
+  }, [tab, me?.id]);
 
   // Read the OneSignal Subscription (Player) ID from the native SDK and store it on the backend for this user.
   // Retries for a short while (permission may be granted a moment later), and again when the app comes back to the foreground.
@@ -961,7 +974,7 @@ export default function App() {
         <button className="btn" onClick={()=>saveRules([rm],txt)}>Save for {rm}</button>
         <button className="btn" style={{background:"#111",marginTop:8}} onClick={()=>window.confirm("Replace rules of ALL modes with this text?")&&saveRules(T,txt)}>Apply this to ALL modes</button></>}
 
-    if(cur==="Notify") b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Push notification + in-app notification for players who enabled notifications.</p>{inp("nt","Title")}<label>Message</label><textarea rows={4} value={f.nb??""} onChange={e=>setF({...f,nb:e.target.value})}/>{inp("ne","Only this user's email (leave blank = everyone)","email")}
+    if(cur==="Notify") b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Push notification + in-app notification for players who enabled notifications.</p><div style={{fontSize:12,background:"#f4f4f4",padding:"8px 10px",borderRadius:8,marginBottom:10,wordBreak:"break-all",color:"#333"}}>{!pushInfo ? "OneSignal: checking..." : !pushInfo.native ? "OneSignal: this is the browser, not the ClashX7 Android app. This phone only receives push in the installed app." : pushInfo.id ? "OneSignal connected on this phone. Player ID: "+pushInfo.id : "OneSignal: app opened but no player ID yet. Allow notifications for ClashX7 in phone settings, then close and reopen the app."}</div>{inp("nt","Title")}<label>Message</label><textarea rows={4} value={f.nb??""} onChange={e=>setF({...f,nb:e.target.value})}/>{inp("ne","Only this user's email (leave blank = everyone)","email")}
       <button className="btn" disabled={busy} onClick={async()=>{if(!f.nt) return say("Title required",1); setBusy(true); if(await notify({title:f.nt,body:f.nb,email:f.ne})) setF({}); setBusy(false)}}>Send notification</button></>;
 
     if(cur==="Deposits"){const L=deps.filter(d=>f.dp==="all"?true:d.status==="pending"); b=<><div style={{margin:"0 0 8px"}}><button className="sm" onClick={()=>setF({dp:"pending"})}>Pending</button><button className="sm" onClick={()=>setF({dp:"all"})}>All</button></div>
