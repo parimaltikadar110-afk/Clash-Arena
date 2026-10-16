@@ -58,13 +58,13 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Key ${OS_KEY}`
+        'Authorization': OS_KEY.startsWith("os_v2_") ? `Key ${OS_KEY}` : `Basic ${OS_KEY}`
       },
       body: JSON.stringify(payload)
     });
     if (!response) return res.status(502).json({ note: "Could not reach OneSignal, please try again" });
 
-    const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(async () => ({ raw: await response.text().catch(() => "") }));
     console.log("OneSignal API status:", response.status);
     console.log("OneSignal API response:", JSON.stringify(data));
     console.log("OneSignal payload sent:", JSON.stringify(payload));
