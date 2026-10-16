@@ -46,6 +46,10 @@ export const WEB_CSS = `
 .wsField input{width:100%;height:46px;border-radius:10px;border:1px solid #ffffff1f;background:#0b0b10;color:#f5f5f7;padding:0 14px;font-size:15px;outline:none}
 .wsField input:focus{border-color:#ffd23f}
 .wsAuthCard .wsBtn{width:100%;margin-top:6px}
+/* FIX: App.jsx-er global ".x7 input{color:#111!important}" website-er input text ke dark kore dito. Eta oita override kore. */
+.wsPage .wsField input{color:#f5f5f7!important;-webkit-text-fill-color:#f5f5f7!important;caret-color:#ffd23f;background:#0b0b10!important;opacity:1!important;margin:0!important;padding:0 14px!important;font-size:16px}
+.wsPage .wsField input::placeholder{color:#63636e!important;-webkit-text-fill-color:#63636e!important;opacity:1!important}
+.wsPage .wsField input:-webkit-autofill,.wsPage .wsField input:-webkit-autofill:focus{-webkit-box-shadow:0 0 0 1000px #0b0b10 inset!important;box-shadow:0 0 0 1000px #0b0b10 inset!important;-webkit-text-fill-color:#f5f5f7!important;caret-color:#f5f5f7;transition:background-color 9999s ease-out 0s}
 .wsAuthCard .wsGhost{width:100%;margin-top:12px}
 .wsAuthCard .wsNote{text-align:center;font-size:12px;color:#63636e;margin-top:14px}
 .wsSplash{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(circle at 50% 40%,#5a0f16 0,#0b0b10 65%);color:#fff;overflow:hidden}
