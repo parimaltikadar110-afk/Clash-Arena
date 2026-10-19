@@ -38,6 +38,8 @@ const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$/,"").trim(); return c||s };
 // Purono spelling "DUO PR KILL" DB-te thakleo app-e "DUO PER KILL" hishebe dekhabe (tab/rules na harano jonno)
 const fixMode = m => /^DUO\s+PR\s+KILL$/i.test(String(m||"").trim()) ? "DUO PER KILL" : m;
+const isPK = m => /PER\s+KILL/i.test(String(m||""));
+const pkPool = (perKill,booyah,slots,cap) => (+booyah||0) + (+perKill||0)*(+slots||0)*(+cap||0);
 const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title),mode:fixMode(x.mode)}));
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
 
@@ -137,7 +139,7 @@ export default function App() {
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
-  const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
+  const [mlb,setMlb] = useState([]), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
@@ -291,7 +293,7 @@ export default function App() {
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
     const [p,m,j,t,l,r,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
       q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
-    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
+    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); { const {data:ml}=await supabase.from("manual_leaderboard").select("*"); setMlb(ml||[]); } setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
@@ -470,7 +472,7 @@ export default function App() {
 
   // ---- admin / moderator actions ----
 
-  const buildMatchRow = (src={}) => {
+  const buildMatchRow = (src={}) => { const pk=isPK(src.mode), slotsN=+src.slots||32;
     const pv=String(src.private||src.type||"0").toLowerCase();
     const isPrivate=pv==="1"||pv==="true"||pv==="private";
     const starts=new Date(src.start||src.d||src.starts_at||"");
@@ -478,8 +480,8 @@ export default function App() {
       title:cleanTitle(src.title),
       mode:String(src.mode||T[0]).trim(),
       map:String(src.map||"BERMUDA").trim()||"BERMUDA",
-      slots:+src.slots||32,
-      prize:+src.prize||0,
+      slots:slotsN,
+      prize: pk ? pkPool(src.perKill,src.booyah,slotsN,src.killCap) : (+src.prize||0), per_kill: pk?(+src.perKill||0):0, booyah_bonus: pk?(+src.booyah||0):0, kill_cap: pk?(+src.killCap||0):0,
       fee:+src.fee||0,
       starts_at:isNaN(starts.getTime())?null:starts.toISOString(),
       status:String(src.status||"upcoming"),
@@ -492,7 +494,8 @@ export default function App() {
   const addMatch = async () => {
     if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     if(!f.t||!f.d) return say("Title and start time are required",1);
-    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
+    if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Per kill ba booyah er amount din",1);
+    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,killCap:f.kc,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
     if(!row.starts_at) return say("Start time is invalid",1);
     const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
     if(error) return say(error.message,1);
@@ -513,7 +516,7 @@ export default function App() {
         mode:f.bulkModeGame||T[0],
         map:f.bulkMap||"BERMUDA",
         slots:f.bulkSlots,
-        prize:f.bulkPrize,
+        prize:f.bulkPrize, perKill:f.bulkPk, booyah:f.bulkBk, killCap:f.bulkKc,
         fee:f.bulkFee,
         start:new Date(start.getTime()+i*gap*60000).toISOString(),
         thumbnail:f.th,
@@ -549,18 +552,28 @@ export default function App() {
       });
       if(!rows.length) return say("No players have joined this match yet.",1);
       const opts=rows.map(x=>[x.idx,`${x.name} · ${x.game_name}${x.email?` · ${x.email}`:""}`]);
-      ask(`Pay prize · #${m.id}`,
-        [["w","Select winner from joined players","select",opts],["a","Prize amount ₹","number"]],
+      const pk=isPK(m.mode);
+      const fields = pk
+        ? [["w","Select player","select",opts],["k","Kills this player got","number"],["b","Won booyah (1st place)?","select",[["0","No"],["1","Yes"]]]]
+        : [["w","Select winner from joined players","select",opts],["a","Prize amount ₹","number"]];
+      ask(`Pay prize · #${m.id}`, fields,
         async v=>{
           const winner=rows.find(x=>x.idx===String(v.w));
-          const amount=+v.a;
           if(!winner) {say("Select a joined player.",1);return false}
-          if(!(amount>0)) {say("Enter a valid prize amount.",1);return false}
+          let amount=+v.a;
+          if(pk){
+            const k=Math.max(0,Math.floor(+v.k||0));
+            if(m.kill_cap>0 && k>m.kill_cap) {say(`Kill cap ${m.kill_cap}, ei player ${k} kill pelo`,1);return false}
+            amount = k*(+m.per_kill||0) + (String(v.b)==="1" ? (+m.booyah_bonus||0) : 0);
+          }
+          if(!(amount>0)) {say("Payout 0 hocche. Kills / booyah check korun.",1);return false}
           if(amount>+m.prize) {say(`Prize cannot be more than ₹${m.prize}.`,1);return false}
           return rpc("admin_pay_winner",{p_match:m.id,p_user:winner.user_id,p_amt:amount},`₹${amount} paid to ${winner.name}`);
         },
-        {w:"0",a:String(Math.max(1,+m.prize||0))},
-        {btn:"Pay prize",note:`Joined players: ${rows.length} · Maximum payout for this match: ₹${m.prize}`}
+        pk ? {w:"0",k:"0",b:"0"} : {w:"0",a:String(Math.max(1,+m.prize||0))},
+        {btn:"Pay prize", note: pk
+          ? `Per kill ₹${m.per_kill} · Booyah ₹${m.booyah_bonus} · Kill cap ${m.kill_cap}`
+          : `Joined players: ${rows.length} · Maximum payout for this match: ₹${m.prize}`}
       );
     }catch(e){say(e.message||"Could not load joined players.",1)}
     finally{setBusy(false)}
@@ -723,7 +736,7 @@ export default function App() {
       {myW.length>0&&<><p className="sh">Withdrawal requests</p>{myW.slice(0,5).map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>)}</>}
       {md.length>0&&<><p className="sh">Deposits</p>{md.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}
       <p className="sh">Transactions</p>{txs.length?txs.slice(0,20).map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty" style={{padding:20}}>No transactions yet</p>}</div> }
-    const r=[...lb].sort((a,b)=>(b.total_won||0)-(a.total_won||0));
+    const r=[...lb, ...mlb.map(x=>({id:"m"+x.id, name:x.name, total_won:x.total_won, avatar_url:null}))].sort((a,b)=>(b.total_won||0)-(a.total_won||0));
     if(!r.length) return <p className="empty">No winners yet. Be the first!</p>;
     const top=[r[1],r[0],r[2]], rk=[2,1,3];
     return <>
@@ -752,7 +765,8 @@ export default function App() {
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
         </section>}
         <div className="tabsX">{[["prize","🏆","Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
-        {tabK==="prize"&&<div className="prizeCard"><h4>Prize Distribution</h4>{splitPrize(m.prize).map((a,i)=><div key={i} className={"pzRow"+(i===0||i===2?" g":i===1?" s":"")}><span>{i<3?["🥇","🥈","🥉"][i]:"🎖️"} {i+1}</span><b className="amt">₹{a}</b></div>)}<p className="hint">Winners are paid to wallet by admin after results.</p></div>}
+        {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4><p>Per kill ₹{m.per_kill} · Booyah bonus ₹{m.booyah_bonus} · Max kills paid: {m.kill_cap||"no limit"}</p></div>}
+{tabK==="prize"&&!isPK(m?.mode)&&<div className="prizeCard"><h4>Prize Distribution</h4>{splitPrize(m.prize).map((a,i)=><div key={i} className={"pzRow"+(i===0||i===2?" g":i===1?" s":"")}><span>{i<3?["🥇","🥈","🥉"][i]:"🎖️"} {i+1}</span><b className="amt">₹{a}</b></div>)}<p className="hint">Winners are paid to wallet by admin after results.</p></div>}
         {tabK==="players"&&<div className="mdPanel">{players.length?players.map((p,i)=><div className="plyRow" key={i}><i>{i+1}</i><Avatar s={30}/><b>{p.game_name}</b>{mySlots.some(s=>s.game_name===p.game_name)&&<span className="you">You</span>}</div>):<p className="hint">No one has joined yet. Be the first!</p>}</div>}
         {tabK==="rules"&&<div className="mdPanel"><div className="rulesBox">{ru||"Rules have not been added yet."}</div></div>}
         {already&&<section className="detailSection"><h4>🎟️ Your slots ({mySlots.length})</h4>
@@ -812,9 +826,9 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Rules","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
+      ? ["Dashboard","Matches","Leaderboard","Rules","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
       : isActingAdmin
-        ? ["Matches","Rules","Users"]
+        ? ["Matches","Leaderboard","Rules","Users"]
         : ["Matches","Rules"];
     const cur = TABS.includes(at)?at:TABS[0];
 
@@ -852,7 +866,12 @@ export default function App() {
                 <div><label>Mode</label><select value={f.g||T[0]} onChange={e=>setF({...f,g:e.target.value})}>{T.map(t=><option key={t}>{t}</option>)}</select></div>
                 {inp("m","Map")}
                 {inp("s","Slots","number")}
-                {inp("p","Prize ₹","number")}
+                {isPK(f.g||T[0]) ? <>
+                  {inp("pk","Per kill ₹","number")}
+                  {inp("bk","Booyah (1st place) bonus ₹","number")}
+                  {inp("kc","Max kills paid per player","number")}
+                  <small className="fieldHint">Prize pool auto: ₹{pkPool(f.pk,f.bk,+f.s||32,f.kc)}</small>
+                </> : inp("p","Prize ₹","number")}
                 {inp("fee","Entry fee ₹","number")}
                 {inp("d","Start time","datetime-local")}
                 <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
@@ -876,7 +895,12 @@ export default function App() {
                 </div>
                 {inp("bulkSlots","Slots per match","number")}
                 {inp("bulkFee","Entry fee ₹","number")}
-                {inp("bulkPrize","Prize pool ₹","number")}
+                {isPK(f.bulkModeGame||T[0]) ? <>
+                  {inp("bulkPk","Per kill ₹","number")}
+                  {inp("bulkBk","Booyah (1st place) bonus ₹","number")}
+                  {inp("bulkKc","Max kills paid per player","number")}
+                  <small className="fieldHint">Prize pool auto: ₹{pkPool(f.bulkPk,f.bulkBk,+f.bulkSlots||32,f.bulkKc)}</small>
+                </> : inp("bulkPrize","Prize pool ₹","number")}
                 {inp("bulkStart","First match start","datetime-local")}
                 <div><label>Initial status</label><select value={f.bulkStatus||"upcoming"} onChange={e=>setF({...f,bulkStatus:e.target.value})}><option value="upcoming">Upcoming</option><option value="live">Live now</option></select></div>
                 <div><label>Match type</label><select value={f.bulkPrivate||"0"} onChange={e=>setF({...f,bulkPrivate:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
@@ -953,6 +977,31 @@ export default function App() {
       </div>;
     }
 
+    if(cur==="Leaderboard"){
+      const lbDlg = x => ask(x ? "Edit player" : "Add player",
+        [["name","Player name"],["won","Total won ₹","number"],["kills","Kills","number"]],
+        async v => {
+          if(!canManageMatches) {say("Only Admin or Acting Admin can edit",1);return false}
+          if(!v.name?.trim()) {say("Name is required",1);return false}
+          const row={name:v.name.trim(), total_won:+v.won||0, kills:+v.kills||0};
+          return x
+            ? run(supabase.from("manual_leaderboard").update(row).eq("id",x.id),"Updated ✅")
+            : run(supabase.from("manual_leaderboard").insert(row),"Added ✅");
+        },
+        x ? {name:x.name, won:String(x.total_won), kills:String(x.kills)} : {won:"0",kills:"0"},
+        {btn: x ? "Save" : "Add"});
+      const delLb = x => { if(window.confirm(`"${x.name}" remove korben?`)) run(supabase.from("manual_leaderboard").delete().eq("id",x.id),"Removed") };
+      b = <div className="pnl">
+        <h3>🏆 Manual leaderboard</h3>
+        <p className="fieldHint">Ekhane je nam add korben, seta auto leaderboard-er sathe jukto hobe. Wallet/payout-e kono prabhab pore na.</p>
+        {canManageMatches && <button className="btn" onClick={()=>lbDlg(null)}>+ Add player</button>}
+        <div className="acards">{mlb.length ? mlb.map(x=><div className="ucard" key={x.id}>
+          <div className="uhead"><b>{x.name}</b></div>
+          <div className="ugrid"><span>Total won<b>{R(x.total_won)}</b></span><span>Kills<b>{x.kills}</b></span></div>
+          {canManageMatches && <div className="uact"><button className="sm" onClick={()=>lbDlg(x)}>Edit</button><button className="sm" onClick={()=>delLb(x)}>Delete</button></div>}
+        </div>) : <p className="hint">No manual entries yet</p>}</div>
+      </div>;
+    }
     if(cur==="Gift Codes"){
       b=<div className="pnl"><h3>🎁 Gift codes</h3>
         <p className="hint">Users redeem these from Profile → Gift Code. Each user can redeem a code only once.</p>
