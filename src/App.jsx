@@ -550,7 +550,7 @@ export default function App() {
     try{
       const {data:ps,error}=await supabase.from("participants").select("user_id,game_name").eq("match_id",m.id).order("id");
       if(error) throw error;
-      const rows=(ps||[]).map(p=>{const u=allU.find(x=>x.id===p.user_id)||{}; return {user_id:p.user_id,name:u.name||u.username||u.email||"Player",game_name:p.game_name||u.game_name||"-"}});
+      const rows=(ps||[]).map((p,i)=>{const u=allU.find(x=>x.id===p.user_id)||{}; return {key:i,user_id:p.user_id,name:u.name||u.username||u.email||"Player",game_name:p.game_name||u.game_name||"-"}});
       if(!rows.length) return say("No players joined this match.",1);
       setResIn({}); setResRows(rows); setResM(m);
     }catch(e){say(e.message||"Could not load players",1)}
@@ -558,7 +558,7 @@ export default function App() {
   };
   const submitResults = async () => {
     const m=resM, pk=isPK(m.mode);
-    const payload=resRows.map(x=>{const v=resIn[x.user_id]||{}; return {user_id:x.user_id, kills:pk?Math.max(0,Math.floor(+v.k||0)):0, booyah:pk?!!v.b:false, amount:resAmt(m,v)}}).filter(x=>x.amount>0||x.kills>0);
+    const payload=resRows.map(x=>{const v=resIn[x.key]||{}; return {user_id:x.user_id, kills:pk?Math.max(0,Math.floor(+v.k||0)):0, booyah:pk?!!v.b:false, amount:resAmt(m,v)}}).filter(x=>x.amount>0||x.kills>0);
     const total=payload.reduce((a,x)=>a+x.amount,0);
     if(!payload.length) return say("Result input korun",1);
     if(total>+m.prize) return say(`Total ₹${total} prize pool ₹${m.prize} er beshi`,1);
@@ -877,20 +877,20 @@ export default function App() {
 
     const resultsOverlay = resM ? (()=>{
       const pk=isPK(resM.mode);
-      const tot=resRows.reduce((a,x)=>a+resAmt(resM,resIn[x.user_id]||{}),0);
+      const tot=resRows.reduce((a,x)=>a+resAmt(resM,resIn[x.key]||{}),0);
       const inS={width:110,padding:"8px 10px",border:"1px solid #d1d5db",borderRadius:8,fontSize:14};
       const setV=(id,patch)=>setResIn({...resIn,[id]:{...(resIn[id]||{}),...patch}});
       return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"16px 10px"}}>
         <div style={{background:"#fff",color:"#111",borderRadius:16,width:"100%",maxWidth:520,padding:16}}>
           <h3 style={{margin:"0 0 4px"}}>Results · #{resM.id}</h3>
           <p style={{margin:"0 0 12px",fontSize:13,color:"#666"}}>{pk ? `Per kill ${R(resM.per_kill)} · Booyah ${R(resM.booyah_bonus)}` : `Prize pool ${R(resM.prize)} · player der prize amount likhun`}</p>
-          {resRows.map(x=>{const v=resIn[x.user_id]||{}; return <div key={x.user_id} style={{border:"1px solid #e5e7eb",borderRadius:10,padding:10,marginBottom:8}}>
-            <div style={{fontWeight:700,fontSize:14}}>{x.name} <span style={{fontWeight:400,color:"#777"}}>· {x.game_name}</span></div>
+          {resRows.map(x=>{const v=resIn[x.key]||{}; return <div key={x.key} style={{border:"1px solid #e5e7eb",borderRadius:10,padding:10,marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:16}}>{x.game_name}</div><div style={{fontSize:11,color:"#999"}}>{x.name}</div>
             <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
               {pk ? <>
-                <input type="number" min="0" placeholder="Kills" value={v.k||""} onChange={e=>setV(x.user_id,{k:e.target.value})} style={inS}/>
-                <label style={{fontSize:13}}><input type="checkbox" checked={!!v.b} onChange={e=>setV(x.user_id,{b:e.target.checked})}/> Booyah</label>
-              </> : <input type="number" min="0" placeholder="Prize ₹" value={v.a||""} onChange={e=>setV(x.user_id,{a:e.target.value})} style={inS}/>}
+                <input type="number" min="0" placeholder="Kills" value={v.k||""} onChange={e=>setV(x.key,{k:e.target.value})} style={inS}/>
+                <label style={{fontSize:13}}><input type="checkbox" checked={!!v.b} onChange={e=>setV(x.key,{b:e.target.checked})}/> Booyah</label>
+              </> : <input type="number" min="0" placeholder="Prize ₹" value={v.a||""} onChange={e=>setV(x.key,{a:e.target.value})} style={inS}/>}
               <b style={{marginLeft:"auto",color:"#16a34a"}}>{R(resAmt(resM,v))}</b>
             </div></div>})}
           <div style={{position:"sticky",bottom:0,background:"#fff",paddingTop:10}}>
