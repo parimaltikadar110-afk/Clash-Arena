@@ -39,7 +39,7 @@ const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$
 // Purono spelling "DUO PR KILL" DB-te thakleo app-e "DUO PER KILL" hishebe dekhabe (tab/rules na harano jonno)
 const fixMode = m => /^DUO\s+PR\s+KILL$/i.test(String(m||"").trim()) ? "DUO PER KILL" : m;
 const isPK = m => /PER\s+KILL/i.test(String(m||""));
-const pkPool = (perKill,booyah,slots,cap) => (+booyah||0) + (+perKill||0)*(+slots||0)*(+cap||0);
+const pkPool = (perKill,booyah,slots) => (+booyah||0) + (+perKill||0)*(+slots||0);
 const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title),mode:fixMode(x.mode)}));
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
 
@@ -481,7 +481,7 @@ export default function App() {
       mode:String(src.mode||T[0]).trim(),
       map:String(src.map||"BERMUDA").trim()||"BERMUDA",
       slots:slotsN,
-      prize: pk ? pkPool(src.perKill,src.booyah,slotsN,src.killCap) : (+src.prize||0), per_kill: pk?(+src.perKill||0):0, booyah_bonus: pk?(+src.booyah||0):0, kill_cap: pk?(+src.killCap||0):0,
+      prize: pk ? pkPool(src.perKill,src.booyah,slotsN) : (+src.prize||0), per_kill: pk?(+src.perKill||0):0, booyah_bonus: pk?(+src.booyah||0):0,
       fee:+src.fee||0,
       starts_at:isNaN(starts.getTime())?null:starts.toISOString(),
       status:String(src.status||"upcoming"),
@@ -495,7 +495,7 @@ export default function App() {
     if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     if(!f.t||!f.d) return say("Title and start time are required",1);
     if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Per kill ba booyah er amount din",1);
-    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,killCap:f.kc,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
+    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
     if(!row.starts_at) return say("Start time is invalid",1);
     const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
     if(error) return say(error.message,1);
@@ -516,7 +516,7 @@ export default function App() {
         mode:f.bulkModeGame||T[0],
         map:f.bulkMap||"BERMUDA",
         slots:f.bulkSlots,
-        prize:f.bulkPrize, perKill:f.bulkPk, booyah:f.bulkBk, killCap:f.bulkKc,
+        prize:f.bulkPrize, perKill:f.bulkPk, booyah:f.bulkBk,
         fee:f.bulkFee,
         start:new Date(start.getTime()+i*gap*60000).toISOString(),
         thumbnail:f.th,
@@ -563,7 +563,6 @@ export default function App() {
           let amount=+v.a;
           if(pk){
             const k=Math.max(0,Math.floor(+v.k||0));
-            if(m.kill_cap>0 && k>m.kill_cap) {say(`Kill cap ${m.kill_cap}, ei player ${k} kill pelo`,1);return false}
             amount = k*(+m.per_kill||0) + (String(v.b)==="1" ? (+m.booyah_bonus||0) : 0);
           }
           if(!(amount>0)) {say("Payout 0 hocche. Kills / booyah check korun.",1);return false}
@@ -572,7 +571,7 @@ export default function App() {
         },
         pk ? {w:"0",k:"0",b:"0"} : {w:"0",a:String(Math.max(1,+m.prize||0))},
         {btn:"Pay prize", note: pk
-          ? `Per kill ₹${m.per_kill} · Booyah ₹${m.booyah_bonus} · Kill cap ${m.kill_cap}`
+          ? `Per kill ₹${m.per_kill} · Booyah ₹${m.booyah_bonus}`
           : `Joined players: ${rows.length} · Maximum payout for this match: ₹${m.prize}`}
       );
     }catch(e){say(e.message||"Could not load joined players.",1)}
@@ -765,7 +764,7 @@ export default function App() {
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
         </section>}
         <div className="tabsX">{[["prize","🏆","Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
-        {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4><p>Per kill ₹{m.per_kill} · Booyah bonus ₹{m.booyah_bonus} · Max kills paid: {m.kill_cap||"no limit"}</p></div>}
+        {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4><p>Per kill ₹{m.per_kill} · Booyah bonus ₹{m.booyah_bonus}</p></div>}
 {tabK==="prize"&&!isPK(m?.mode)&&<div className="prizeCard"><h4>Prize Distribution</h4>{splitPrize(m.prize).map((a,i)=><div key={i} className={"pzRow"+(i===0||i===2?" g":i===1?" s":"")}><span>{i<3?["🥇","🥈","🥉"][i]:"🎖️"} {i+1}</span><b className="amt">₹{a}</b></div>)}<p className="hint">Winners are paid to wallet by admin after results.</p></div>}
         {tabK==="players"&&<div className="mdPanel">{players.length?players.map((p,i)=><div className="plyRow" key={i}><i>{i+1}</i><Avatar s={30}/><b>{p.game_name}</b>{mySlots.some(s=>s.game_name===p.game_name)&&<span className="you">You</span>}</div>):<p className="hint">No one has joined yet. Be the first!</p>}</div>}
         {tabK==="rules"&&<div className="mdPanel"><div className="rulesBox">{ru||"Rules have not been added yet."}</div></div>}
@@ -869,8 +868,7 @@ export default function App() {
                 {isPK(f.g||T[0]) ? <>
                   {inp("pk","Per kill ₹","number")}
                   {inp("bk","Booyah (1st place) bonus ₹","number")}
-                  {inp("kc","Max kills paid per player","number")}
-                  <small className="fieldHint">Prize pool auto: ₹{pkPool(f.pk,f.bk,+f.s||32,f.kc)}</small>
+                  <small className="fieldHint">Prize pool auto: ₹{pkPool(f.pk,f.bk,+f.s||32)}</small>
                 </> : inp("p","Prize ₹","number")}
                 {inp("fee","Entry fee ₹","number")}
                 {inp("d","Start time","datetime-local")}
@@ -898,8 +896,7 @@ export default function App() {
                 {isPK(f.bulkModeGame||T[0]) ? <>
                   {inp("bulkPk","Per kill ₹","number")}
                   {inp("bulkBk","Booyah (1st place) bonus ₹","number")}
-                  {inp("bulkKc","Max kills paid per player","number")}
-                  <small className="fieldHint">Prize pool auto: ₹{pkPool(f.bulkPk,f.bulkBk,+f.bulkSlots||32,f.bulkKc)}</small>
+                  <small className="fieldHint">Prize pool auto: ₹{pkPool(f.bulkPk,f.bulkBk,+f.bulkSlots||32)}</small>
                 </> : inp("bulkPrize","Prize pool ₹","number")}
                 {inp("bulkStart","First match start","datetime-local")}
                 <div><label>Initial status</label><select value={f.bulkStatus||"upcoming"} onChange={e=>setF({...f,bulkStatus:e.target.value})}><option value="upcoming">Upcoming</option><option value="live">Live now</option></select></div>
