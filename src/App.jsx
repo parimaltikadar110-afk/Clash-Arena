@@ -38,6 +38,7 @@ const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$/,"").trim(); return c||s };
 // Purono spelling "DUO PR KILL" DB-te thakleo app-e "DUO PER KILL" hishebe dekhabe (tab/rules na harano jonno)
 const fixMode = m => /^DUO\s+PR\s+KILL$/i.test(String(m||"").trim()) ? "DUO PER KILL" : m;
+const normLink = v => { v=String(v||"").trim(); if(!v) return ""; if(/^https?:\/\//i.test(v)) return v; if(v.startsWith("@")) return "https://t.me/"+v.slice(1); return "https://"+v.replace(/^\/+/,""); };
 const isPK = m => /PER\s+KILL/i.test(String(m||""));
 const pkPool = (perKill,booyah,slots) => (+booyah||0) + (+perKill||0)*(+slots||0);
 const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title),mode:fixMode(x.mode)}));
@@ -88,7 +89,7 @@ function Landing({open,download,showDl,support}) {
     <section className="lsec" style={{background:"#f9fafb"}}><h2>How it works</h2><div className="l3">{[["1","Sign up","Create your free account in a minute."],["2","Add money & join","Deposit by UPI and join a match that fits you."],["3","Win & withdraw","Top the room, get paid and withdraw to UPI."]].map(([n,t,d])=><div className="lc" key={n}><span className="em">{n}</span><b>{t}</b><p>{d}</p></div>)}</div></section>
     <section className="lsec"><h2>Game modes</h2><div className="chips">{T.map(t=><i key={t}>{t}</i>)}</div></section>
     <section className="lsec" style={{textAlign:"center",background:"#fef2f2"}}><h2>Need help?</h2><p style={{marginBottom:14,color:"#555"}}>Our support team is here for you.</p>
-      {support?<a className="lb2 rd" style={{textDecoration:"none",display:"inline-block"}} href={support} target="_blank" rel="noreferrer">Contact support</a>:<button className="lb2 rd" onClick={()=>open("in")}>Login to continue</button>}</section>
+      {support?<a className="lb2 rd" style={{textDecoration:"none",display:"inline-block"}} href={normLink(support)} target="_blank" rel="noreferrer">Contact support</a>:<button className="lb2 rd" onClick={()=>open("in")}>Login to continue</button>}</section>
     <div className="lf">© {new Date().getFullYear()} ClashX7 · 18+ only · Play responsibly<br/>Games involve skill and risk. Never play with money you can't afford to lose.</div>
   </div>);
 }
@@ -636,7 +637,7 @@ export default function App() {
   const saveRules = async (m,text) => run(supabase.from("mode_rules").upsert(m.map(k=>({mode:k,rules:text,updated_at:new Date().toISOString()}))), m.length>1?"Rules saved for ALL modes":"Rules saved");
   const saveLinks = () => {
     const links={telegram:(f.telegram??S.support_links?.telegram??"").trim(),whatsapp:(f.whatsapp??S.support_links?.whatsapp??"").trim()};
-    return rpc("admin_save_support_links",{p_telegram:links.telegram,p_whatsapp:links.whatsapp},"Support links saved");
+    return rpc("admin_save_support_links",{p_telegram:normLink(links.telegram),p_whatsapp:normLink(links.whatsapp)},"Support links saved");
   };
 
   // ---- UI pieces ----
@@ -815,7 +816,7 @@ export default function App() {
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
       {[["Account Settings","account"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
-      {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={links.telegram} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
+      {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
     }
@@ -829,7 +830,7 @@ export default function App() {
         {inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" disabled={wd.enabled===false} onClick={withdraw}>Withdraw</button></>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
-    if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={links.telegram} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={links.whatsapp} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
+    if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={normLink(links.telegram)} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
 
     const actualBack=page==="match"?null:back;
     return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</span>{t}</div><div className="pgb">{h}</div></>
