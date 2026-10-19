@@ -32,19 +32,11 @@ const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://
 const T = ["SOLO BR","DUO BR","DUO PR KILL","SOLO PER KILL","LONE WOLF","LW HEAD","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
-const keepNote = x => !/cancel/i.test(x.title||""); // "Match cancelled" notice user-er inbox-e dekhabe na
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
-// ---- Native push: Median.co wrapper + OneSignal native SDK (Android). Browser web push is intentionally disabled. ----
-const MEDIAN = (typeof window !== "undefined" && (window.median || window.gonative)) || null;
-const IS_NATIVE = !!MEDIAN || /gonative|ClashX7App/i.test(UA); // true only inside the Android app wrapper
-const OS_NATIVE = () => (window.median || window.gonative)?.onesignal || null; // Median JS bridge to OneSignal
-const nativePush = {
-  register: async () => { const os = OS_NATIVE(); if(!os?.registerForPush) return false; try{ await os.registerForPush(); return true }catch{ return false } }, // Android only shows the permission prompt if not granted yet
-  login: async id => { const os = OS_NATIVE(); if(!os?.login || !id) return; try{ await os.login(String(id)) }catch{} }, // links this phone to the player's Supabase user id
-  logout: async () => { const os = OS_NATIVE(); if(!os?.logout) return; try{ await os.logout() }catch{} },
-  info: async () => { const os = OS_NATIVE(); if(!os?.info) return null; try{ return await os.info() }catch{ return null } }, // includes the OneSignal subscription id
-};
+// Match title-er sheshe " #1", " #2" thakle shoriye dey (match number alada, card-er niche chhoto kore dekhay)
+const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$/,"").trim(); return c||s };
+const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title)}));
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
 
 const shrink = (file,max=1000,q=.72) => new Promise((ok,no)=>{ const img=new Image(); img.onload=()=>{ const k=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
@@ -140,11 +132,10 @@ function Skeleton({onRetry,onLogout}) {
 
 export default function App() {
   const [session,setSession] = useState(BOOT.c?BOOT.s:null), [ready,setReady] = useState(!!BOOT.c || !BOOT.s), [hash,setHash] = useState(window.location.hash);
-  const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(BOOT.c?.M||[]), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
-  const [deps,setDeps] = useState([]), [notifs,setNotifs] = useState(BOOT.c?.notifs||[]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false), [pushOn,setPushOn] = useState(false);
+  const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
+  const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
-  const [pushInfo,setPushInfo] = useState(null);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
@@ -236,8 +227,6 @@ export default function App() {
   };
   const open = m => { setMode(m); setF({}); setAuthOpen(true) };
 
-  // Native only: on launch, register with the OneSignal SDK and request notification permission if not granted yet
-  useEffect(() => { if(!IS_NATIVE) return; nativePush.register().then(setPushOn).catch(()=>{}) }, []);
 
   useEffect(()=>{
     const h = () => setHash(window.location.hash);
@@ -298,11 +287,11 @@ export default function App() {
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
-    const [p,m,j,t,l,r,n,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
-      q("notifications").order("created_at",{ascending:false}).limit(30), q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
-    setMe(p.data); setM(m.data||[]); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
-    setNotifs((n.data||[]).filter(keepNote)); setRules(Object.fromEntries((ru.data||[]).map(x=>[x.mode,x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
-    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:m.data||[],joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[x.mode,x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])),notifs:(n.data||[]).filter(keepNote).slice(0,20)})) }catch{}
+    const [p,m,j,t,l,r,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
+      q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
+    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
+    setRules(Object.fromEntries((ru.data||[]).map(x=>[x.mode,x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[x.mode,x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
@@ -318,57 +307,16 @@ export default function App() {
     return()=>clearInterval(t);
   },[slotUI?.m?.id]);
 
-  // LIVE: match create / room / balance / notification change hole sathe sathe screen update (refresh/redeploy lagbe na)
+  // LIVE: match create / room / balance change hole sathe sathe screen update (refresh/redeploy lagbe na)
   useEffect(()=>{
     if(!session) return; let t; const ping = () => { clearTimeout(t); t = setTimeout(load,250) };
     const ch = supabase.channel("x7-live");
-    ["matches","match_rooms","notifications","profiles","deposits","mode_rules","withdrawals","transactions"].forEach(tb => ch.on("postgres_changes",{event:"*",schema:"public",table:tb},ping));
+    ["matches","match_rooms","profiles","deposits","mode_rules","withdrawals","transactions"].forEach(tb => ch.on("postgres_changes",{event:"*",schema:"public",table:tb},ping));
     ch.subscribe(st=>setLive(st==="SUBSCRIBED"));
     const vis = () => document.visibilityState==="visible" && load(); document.addEventListener("visibilitychange",vis);
     return()=>{supabase.removeChannel(ch);setLive(false);document.removeEventListener("visibilitychange",vis);clearTimeout(t)};
   },[session,load]);
 
-  // Tie this phone to the signed-in player so notifications can be targeted to the native app
-  useEffect(() => { if(IS_NATIVE && me?.id) nativePush.login(me.id) }, [me?.id]);
-
-  // OneSignal connection status for the admin Notify tab (phone side only; the REST key stays on the server)
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const native = IS_NATIVE;
-      const info = native ? await nativePush.info() : null;
-      const id = info?.oneSignalUserId || info?.oneSignalPlayerId || info?.playerId || null;
-      if (alive) setPushInfo({ native, bridge: !!OS_NATIVE(), id });
-    })();
-    return () => { alive = false };
-  }, [tab, me?.id]);
-
-  // Read the OneSignal Subscription (Player) ID from the native SDK and store it on the backend for this user.
-  // Retries for a short while (permission may be granted a moment later), and again when the app comes back to the foreground.
-  useEffect(() => {
-    if(!IS_NATIVE || !me?.id || !session?.access_token) return;
-    let stopped = false, tries = 0, timer;
-    const syncOnce = async () => {
-      const info = await nativePush.info();
-      const playerId = info?.oneSignalUserId || info?.oneSignalPlayerId || info?.playerId || null;
-      if(!playerId) return false;
-      try{
-        const r = await fetch("/api/subscribe-push",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({playerId,platform:"android"})});
-        return r.ok;
-      }catch{ return false }
-    };
-    const loop = async () => {
-      if(stopped) return;
-      if((await syncOnce()) || ++tries >= 10) return;
-      timer = setTimeout(loop, 3000);
-    };
-    loop();
-    const onVisible = () => { if(document.visibilityState==="visible") syncOnce() };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", onVisible) };
-  }, [me?.id, session?.access_token]);
-  const enablePush = async () => { const ok = await nativePush.register(); setPushOn(ok);
-    say(ok ? "Phone notifications turned on ✅" : "Notifications are only available in the ClashX7 Android app.", !ok) };
 
   const go = (p,init={}) => {setF(init);setPage(p)};
   const inp = (k,l,t="text") => (<div className="field"><label>{l}</label><input type={t} value={f[k]??""} onChange={e=>setF({...f,[k]:e.target.value})}/></div>);
@@ -398,7 +346,7 @@ export default function App() {
     const r = await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,password:p})}); const j = await r.json().catch(()=>({}));
     if(!r.ok) return say(j.error||"Login failed",1);
     const {error} = await supabase.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); if(error) say(error.message,1) };
-  const logout = async () => { await nativePush.logout();
+  const logout = async () => {
     await supabase.auth.signOut(); try{localStorage.removeItem("x7cache")}catch{} setMe(null); setPage(null); setF({}) };
 
   // ---- player actions ----
@@ -519,17 +467,13 @@ export default function App() {
     }catch(e){say(e.message,1)} setBusy(false) };
 
   // ---- admin / moderator actions ----
-  const notify = async (body) => { try{ const r = await api("notify",{...body,channel:"android_native"});
-    if(r.note) { say(r.note,1); return false }
-    say(r.message || "Notification sent successfully!");
-    return true }catch(e){ say("Notification failed: "+e.message,1); return false } };
 
   const buildMatchRow = (src={}) => {
     const pv=String(src.private||src.type||"0").toLowerCase();
     const isPrivate=pv==="1"||pv==="true"||pv==="private";
     const starts=new Date(src.start||src.d||src.starts_at||"");
     return {
-      title:String(src.title||"").trim(),
+      title:cleanTitle(src.title),
       mode:String(src.mode||T[0]).trim(),
       map:String(src.map||"BERMUDA").trim()||"BERMUDA",
       slots:+src.slots||32,
@@ -550,7 +494,7 @@ export default function App() {
     if(!row.starts_at) return say("Start time is invalid",1);
     const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
     if(error) return say(error.message,1);
-    setM(a=>[...a.filter(x=>x.id!==nm.id),nm].sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at)));
+    setM(a=>[...a.filter(x=>x.id!==nm.id),...cleanMatches([nm])].sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at)));
     say("Match created — players can see it now ✅");
     setF({}); load()
   };
@@ -561,8 +505,7 @@ export default function App() {
     const start=new Date(f.bulkStart||"");
     if(!f.bulkTitle?.trim() || isNaN(start.getTime())) return [];
     return Array.from({length:count},(_,i)=>{
-      const titleBase=f.bulkTitle.trim();
-      const title=(f.bulkNumber!=="0" || count>1) ? `${titleBase} #${i+1}` : titleBase;
+      const title=f.bulkTitle.trim();
       return buildMatchRow({
         title,
         mode:f.bulkModeGame||T[0],
@@ -625,10 +568,8 @@ export default function App() {
     ask(`Room details · #${m.id}`,
       [["r","Room ID","text"],["p","Room password","text"]],
       async v=>{
-        const oldR=o.room_id||"", oldP=o.room_pass||"";
         if(!v.r||!v.p) {say("Room ID and password are required",1);return false}
         if(!await run(supabase.from("match_rooms").upsert({match_id:m.id,room_id:v.r,room_pass:v.p}),"Room saved")) return false;
-        if(v.r!==oldR||v.p!==oldP) await notify({match_id:m.id,title:"🎮 Room ID & password updated",body:`${m.title} room is ready. Room ID: ${v.r} · Pass: ${v.p}`});
       },{r:o.room_id||"",p:o.room_pass||""});
   };
 
@@ -642,14 +583,14 @@ export default function App() {
       if(!v.title?.trim() || isNaN(starts)) { say("Title and valid start time are required",1); return false }
       if((+v.s||0) < (m.filled||0)) { say(`Slots cannot be less than ${m.filled} (already joined)`,1); return false }
       return run(supabase.from("matches").update({
-        title:v.title.trim(), mode:v.g, map:v.m||"BERMUDA", slots:+v.s||m.slots,
+        title:cleanTitle(v.title), mode:v.g, map:v.m||"BERMUDA", slots:+v.s||m.slots,
         prize:+v.p||0, fee:+v.fee||0, starts_at:starts.toISOString()
       }).eq("id",m.id), "Match updated ✅");
     },
     {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), fee:String(m.fee), d:toLocalInput(m.starts_at)},
     {btn:"Save changes", note:"Prize/fee changes affect new joins and payouts. Check before saving."});
 
-  const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s).then(ok=>{ if(ok&&s==="live") notify({match_id:m.id,title:"🔴 Match is LIVE",body:m.title+" has started. Join the room now!"}) });
+  const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s);
   const pay = m => openPayWinner(m);
   const convertBal = x => ask(`Convert balance · ${x.name||x.email||"User"}`,
     [["dir","Direction","select",[["winnings","Winnings → Deposit balance"],["balance","Deposit balance → Winnings"]]],["a","Amount ₹","number"]],
@@ -792,7 +733,7 @@ export default function App() {
 
   const stTxt = s => <span style={{color:s==="approved"?"#16a34a":s==="pending"?"#d97706":"#dc2626",fontWeight:600,textTransform:"capitalize"}}>{s}</span>;
   const sub = () => {
-    const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",notifs:"profile",giftcode:"profile",match:null,deposit:null,withdraw:null}[page]??null;
+    const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",giftcode:"profile",match:null,deposit:null,withdraw:null}[page]??null;
     let t="",h=null;
 
     if(page==="match"){
@@ -840,15 +781,12 @@ export default function App() {
         {mine.length>0&&<><p style={{margin:"18px 0 4px",fontWeight:600}}>Recent deposits</p>{mine.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}</>
     }
 
-    if(page==="notifs"){t="Notifications";localStorage.setItem("x7seen",Date.now());
-      h=<>{IS_NATIVE&&!pushOn&&<button className="btn" style={{marginBottom:12}} onClick={enablePush}>🔔 Turn on phone notifications</button>}{pushOn&&<p style={{fontSize:11,color:"#16a34a",marginBottom:8}}>✅ Phone notifications are on</p>}
-        {notifs.length?notifs.map(n=><div className="mi" key={n.id} style={{cursor:"default",display:"block"}}><b>{n.title}</b><div style={{fontSize:12,color:"#444",marginTop:2}}>{n.body}</div><div style={{fontSize:10,color:"#999",marginTop:4}}>{fmt(n.created_at)}</div></div>):<p className="empty">No notifications yet.</p>}</>}
 
     if(page==="profile"){
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      {[["Account Settings","account"],["Notifications","notifs"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+      {[["Account Settings","account"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={links.telegram} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
@@ -872,10 +810,10 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Rules","Notify","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
+      ? ["Dashboard","Matches","Rules","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
       : isActingAdmin
-        ? ["Matches","Rules","Notify","Users"]
-        : ["Matches","Rules","Notify"];
+        ? ["Matches","Rules","Users"]
+        : ["Matches","Rules"];
     const cur = TABS.includes(at)?at:TABS[0];
 
     if(cur==="Dashboard"){
@@ -916,7 +854,6 @@ export default function App() {
                 {inp("fee","Entry fee ₹","number")}
                 {inp("d","Start time","datetime-local")}
                 <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
-                <div><label>Notify</label><select value={f.nf||"1"} onChange={e=>setF({...f,nf:e.target.value})}><option value="1">Yes</option><option value="0">No</option></select></div>
               </div>
               <label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
               <label>Or upload thumbnail</label><input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
@@ -941,7 +878,6 @@ export default function App() {
                 {inp("bulkStart","First match start","datetime-local")}
                 <div><label>Initial status</label><select value={f.bulkStatus||"upcoming"} onChange={e=>setF({...f,bulkStatus:e.target.value})}><option value="upcoming">Upcoming</option><option value="live">Live now</option></select></div>
                 <div><label>Match type</label><select value={f.bulkPrivate||"0"} onChange={e=>setF({...f,bulkPrivate:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
-                <div><label>Number titles</label><select value={f.bulkNumber||"1"} onChange={e=>setF({...f,bulkNumber:e.target.value})}><option value="1">Yes · #1, #2, #3…</option><option value="0">No · same title</option></select></div>
               </div>
               <label>Same thumbnail for all matches (optional)</label>
               <input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
@@ -954,7 +890,6 @@ export default function App() {
                 {bulkRows().length>8&&<small className="fieldHint">+ {bulkRows().length-8} more matches will be created.</small>}
                 {!bulkRows().length&&<small className="fieldHint">Enter the title and first start time to preview the schedule.</small>}
               </div>
-              <label>Send one notification after bulk create</label><select value={f.bulkNotify||"1"} onChange={e=>setF({...f,bulkNotify:e.target.value})}><option value="1">Yes</option><option value="0">No</option></select>
               <button className="btn" disabled={busy||!bulkRows().length} onClick={bulkCreate}>{busy?"Creating…":`Create ${Math.max(1,+f.bulkCount||1)} matches`}</button>
             </div>}
         </>}
@@ -973,8 +908,6 @@ export default function App() {
         <button className="btn" onClick={()=>saveRules([rm],txt)}>Save for {rm}</button>
         <button className="btn" style={{background:"#111",marginTop:8}} onClick={()=>window.confirm("Replace rules of ALL modes with this text?")&&saveRules(T,txt)}>Apply this to ALL modes</button></>}
 
-    if(cur==="Notify") b=<><p style={{fontSize:12,color:"#555",marginBottom:8}}>Push notification + in-app notification for players who enabled notifications.</p><div style={{fontSize:12,background:"#f4f4f4",padding:"8px 10px",borderRadius:8,marginBottom:10,wordBreak:"break-all",color:"#333"}}>{!pushInfo ? "OneSignal: checking..." : !pushInfo.native ? "OneSignal: this is the browser, not the ClashX7 Android app. This phone only receives push in the installed app." : pushInfo.id ? "OneSignal connected on this phone. Player ID: "+pushInfo.id : "OneSignal: app opened but no player ID yet. Allow notifications for ClashX7 in phone settings, then close and reopen the app."}</div>{inp("nt","Title")}<label>Message</label><textarea rows={4} value={f.nb??""} onChange={e=>setF({...f,nb:e.target.value})}/>{inp("ne","Only this user's email (leave blank = everyone)","email")}
-      <button className="btn" disabled={busy} onClick={async()=>{if(!f.nt) return say("Title required",1); setBusy(true); if(await notify({title:f.nt,body:f.nb,email:f.ne})) setF({}); setBusy(false)}}>Send notification</button></>;
 
     if(cur==="Deposits"){const L=deps.filter(d=>f.dp==="all"?true:d.status==="pending"); b=<><div style={{margin:"0 0 8px"}}><button className="sm" onClick={()=>setF({dp:"pending"})}>Pending</button><button className="sm" onClick={()=>setF({dp:"all"})}>All</button></div>
       {L.length?<div className="acards">{L.map(d=><div className="ucard" key={d.id}><div className="uhead"><b>{allU.find(x=>x.id===d.user_id)?.name||"User"}</b>{stTxt(d.status)}</div>
@@ -1014,7 +947,7 @@ export default function App() {
         <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Only the main Admin can change staff roles. Acting Admin sits between Moderator and Admin.</p>
         {staffers.length ? <div className="acards">{staffers.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}</b><span className={"pill "+x.role}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span></div><div className="uact"><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></div></div>)}</div> : <p className="empty">No moderators or acting admins yet.</p>}
         <p className="sh">Role powers</p>
-        <div className="roleInfo"><div><b>Moderator</b><small>Room ID/Pass, rules, notifications and Live/Done status. Cannot create or edit match details.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
+        <div className="roleInfo"><div><b>Moderator</b><small>Room ID/Pass, rules and Live/Done status. Cannot create or edit match details.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
       </div>;
     }
 
@@ -1088,11 +1021,10 @@ export default function App() {
   if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
   if(payReturn) return wrap(<div className="pgb" style={{textAlign:"center",padding:"80px 20px"}}><div style={{fontSize:44}}>⏳</div><h3 style={{marginTop:14}}>Checking your payment…</h3><p className="hint">Please wait. Your balance will update shortly.</p><button className="btn" style={{marginTop:18}} onClick={()=>{setPayReturn(null);setNav("wallet")}}>Go to Wallet</button></div>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
-  const seen = +localStorage.getItem("x7seen")||0, unread = notifs.filter(n=>+new Date(n.created_at)>seen).length;
   const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
   return wrap(<>{page ? sub() : <>
     <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></span><span className="brand"><Logo s={34}/>ClashX7</span>
-      <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>go("notifs")}>🔔{unread>0&&<sup style={{color:"var(--r)",fontWeight:800}}> {unread}</sup>}</button><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
+      <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
     {body()}
     </>}{!page&&navBar}</>);
 }
@@ -1141,7 +1073,6 @@ const css = `
 .sm{padding:6px 9px;border:1px solid #ddd;background:#fff;border-radius:6px;cursor:pointer;margin:2px;font-size:12px}.sm:disabled,.btn:disabled{opacity:.6}
 .ov{position:fixed;inset:0;background:#0008;display:grid;place-items:center;z-index:80;padding:16px}.dl{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:400px;max-height:90vh;overflow:auto}
 .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;z-index:99;max-width:92vw;box-shadow:0 4px 14px #0004}.toast.er{background:#b91c1c}
-.bn{margin:8px;padding:11px;background:#fef2f2;color:var(--r);border-radius:8px;font-size:12px;font-weight:700;text-align:center;cursor:pointer}
 .wc{background:linear-gradient(135deg,#f5403a,#7f1d1d);color:#fff;border-radius:14px;padding:18px}.wc h2{font-size:32px;margin:2px 0 12px}.wsplit{display:flex;gap:10px}.wsplit div{flex:1;background:#fff2;border-radius:8px;padding:8px 10px;font-size:11px}.wsplit b{display:block;font-size:16px;margin-top:2px}
 .sh{margin:16px 0 4px;font-weight:700}.lv{font-size:11px;color:#999}.lv.on{color:#16a34a}
 .gameSaved{display:inline-block;margin-top:7px;padding:5px 9px;border-radius:99px;background:#f3f4f6;color:#444;font-size:11px}
