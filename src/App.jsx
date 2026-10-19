@@ -681,7 +681,7 @@ export default function App() {
         <div className="cxL">
           <div className="cxTags">{[m.mode,m.map,`${m.slots} SLOTS`].filter(Boolean).map((t,i)=><span key={i}>{t}</span>)}</div>
           <div className="cxTitle">{m.title}</div>
-          <div className="cxPrize">Prize Pool - ₹{m.prize}</div>
+          <div className="cxPrize">{isPK(m.mode)?`Per kill ${R(m.per_kill)} · Booyah ${R(m.booyah_bonus)}`:`Prize Pool - ₹${m.prize}`}</div>
         </div>
         <div className="cxR">
           {m.thumbnail_url
@@ -763,9 +763,22 @@ export default function App() {
           <div className="copyRow"><span>Room ID<b>{r.room_id}</b></span><button className="sm" onClick={()=>copyText(r.room_id)}>Copy</button></div>
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
         </section>}
-        <div className="tabsX">{[["prize","🏆","Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
-        {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4><p>Per kill ₹{m.per_kill} · Booyah bonus ₹{m.booyah_bonus}</p></div>}
-{tabK==="prize"&&!isPK(m?.mode)&&<div className="prizeCard"><h4>Prize Distribution</h4>{splitPrize(m.prize).map((a,i)=><div key={i} className={"pzRow"+(i===0||i===2?" g":i===1?" s":"")}><span>{i<3?["🥇","🥈","🥉"][i]:"🎖️"} {i+1}</span><b className="amt">₹{a}</b></div>)}<p className="hint">Winners are paid to wallet by admin after results.</p></div>}
+        <div className="tabsX">{[["prize","🏆",isPK(m?.mode)?"Reward":"Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
+        {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
+    <div style={{background:"#fff1f0",border:"1px solid #fecaca",borderRadius:12,padding:"14px 10px",textAlign:"center"}}>
+      <div style={{fontSize:11,color:"#777"}}>Per kill</div>
+      <div style={{fontSize:24,fontWeight:800,color:"#dc2626",marginTop:4}}>{R(m.per_kill)}</div>
+    </div>
+    <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"14px 10px",textAlign:"center"}}>
+      <div style={{fontSize:11,color:"#777"}}>Booyah bonus</div>
+      <div style={{fontSize:24,fontWeight:800,color:"#b45309",marginTop:4}}>{R(m.booyah_bonus)}</div>
+    </div>
+  </div>
+  <p style={{fontSize:12,color:"#666",lineHeight:1.6,margin:"12px 2px 0"}}>Every kill earns {R(m.per_kill)}. The Booyah winner (1st place) gets an extra {R(m.booyah_bonus)}. Payouts are made by admin after the match.</p>
+</div>}
+{tabK==="prize"&&!isPK(m?.mode)&&!["SOLO BR","DUO BR"].includes(String(m?.mode||"").trim().toUpperCase())&&<div className="prizeCard"><h4>Prize Pool</h4><div style={{background:"#fff1f0",border:"1px solid #fecaca",borderRadius:12,padding:"16px 10px",textAlign:"center",marginTop:10}}><div style={{fontSize:11,color:"#777"}}>Total prize pool</div><div style={{fontSize:26,fontWeight:800,color:"#dc2626",marginTop:4}}>{R(m.prize)}</div></div><p style={{fontSize:12,color:"#666",lineHeight:1.6,margin:"12px 2px 0"}}>Winners are paid to wallet by admin after results.</p></div>}
+{tabK==="prize"&&["SOLO BR","DUO BR"].includes(String(m?.mode||"").trim().toUpperCase())&&<div className="prizeCard"><h4>Prize Distribution</h4>{splitPrize(m.prize).map((a,i)=><div key={i} className={"pzRow"+(i===0||i===2?" g":i===1?" s":"")}><span>{i<3?["🥇","🥈","🥉"][i]:"🎖️"} {i+1}</span><b className="amt">₹{a}</b></div>)}<p className="hint">Winners are paid to wallet by admin after results.</p></div>}
         {tabK==="players"&&<div className="mdPanel">{players.length?players.map((p,i)=><div className="plyRow" key={i}><i>{i+1}</i><Avatar s={30}/><b>{p.game_name}</b>{mySlots.some(s=>s.game_name===p.game_name)&&<span className="you">You</span>}</div>):<p className="hint">No one has joined yet. Be the first!</p>}</div>}
         {tabK==="rules"&&<div className="mdPanel"><div className="rulesBox">{ru||"Rules have not been added yet."}</div></div>}
         {already&&<section className="detailSection"><h4>🎟️ Your slots ({mySlots.length})</h4>
