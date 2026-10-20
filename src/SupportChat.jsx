@@ -111,6 +111,8 @@ export default function SupportChat({ supabase, mode = "user" }) {
   const [msgs, setMsgs] = useState([]);
   const [threads, setThreads] = useState([]);
   const [active, setActive] = useState(null);
+  const [activeName, setActiveName] = useState("");
+  const [pollErr, setPollErr] = useState("");
   const [text, setText] = useState("");
   const [pending, setPending] = useState(null); // { path, type } uploaded, not sent yet
   const [err, setErr] = useState("");
@@ -121,20 +123,20 @@ export default function SupportChat({ supabase, mode = "user" }) {
 
   const loadMine = useCallback(async () => {
     const { data, error } = await supabase.rpc("support_fetch_mine");
-    if (error) return setErr(error.message);
-    setMsgs(data || []);
+    if (error) return setPollErr(error.message);
+    setPollErr(""); setMsgs(data || []);
   }, [supabase]);
 
   const loadThreads = useCallback(async () => {
     const { data, error } = await supabase.rpc("support_admin_threads");
-    if (error) return setErr(error.message);
-    setThreads(data || []);
+    if (error) return setPollErr(error.message);
+    setPollErr(""); setThreads(data || []);
   }, [supabase]);
 
   const loadAdminMsgs = useCallback(async uid => {
     const { data, error } = await supabase.rpc("support_admin_messages", { p_user: uid });
-    if (error) return setErr(error.message);
-    setMsgs(data || []);
+    if (error) return setPollErr(error.message);
+    setPollErr(""); setMsgs(data || []);
   }, [supabase]);
 
   useEffect(() => {
@@ -210,7 +212,7 @@ export default function SupportChat({ supabase, mode = "user" }) {
         ))}
         <div ref={endRef} />
       </div>
-      {err && <p className="scErr">{err}</p>}
+      {(err || pollErr) && <p className="scErr">{err || pollErr}</p>}
       {pending && (
         <div className="scChip">
           <span>{pending.type === "image" ? "Photo" : "Video"} attached</span>
@@ -246,11 +248,11 @@ export default function SupportChat({ supabase, mode = "user" }) {
   } else if (!active) {
     body = (
       <>
-        {err && <p className="scErr">{err}</p>}
+        {(err || pollErr) && <p className="scErr">{err || pollErr}</p>}
         {threads.length === 0 && <p style={{ color: "#888", fontSize: 13 }}>No active chats.</p>}
         {threads.map(t => (
-          <button key={t.thread_user} className="scThread" onClick={() => { setMsgs([]); setActive(t.thread_user); }}>
-            <b>Player {String(t.thread_user).slice(0, 8)}</b> · {time(t.last_at)}
+          <button key={t.thread_user} className="scThread" onClick={() => { setMsgs([]); setActiveName(t.player_name || "Player"); setActive(t.thread_user); }}>
+            <b>{t.player_name || "Player"}</b> · {time(t.last_at)}
             <span>{t.last_body || "[Attachment]"}</span>
           </button>
         ))}
@@ -259,7 +261,8 @@ export default function SupportChat({ supabase, mode = "user" }) {
   } else {
     body = (
       <>
-        <button className="scBack" onClick={() => { setActive(null); setMsgs([]); setText(""); setPending(null); }}>‹ Back</button>
+        <button className="scBack" onClick={() => { setActive(null); setActiveName(""); setMsgs([]); setText(""); setPending(null); }}>‹ Back</button>
+        <b style={{ display: "block", margin: "0 0 8px", fontSize: 15 }}>{activeName}</b>
         <div className="scNote">Messages and attachments are deleted 30 minutes after they are sent.</div>
         {chatView}
       </>
