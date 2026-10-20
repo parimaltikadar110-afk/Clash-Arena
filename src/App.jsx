@@ -889,7 +889,7 @@ export default function App() {
     const TABS = isAdmin
       ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
       : isActingAdmin
-        ? ["Matches","Leaderboard","Notifications","Rules","Users"]
+        ? ["Matches","Leaderboard","Notifications","Rules","Users","Support Chat"]
         : ["Matches","Rules"];
     const cur = TABS.includes(at)?at:TABS[0];
 
