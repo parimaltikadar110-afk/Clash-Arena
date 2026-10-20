@@ -140,7 +140,7 @@ export default function App() {
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
-  const [mlb,setMlb] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
+  const [mlb,setMlb] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
@@ -495,7 +495,7 @@ export default function App() {
   const addMatch = async () => {
     if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     if(!f.t||!f.d) return say("Title and start time are required",1);
-    if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Per kill ba booyah er amount din",1);
+    if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Please enter a per kill or booyah amount.",1);
     const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
     if(!row.starts_at) return say("Start time is invalid",1);
     const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
@@ -548,26 +548,34 @@ export default function App() {
   const openResults = async m => {
     setBusy(true);
     try{
-      const {data:ps,error}=await supabase.from("participants").select("user_id,game_name").eq("match_id",m.id).order("id");
+      const {data:ps,error}=await supabase.rpc("admin_match_players",{p_match:m.id});
       if(error) throw error;
-      const rows=(ps||[]).map((p,i)=>{const u=allU.find(x=>x.id===p.user_id)||{}; return {key:i,user_id:p.user_id,name:u.name||u.username||u.email||"Player",game_name:p.game_name||u.game_name||"-"}});
+      const rows=(ps||[]).map(p=>{const u=allU.find(x=>x.id===p.user_id)||{}; return {key:p.slot_no,user_id:p.user_id,name:u.name||u.username||u.email||"Player",game_name:p.game_name||u.game_name||"-"}});
       if(!rows.length) return say("No players joined this match.",1);
-      setResIn({}); setResRows(rows); setResM(m);
+      const {data:saved,error:e2}=await supabase.from("match_results").select("*").eq("match_id",m.id);
+      if(e2) throw e2;
+      const init={};
+      (saved||[]).forEach(r=>{init[r.slot_no]={k:String(r.kills||""),b:!!r.booyah,a:String(r.amount||"")}});
+      setResIn(init); setResRows(rows); setResEdit((saved||[]).length>0); setResM(m);
     }catch(e){say(e.message||"Could not load players",1)}
     finally{setBusy(false)}
   };
   const submitResults = async () => {
     const m=resM, pk=isPK(m.mode);
-    const payload=resRows.map(x=>{const v=resIn[x.key]||{}; return {user_id:x.user_id, kills:pk?Math.max(0,Math.floor(+v.k||0)):0, booyah:pk?!!v.b:false, amount:resAmt(m,v)}}).filter(x=>x.amount>0||x.kills>0);
+    const payload=resRows.map(x=>{const v=resIn[x.key]||{}; return {slot_no:x.key, user_id:x.user_id, kills:pk?Math.max(0,Math.floor(+v.k||0)):0, booyah:pk?!!v.b:false, amount:resAmt(m,v)}}).filter(x=>x.amount>0||x.kills>0);
     const total=payload.reduce((a,x)=>a+x.amount,0);
-    if(!payload.length) return say("Result input korun",1);
-    if(total>+m.prize) return say(`Total ₹${total} prize pool ₹${m.prize} er beshi`,1);
-    if(!window.confirm(`₹${total} ${payload.filter(x=>x.amount>0).length} jon player ke pay hobe ar match Played hobe. Confirm?`)) return;
+    if(!payload.length) return say("Please enter the results before submitting.",1);
+    if(total>+m.prize) return say(`Total ₹${total} exceeds the prize pool of ₹${m.prize}.`,1);
+    const payees=payload.filter(x=>x.amount>0).length;
+    const msg = resEdit
+      ? `Save changes? Any increased amounts will be paid to the players.`
+      : `Pay ₹${total} to ${payees} player(s) and mark this match as played?`;
+    if(!window.confirm(msg)) return;
     setBusy(true);
     try{
-      const {error}=await supabase.rpc("admin_submit_results",{p_match:m.id,p_results:payload});
+      const {error}=await supabase.rpc(resEdit ? "admin_edit_results" : "admin_submit_results",{p_match:m.id,p_results:payload});
       if(error) throw error;
-      say("Results saved, sobai ke payment hoye geche ✅");
+      say(resEdit ? "Results updated ✅" : "Results submitted and payouts sent ✅");
       setResM(null); await load();
     }catch(e){say(e.message,1)}
     finally{setBusy(false)}
@@ -596,7 +604,7 @@ export default function App() {
             const k=Math.max(0,Math.floor(+v.k||0));
             amount = k*(+m.per_kill||0) + (String(v.b)==="1" ? (+m.booyah_bonus||0) : 0);
           }
-          if(!(amount>0)) {say("Payout 0 hocche. Kills / booyah check korun.",1);return false}
+          if(!(amount>0)) {say("Payout amount is 0. Please check kills or booyah.",1);return false}
           if(amount>+m.prize) {say(`Prize cannot be more than ₹${m.prize}.`,1);return false}
           return rpc("admin_pay_winner",{p_match:m.id,p_user:winner.user_id,p_amt:amount},`₹${amount} paid to ${winner.name}`);
         },
@@ -882,8 +890,8 @@ export default function App() {
       const setV=(id,patch)=>setResIn({...resIn,[id]:{...(resIn[id]||{}),...patch}});
       return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"16px 10px"}}>
         <div style={{background:"#fff",color:"#111",borderRadius:16,width:"100%",maxWidth:520,padding:16}}>
-          <h3 style={{margin:"0 0 4px"}}>Results · #{resM.id}</h3>
-          <p style={{margin:"0 0 12px",fontSize:13,color:"#666"}}>{pk ? `Per kill ${R(resM.per_kill)} · Booyah ${R(resM.booyah_bonus)}` : `Prize pool ${R(resM.prize)} · player der prize amount likhun`}</p>
+          <h3 style={{margin:"0 0 4px"}}>{resEdit?"Edit results":"Results"} · #{resM.id}</h3>
+          <p style={{margin:"0 0 12px",fontSize:13,color:"#666"}}>{pk ? `Per kill ${R(resM.per_kill)} · Booyah ${R(resM.booyah_bonus)}` : `Prize pool ${R(resM.prize)} · Enter the prize amount for each player${resEdit?" · Amounts can only be increased":""}`}</p>
           {resRows.map(x=>{const v=resIn[x.key]||{}; return <div key={x.key} style={{border:"1px solid #e5e7eb",borderRadius:10,padding:10,marginBottom:8}}>
             <div style={{fontWeight:700,fontSize:16}}>{x.game_name}</div><div style={{fontSize:11,color:"#999"}}>{x.name}</div>
             <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
@@ -895,7 +903,7 @@ export default function App() {
             </div></div>})}
           <div style={{position:"sticky",bottom:0,background:"#fff",paddingTop:10}}>
             <p style={{margin:"0 0 8px",fontWeight:700}}>Total: {R(tot)} / Pool: {R(resM.prize)}</p>
-            <button onClick={submitResults} style={{width:"100%",padding:12,background:"#dc2626",color:"#fff",border:0,borderRadius:10,fontWeight:700,fontSize:15}}>Submit results & pay all</button>
+            <button onClick={submitResults} style={{width:"100%",padding:12,background:"#dc2626",color:"#fff",border:0,borderRadius:10,fontWeight:700,fontSize:15}}>{resEdit?"Save changes":"Submit results & pay all"}</button>
             <button onClick={()=>setResM(null)} style={{width:"100%",padding:10,marginTop:8,background:"#f3f4f6",border:0,borderRadius:10}}>Cancel</button>
           </div>
         </div></div>;
@@ -943,9 +951,9 @@ export default function App() {
                 {inp("d","Start time","datetime-local")}
                 <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
               </div>
-              <label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
+              {canManageMatches&&<><label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
               <label>Or upload thumbnail</label><input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
-              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}
+              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <button className="btn" onClick={addMatch}>Create match</button>
             </div>
           : <div className="createPanel bulkPanel">
@@ -971,11 +979,11 @@ export default function App() {
                 <div><label>Initial status</label><select value={f.bulkStatus||"upcoming"} onChange={e=>setF({...f,bulkStatus:e.target.value})}><option value="upcoming">Upcoming</option><option value="live">Live now</option></select></div>
                 <div><label>Match type</label><select value={f.bulkPrivate||"0"} onChange={e=>setF({...f,bulkPrivate:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
               </div>
-              <label>Same thumbnail for all matches (optional)</label>
+              {canManageMatches&&<><label>Same thumbnail for all matches (optional)</label>
               <input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
               <label>Or upload thumbnail once</label>
               <input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
-              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}
+              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <div className="bulkPreview">
                 <div className="bulkPreviewHead"><b>Schedule preview</b><span>{parseGapMinutes(f.bulkGap||"00:10")} min gap</span></div>
                 {bulkRows().slice(0,8).map((r,i)=><div className="bulkPreviewRow" key={i}><span><b>{r.title}</b><small>{fmt(r.starts_at)} · {r.mode} · {r.slots} slots</small></span><strong>₹{r.fee}</strong></div>)}
@@ -989,7 +997,7 @@ export default function App() {
         <div className="acards">{list.map(m=><div className="ucard" key={m.id}>
           <div className="uhead"><b>#{m.id} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
           <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
-          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button>{canManageMatches&&<button className="sm" onClick={()=>openResults(m)}>Results</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
+          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button>{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
       </div>;
     }
 
@@ -1056,10 +1064,10 @@ export default function App() {
         },
         x ? {name:x.name, won:String(x.total_won), kills:String(x.kills)} : {won:"0",kills:"0"},
         {btn: x ? "Save" : "Add"});
-      const delLb = x => { if(window.confirm(`"${x.name}" remove korben?`)) run(supabase.from("manual_leaderboard").delete().eq("id",x.id),"Removed") };
+      const delLb = x => { if(window.confirm(`Remove "${x.name}" from the leaderboard?`)) run(supabase.from("manual_leaderboard").delete().eq("id",x.id),"Removed") };
       b = <div className="pnl">
         <h3>🏆 Manual leaderboard</h3>
-        <p className="fieldHint">Ekhane je nam add korben, seta auto leaderboard-er sathe jukto hobe. Wallet/payout-e kono prabhab pore na.</p>
+        <p className="fieldHint">Manually added players are shown together with automatic leaderboard entries. This does not affect wallets or payouts.</p>
         {canManageMatches && <button className="btn" onClick={()=>lbDlg(null)}>+ Add player</button>}
         <div className="acards">{mlb.length ? mlb.map(x=><div className="ucard" key={x.id}>
           <div className="uhead"><b>{x.name}</b></div>
