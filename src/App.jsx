@@ -39,6 +39,14 @@ const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$
 // Purono spelling "DUO PR KILL" DB-te thakleo app-e "DUO PER KILL" hishebe dekhabe (tab/rules na harano jonno)
 const fixMode = m => /^DUO\s+PR\s+KILL$/i.test(String(m||"").trim()) ? "DUO PER KILL" : m;
 const normLink = v => { v=String(v||"").trim(); if(!v) return ""; if(/^https?:\/\//i.test(v)) return v; if(v.startsWith("@")) return "https://t.me/"+v.slice(1); return "https://"+v.replace(/^\/+/,""); };
+// Android WebView/APK e t.me link ekhon Telegram app-e directly khulbe (tg:resolve error ekabe na)
+const openTelegram = (e, url) => {
+  const m = normLink(url).match(/^https?:\/\/t\.me\/([A-Za-z0-9_]+)/i);
+  if (m && /Android/i.test(UA)) {
+    e.preventDefault();
+    window.location.href = `intent://resolve?domain=${m[1]}#Intent;scheme=tg;package=org.telegram.messenger;end`;
+  }
+};
 const isPK = m => /PER\s+KILL/i.test(String(m||""));
 const pkPool = (perKill,booyah,slots) => (+booyah||0) + (+perKill||0)*(+slots||0);
 const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title),mode:fixMode(x.mode)}));
@@ -855,7 +863,7 @@ export default function App() {
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
       {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
-      {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
+      {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} onClick={e=>openTelegram(e,links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
     }
@@ -870,7 +878,7 @@ export default function App() {
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
-    if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={normLink(links.telegram)} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
+    if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={normLink(links.telegram)} onClick={e=>openTelegram(e,links.telegram)} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
 
     const actualBack=page==="match"?null:back;
     return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</span>{t}</div><div className="pgb">{h}</div></>
