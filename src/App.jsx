@@ -141,6 +141,7 @@ export default function App() {
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
+  const [myRes,setMyRes] = useState([]);
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
@@ -297,7 +298,7 @@ export default function App() {
       q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
     setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); { const {data:ml}=await supabase.from("manual_leaderboard").select("*"); setMlb(ml||[]); }
       { const {data:nt}=await supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(100); setNotifs(nt||[]); } setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
-    setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+    setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); { const {data:mr}=await supabase.rpc("my_match_results"); setMyRes(mr||[]); } setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
@@ -751,7 +752,8 @@ export default function App() {
     const stop=fn=>e=>{e.stopPropagation();fn()};
     let ribbon;
     const myCount=joined.filter(x=>x===m.id).length;
-    const note = already ? `${myCount} slot${myCount>1?"s":""} booked` : "";
+    const myRow = m.status==="played" ? myRes.find(r=>r.match_id===m.id) : null;
+    const note = myRow ? `You: ${myRow.kills||0} kills${myRow.booyah?" · Booyah 🏆":""}${+myRow.amount>0?" · Won ₹"+myRow.amount:""}` : already ? `${myCount} slot${myCount>1?"s":""} booked` : "";
     if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
     else if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}>₹{m.fee} JOIN</div>;
     else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
@@ -803,6 +805,11 @@ export default function App() {
         {already&&r?.room_id&&<section className="detailSection roomBox"><h4>🎮 Room details</h4>
           <div className="copyRow"><span>Room ID<b>{r.room_id}</b></span><button className="sm" onClick={()=>copyText(r.room_id)}>Copy</button></div>
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
+        </section>}
+        {already&&m.status==="played"&&<section className="detailSection"><h4>🏁 Your result</h4>
+          {myRes.some(r=>r.match_id===m.id)
+            ? myRes.filter(r=>r.match_id===m.id).map(r=><div className="lr" key={"res"+r.slot_no}><b>Slot {r.slot_no}</b><span>{r.kills||0} kills{r.booyah?" · Booyah 🏆":""}{+r.amount>0?` · ₹${r.amount} won`:""}</span></div>)
+            : <p className="hint">Ei match e apnar kono reward nei.</p>}
         </section>}
         <div className="tabsX">{[["prize","🏆",isPK(m?.mode)?"Reward":"Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
         {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4>
