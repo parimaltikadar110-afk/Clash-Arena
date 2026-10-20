@@ -1,8 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 /* In-app support chat (English UI), text only.
-   - Links and photos/videos are not allowed.
+   - Players cannot send links; admins can send links (e.g. a Google Form).
+   - Links in messages are clickable.
+   - No photos/videos.
    - Messages are deleted 30 minutes after they are sent. */
+
+const LINK_RE = /(https?:\/\/[^\s]+)/g;
+
+// Makes http/https links clickable
+function Linked({ text }) {
+  return text.split(LINK_RE).map((part, i) =>
+    /^https?:\/\//.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="scLink">{part}</a>
+      : <span key={i}>{part}</span>
+  );
+}
 
 const time = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -18,6 +31,8 @@ const CSS = `
 .scInput input[type=text]{flex:1;padding:11px;border:1px solid #ddd;border-radius:10px;font-size:14px;min-width:0}
 .scInput .scSend{padding:0 16px;height:42px;border:0;border-radius:10px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer;flex-shrink:0}
 .scInput .scSend:disabled{opacity:.5;cursor:default}
+.scLink{text-decoration:underline;word-break:break-all;color:inherit}
+.scMsg.me .scLink{color:#fff}
 .scErr{color:#dc2626;font-size:12px;margin:6px 0}
 .scThread{display:block;width:100%;text-align:left;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;margin-bottom:8px;cursor:pointer}
 .scThread b{font-size:13px}.scThread span{display:block;font-size:12px;color:#666;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -70,7 +85,7 @@ export default function SupportChat({ supabase, mode = "user" }) {
   const send = async () => {
     const body = text.trim();
     if (!body || busy) return;
-    if (/https?:\/\/|www\./i.test(body)) { setErr("Links are not allowed in chat"); return; }
+    if (!isAdmin && /https?:\/\/|www\./i.test(body)) { setErr("Links are not allowed in chat"); return; }
     setBusy(true); setErr("");
     const args = { p_body: body, p_media_path: null, p_media_type: null };
     const { error } = isAdmin
@@ -91,7 +106,7 @@ export default function SupportChat({ supabase, mode = "user" }) {
         {msgs.length === 0 && <p style={{ color: "#888", fontSize: 13 }}>No messages yet. Send us a message.</p>}
         {msgs.map(m => (
           <div key={m.id} className={"scMsg " + (mine(m) ? "me" : "them")}>
-            {m.body}
+            <Linked text={m.body} />
             <small>{time(m.created_at)}</small>
           </div>
         ))}
