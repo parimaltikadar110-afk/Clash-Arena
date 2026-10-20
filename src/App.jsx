@@ -402,13 +402,13 @@ export default function App() {
 
   const saveAcc = () => run(
     supabase.from("profiles").update({
-      name:f.n||me.name,
+      full_name:(f.fn??me.full_name??"").trim(),
       game_name:f.gn||"",
       game_id:f.g||"",
       phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null
     }).eq("id",me.id),
     "Saved"
-  ).then(ok=>{ if(ok){setMe(x=>({...x,name:f.n||x.name,game_name:f.gn||"",game_id:f.g||"",phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null}));go("profile")} });
+  ).then(ok=>{ if(ok){setMe(x=>({...x,full_name:(f.fn??x.full_name??"").trim(),game_name:f.gn||"",game_id:f.g||"",phone:(f.ph||"").replace(/\D/g,"").slice(-10)||null}));go("profile")} });
 
   const withdraw = async () => { const wd=S.withdraw||{}, a=+f.a;
     if(wd.enabled===false) return say("Withdrawals are temporarily closed.",1);
@@ -862,12 +862,12 @@ export default function App() {
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+      {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
     }
-    if(page==="account"){t="Account";h=<>{inp("n","Name")}{inp("gn","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
+    if(page==="account"){t="Account";h=<><div className="field"><label>Username</label><input value={me.name||""} disabled/></div>{inp("fn","Full name")}{inp("gn","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
     if(page==="giftcode"){t="Gift Code";h=<>{inp("gc","Enter gift code")}<button className="btn" onClick={redeemGift}>Redeem</button><p className="hint">Each gift code can be used once by you. The amount is added to your Deposit balance.</p></>}
     if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={async()=>{if(await rpc("join_by_code",{p_code:f.c||""}))setPage(null)}}>Join</button></>}
     if(page==="withdraw"){t="Withdrawal";const wd=S.withdraw||{}, mn=+(wd.min??0), mx=+(wd.max||0);
