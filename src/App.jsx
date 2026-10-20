@@ -140,7 +140,7 @@ export default function App() {
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
-  const [mlb,setMlb] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
+  const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
@@ -294,7 +294,8 @@ export default function App() {
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
     const [p,m,j,t,l,r,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
       q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
-    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); { const {data:ml}=await supabase.from("manual_leaderboard").select("*"); setMlb(ml||[]); } setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
+    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); { const {data:ml}=await supabase.from("manual_leaderboard").select("*"); setMlb(ml||[]); }
+      { const {data:nt}=await supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(100); setNotifs(nt||[]); } setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
@@ -853,7 +854,7 @@ export default function App() {
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      {[["Account Settings","account"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+      {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
@@ -867,6 +868,7 @@ export default function App() {
         {wd.enabled===false&&<div className="hint" style={{background:"#fef2f2",color:"#b91c1c",marginBottom:10}}>Withdrawals are temporarily closed.</div>}
         {inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" disabled={wd.enabled===false} onClick={withdraw}>Withdraw</button></>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
+    if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
     if(page==="support"){t="Customer Support";const links=S.support_links||{};h=<div className="supportGrid">{links.telegram?<a className="supportBtn tg" href={normLink(links.telegram)} target="_blank" rel="noreferrer">✈ Telegram Support</a>:null}{links.whatsapp?<a className="supportBtn wa" href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">💬 WhatsApp Community</a>:null}{!links.telegram&&!links.whatsapp?<p className="empty">Support links are not set yet.</p>:null}</div>}
 
@@ -877,9 +879,9 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Leaderboard","Rules","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
+      ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
       : isActingAdmin
-        ? ["Matches","Leaderboard","Rules","Users"]
+        ? ["Matches","Leaderboard","Notifications","Rules","Users"]
         : ["Matches","Rules"];
     const cur = TABS.includes(at)?at:TABS[0];
 
@@ -1075,6 +1077,42 @@ export default function App() {
           {canManageMatches && <div className="uact"><button className="sm" onClick={()=>lbDlg(x)}>Edit</button><button className="sm" onClick={()=>delLb(x)}>Delete</button></div>}
         </div>) : <p className="hint">No manual entries yet</p>}</div>
       </div>;
+    }
+    if(cur==="Notifications"){
+      const sendN = async () => {
+        if(!f.nt?.trim() || !f.nb?.trim()) return say("Title and message are required",1);
+        if(f.na==="user" && !f.nu) return say("Select a player",1);
+        const ok = await run(supabase.rpc("admin_send_notification",{p_title:f.nt,p_body:f.nb,p_user:f.na==="user"?f.nu:null}),"Notification sent ✅");
+        if(ok!==false) setF(x=>({...x,nt:"",nb:""}));
+      };
+      b = <>
+        <div className="pnl">
+          <h3>🔔 Send notification</h3>
+          <p className="fieldHint">Players will see this in their Notifications page.</p>
+          <label>Title</label>
+          <input value={f.nt||""} onChange={e=>setF({...f,nt:e.target.value})} placeholder="e.g. Match #460 starts in 10 minutes"/>
+          <label>Message</label>
+          <textarea rows={4} value={f.nb||""} onChange={e=>setF({...f,nb:e.target.value})} placeholder="Write your message"/>
+          <label>Send to</label>
+          <select value={f.na||"all"} onChange={e=>setF({...f,na:e.target.value,nu:""})}>
+            <option value="all">All players</option>
+            <option value="user">One player</option>
+          </select>
+          {f.na==="user" && <select value={f.nu||""} onChange={e=>setF({...f,nu:e.target.value})}>
+            <option value="">Select player</option>
+            {allU.map(x=><option key={x.id} value={x.id}>{(x.name||x.username||x.email||"Player")+(x.email?" · "+x.email:"")}</option>)}
+          </select>}
+          <button className="btn" disabled={busy} onClick={sendN}>Send notification</button>
+        </div>
+        <div className="pnl">
+          <h3>Sent notifications</h3>
+          <div className="acards">{notifs.length ? notifs.map(n=><div className="ucard" key={n.id}>
+            <div className="uhead"><b>{n.title}</b><span className="pill">{n.audience==="all"?"All players":"One player"}</span></div>
+            <p className="gn" style={{whiteSpace:"pre-wrap"}}>{n.body}</p>
+            <div className="uact"><button className="sm" onClick={()=>window.confirm("Delete this notification?") && run(supabase.from("notifications").delete().eq("id",n.id),"Deleted")}>Delete</button></div>
+          </div>) : <p className="hint">No notifications sent yet</p>}</div>
+        </div>
+      </>;
     }
     if(cur==="Gift Codes"){
       b=<div className="pnl"><h3>🎁 Gift codes</h3>
