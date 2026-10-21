@@ -142,6 +142,7 @@ export default function App() {
   const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [myRes,setMyRes] = useState([]);
+  const [myNotes,setMyNotes] = useState([]);
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
@@ -184,6 +185,7 @@ export default function App() {
   const openMid = page==="match" ? +f.mid : 0, openFilled = M.find(x=>x.id===openMid)?.filled;
   const refreshLists = id => { if(!id||!supabase) return; supabase.rpc("match_players",{p_match:id}).then(({data})=>setPlayers(data||[])); supabase.rpc("my_slots",{p_match:id}).then(({data})=>setMySlots(data||[])) };
   useEffect(()=>{ setPlayers([]); setMySlots([]); refreshLists(openMid) },[openMid,openFilled,joined.length]);
+  useEffect(()=>{ supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); },[openMid,joined.length]);
   useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),2000); return()=>clearTimeout(t) },[]);
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
@@ -775,7 +777,7 @@ export default function App() {
     if(nav==="wallet"){ const md=deps.filter(d=>d.user_id===me.id).slice(0,5); return <div className="pgb">
       <div className="wc"><span style={{fontSize:12,opacity:.9}}>Total balance</span><h2>₹{me.balance+me.winnings}</h2><div className="wsplit"><div>Deposit balance<b>₹{me.balance}</b></div><div>Winnings<b>₹{me.winnings}</b></div></div></div>
       <div style={{display:"flex",gap:8,margin:"12px 0"}}><button className="btn gb" onClick={()=>go("deposit",{a:""})}>+ Add Money</button><button className="btn" onClick={()=>go("withdraw",{})}>Withdraw</button></div>
-      {myW.length>0&&<><p className="sh">Withdrawal requests</p>{myW.slice(0,5).map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>)}</>}
+      {myW.length>0&&<><p className="sh">Withdrawal requests</p>{myW.slice(0,5).map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}{w.admin_note&&<div className="hint" style={{width:"100%"}}>Admin: {w.admin_note}</div>}</div>)}</>}
       {md.length>0&&<><p className="sh">Deposits</p>{md.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}
       <p className="sh">Transactions</p>{txs.length?txs.slice(0,20).map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty" style={{padding:20}}>No transactions yet</p>}</div> }
     const r=[...lb, ...mlb.map(x=>({id:"m"+x.id, name:x.name, total_won:x.total_won, avatar_url:null}))].sort((a,b)=>(b.total_won||0)-(a.total_won||0));
@@ -806,6 +808,8 @@ export default function App() {
           <div className="copyRow"><span>Room ID<b>{r.room_id}</b></span><button className="sm" onClick={()=>copyText(r.room_id)}>Copy</button></div>
           <div className="copyRow"><span>Password<b>{r.room_pass}</b></span><button className="sm" onClick={()=>copyText(r.room_pass)}>Copy</button></div>
         </section>}
+        {already&&myNotes.some(n=>n.match_id===String(m.id))&&<section className="detailSection"><h4>📢 Note from admin</h4>
+          <p style={{fontSize:13,whiteSpace:"pre-wrap"}}>{myNotes.find(n=>n.match_id===String(m.id))?.note}</p></section>}
         {already&&m.status==="played"&&<section className="detailSection"><h4>🏁 Your result</h4>
           {myRes.some(r=>r.match_id===m.id)
             ? myRes.filter(r=>r.match_id===m.id).map(r=><div className="lr" key={"res"+r.slot_no}><b>Slot {r.slot_no}</b><span>{r.kills||0} kills{r.booyah?" · Booyah 🏆":""}{+r.amount>0?` · ₹${r.amount} won`:""}</span></div>)
@@ -1007,6 +1011,7 @@ export default function App() {
         <div className="acards">{list.map(m=><div className="ucard" key={m.id}>
           <div className="uhead"><b>#{m.id} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
           <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
+<div style={{display:"flex",gap:6,margin:"8px 0"}}><input style={{flex:1}} value={f["mn"+m.id]||""} onChange={e=>setF({...f,["mn"+m.id]:e.target.value})} placeholder="Note for joined players (optional)"/><button className="sm" onClick={()=>rpc("admin_set_match_note",{p_match:String(m.id),p_note:f["mn"+m.id]||""},"Note saved")}>Save note</button></div>
           <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button>{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
       </div>;
     }
@@ -1149,7 +1154,7 @@ export default function App() {
         <button className="btn" onClick={saveWithdraw}>Save withdrawal rules</button></div>;
     }
 
-    if(cur==="Withdrawals") b=W.length?<div className="acards">{W.map(w=><div className="ucard" key={w.id}><div className="uhead"><b>{allU.find(x=>x.id===w.user_id)?.name||"User"}</b>{stTxt(w.status)}</div><div className="ugrid"><span>Amount<b>₹{w.amount}</b></span><span>UPI<b>{w.upi}</b></span><span>Date<b>{fmt(w.created_at)}</b></span></div>{w.status==="pending"&&<div className="uact"><button className="sm ok" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true},"Approved")}>Approve</button><button className="sm no" onClick={()=>rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false},"Rejected")}>Reject</button></div>}</div>)}</div>:<p className="empty">No withdrawal requests</p>;
+    if(cur==="Withdrawals") b=W.length?<div className="acards">{W.map(w=><div className="ucard" key={w.id}><div className="uhead"><b>{allU.find(x=>x.id===w.user_id)?.name||"User"}</b>{stTxt(w.status)}</div><div className="ugrid"><span>Amount<b>₹{w.amount}</b></span><span>UPI<b>{w.upi}</b></span><span>Date<b>{fmt(w.created_at)}</b></span></div>{w.status==="pending"&&<><input style={{width:"100%",marginTop:8}} value={f["wn"+w.id]||""} onChange={e=>setF({...f,["wn"+w.id]:e.target.value})} placeholder="Comment for player (optional)"/><div className="uact"><button className="sm ok" onClick={async()=>{ if(await rpc("admin_set_withdrawal",{p_id:w.id,p_ok:true},"Approved") && (f["wn"+w.id]||"").trim()) await rpc("admin_set_withdrawal_note",{p_id:String(w.id),p_note:f["wn"+w.id]}) }}>Approve</button><button className="sm no" onClick={async()=>{ if(await rpc("admin_set_withdrawal",{p_id:w.id,p_ok:false},"Rejected") && (f["wn"+w.id]||"").trim()) await rpc("admin_set_withdrawal_note",{p_id:String(w.id),p_note:f["wn"+w.id]}) }}>Reject</button></div></>}</div>)}</div>:<p className="empty">No withdrawal requests</p>;
 
     return <><div className="adminHeader"><div className="brand" style={{fontSize:18}}><Logo s={36}/> ClashX7 {isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</div><div className="adminHeaderRight"><span className={"lv"+(live?" on":"")}>{live?"● Live":"○ Auto-refresh"}</span><button className="sm" onClick={()=>{load();say("Refreshed")}}>↻</button><a className="sm" href="#">Open app</a></div></div>
       <div className="adminTabs">{TABS.map(x=><button key={x} className={x===cur?"on":""} onClick={()=>{setAt(x);setF({})}}>{x==="Users"&&isActingAdmin?"User Search":x}</button>)}</div>{resultsOverlay}{b}</>;
