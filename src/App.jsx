@@ -185,7 +185,7 @@ export default function App() {
   const openMid = page==="match" ? +f.mid : 0, openFilled = M.find(x=>x.id===openMid)?.filled;
   const refreshLists = id => { if(!id||!supabase) return; supabase.rpc("match_players",{p_match:id}).then(({data})=>setPlayers(data||[])); supabase.rpc("my_slots",{p_match:id}).then(({data})=>setMySlots(data||[])) };
   useEffect(()=>{ setPlayers([]); setMySlots([]); refreshLists(openMid) },[openMid,openFilled,joined.length]);
-  useEffect(()=>{ supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); },[openMid,joined.length]);
+  useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,10000); return ()=>clearInterval(t); },[openMid,joined.length]);
   useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),2000); return()=>clearTimeout(t) },[]);
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
@@ -755,7 +755,8 @@ export default function App() {
     let ribbon;
     const myCount=joined.filter(x=>x===m.id).length;
     const myRow = m.status==="played" ? myRes.find(r=>r.match_id===m.id) : null;
-    const note = myRow ? `You: ${myRow.kills||0} kills${myRow.booyah?" · Booyah 🏆":""}${+myRow.amount>0?" · Won ₹"+myRow.amount:""}` : already ? `${myCount} slot${myCount>1?"s":""} booked` : "";
+    const myWon = m.status==="played" ? myRes.filter(r=>r.match_id===m.id).reduce((t,r)=>t+(+r.amount||0),0) : 0;
+    const note = myWon>0 ? `Won ₹${myWon}` : already ? `${myCount} slot${myCount>1?"s":""} booked` : "";
     if(already) ribbon=<div className="cxRib done" onClick={stop(openM)}>✓ JOINED</div>;
     else if(canBook) ribbon=<div className="cxRib" onClick={stop(()=>askJoin(m))}>₹{m.fee} JOIN</div>;
     else ribbon=<div className="cxRib off" onClick={stop(openM)}>{open?"FULL":"VIEW"}</div>;
@@ -811,8 +812,8 @@ export default function App() {
         {already&&myNotes.some(n=>n.match_id===String(m.id))&&<section className="detailSection"><h4>📢 Note from admin</h4>
           <p style={{fontSize:13,whiteSpace:"pre-wrap"}}>{myNotes.find(n=>n.match_id===String(m.id))?.note}</p></section>}
         {already&&m.status==="played"&&<section className="detailSection"><h4>🏁 Your result</h4>
-          {myRes.some(r=>r.match_id===m.id)
-            ? myRes.filter(r=>r.match_id===m.id).map(r=><div className="lr" key={"res"+r.slot_no}><b>Slot {r.slot_no}</b><span>{r.kills||0} kills{r.booyah?" · Booyah 🏆":""}{+r.amount>0?` · ₹${r.amount} won`:""}</span></div>)
+          {myRes.some(r=>r.match_id===m.id && +r.amount>0)
+            ? <div className="lr"><b>Prize won</b><span>₹{myRes.filter(r=>r.match_id===m.id).reduce((t,r)=>t+(+r.amount||0),0)}</span></div>
             : <p className="hint">No reward for you in this match.</p>}
         </section>}
         <div className="tabsX">{[["prize","🏆",isPK(m?.mode)?"Reward":"Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
