@@ -813,7 +813,7 @@ export default function App() {
         {already&&m.status==="played"&&<section className="detailSection"><h4>🏁 Your result</h4>
           {myRes.some(r=>r.match_id===m.id)
             ? myRes.filter(r=>r.match_id===m.id).map(r=><div className="lr" key={"res"+r.slot_no}><b>Slot {r.slot_no}</b><span>{r.kills||0} kills{r.booyah?" · Booyah 🏆":""}{+r.amount>0?` · ₹${r.amount} won`:""}</span></div>)
-            : <p className="hint">Ei match e apnar kono reward nei.</p>}
+            : <p className="hint">No reward for you in this match.</p>}
         </section>}
         <div className="tabsX">{[["prize","🏆",isPK(m?.mode)?"Reward":"Prize Pool"],["players","👥",`Players (${players.length})`],["rules","🛡️","Rules"]].map(([k,ic,l])=><b key={k} className={tabK===k?"on":""} onClick={()=>setF({...f,mtab:k})}>{ic} {l}</b>)}</div>
         {tabK==="prize"&&isPK(m?.mode)&&<div className="prizeCard"><h4>Per-kill reward</h4>
