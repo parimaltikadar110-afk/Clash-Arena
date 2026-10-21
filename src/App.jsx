@@ -841,8 +841,9 @@ export default function App() {
         {already&&m.status==="upcoming"&&<div className="joinedNote">✓ Already joined — you have a slot. You can book another slot while space is available.</div>}
         {canEdit&&left>0&&<div className="mdAct"><button className="btn gb" onClick={()=>askJoin(m,1)}>{already?"Book another slot":"Join match"} · ₹{m.fee}</button>{left>1&&isDuoM&&<button className="btn" style={{background:"#111"}} onClick={()=>askJoin(m,2)}>Book 2 slots · ₹{(+m.fee||0)*2}</button>}<p className="hint">Each slot can have its own game name. Entry is refunded if you cancel before the match goes live.</p></div>}
         {!canEdit&&<div className="joinedNote">This match is {m.status}. New slots cannot be booked now.</div>}
+        <button className="btn" style={{marginTop:14,width:"100%",background:"#111"}} onClick={()=>go(back)}>← Back to matches</button>
       </div>;
-      return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>go(back)}>←</span>{t}</div><div className="pgb">{h}</div></>;
+      return <><div className="pgh"><button className="pgBack" aria-label="Back" onClick={()=>go(back)}>←</button>{t}</div><div className="pgb">{h}</div></>;
     }
 
     if(page==="deposit"){
@@ -886,7 +887,7 @@ export default function App() {
     if(page==="support"){t="Customer Support";h=<SupportChat supabase={supabase} mode="user"/>}
 
     const actualBack=page==="match"?null:back;
-    return <><div className="pgh"><span style={{cursor:"pointer",fontSize:20}} onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</span>{t}</div><div className="pgb">{h}</div></>
+    return <><div className="pgh"><button className="pgBack" aria-label="Back" onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</button>{t}</div><div className="pgb">{h}</div></>
   };
 
   const admin = () => {
@@ -1239,7 +1240,7 @@ const css = `
 .x7 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:30}
 .x7 nav a{flex:1;text-align:center;padding:8px 0;font-size:10px;color:#666;cursor:pointer}.x7 nav a.on{color:var(--r)}
 .x7 nav svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.pgh{display:flex;align-items:center;gap:14px;padding:14px;font-weight:700;border-bottom:1px solid #eee;background:#fff;position:sticky;top:0;z-index:18}.pgb{padding:12px}
+.pgh{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;font-weight:700;border-bottom:1px solid #eee;background:#fff;position:sticky;top:0;z-index:18;min-height:56px}.pgBack{background:none;border:0;font-size:24px;line-height:1;padding:10px;margin:-10px -6px -10px -8px;cursor:pointer;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;color:inherit;-webkit-tap-highlight-color:transparent}.pgb{padding:12px}
 .x7 label{display:block;font-size:11px;color:#555;font-weight:600}.x7 input,.x7 select,.x7 textarea{width:100%;padding:11px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0 10px;background:#fafafa;color:#111!important;-webkit-text-fill-color:#111!important;opacity:1!important;font-size:14px}.x7 input::placeholder,.x7 textarea::placeholder{color:#777!important;-webkit-text-fill-color:#777!important;opacity:1!important}.x7 select option{color:#111;background:#fff}.x7 input:disabled,.x7 select:disabled,.x7 textarea:disabled{color:#666!important;-webkit-text-fill-color:#666!important;opacity:1!important}
 .btn{width:100%;padding:11px;border:0;border-radius:8px;background:var(--r);color:#fff;font-weight:700;cursor:pointer}.gb{background:var(--g)}
 .kv{display:flex;justify-content:space-between;padding:10px 4px;font-weight:500}
