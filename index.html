@@ -42,6 +42,9 @@
       window.OneSignalDeferred.push(async function(OneSignal) {
         await OneSignal.init({
           appId: "dda5795c-3990-4713-9500-43a57eae0896",
+          // One service worker for push + offline page (see public/sw.js)
+          serviceWorkerPath: "sw.js",
+          serviceWorkerParam: { scope: "/" },
         });
       });
     </script>
