@@ -143,6 +143,7 @@ export default function App() {
   const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [myRes,setMyRes] = useState([]);
   const [myNotes,setMyNotes] = useState([]);
+  const [thumbMsg,setThumbMsg] = useState("");
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
@@ -451,9 +452,9 @@ export default function App() {
   };
   const uploadMatchThumb = async file => {
     if(!file) return;
-    setBusy(true);
-    try{ const url=await uploadThumbFile(file); setF(x=>({...x,th:url})); say("Thumbnail ready ✅") }
-    catch(e){ say(thumbErr(e),1) } finally{ setBusy(false) }
+    setBusy(true); setThumbMsg("Uploading thumbnail…");
+    try{ const url=await uploadThumbFile(file); setF(x=>({...x,th:url})); setThumbMsg("✅ Thumbnail attached. It will be saved with the match."); say("Thumbnail ready ✅") }
+    catch(e){ const msg=thumbErr(e); setThumbMsg("❌ Upload failed: "+msg); say(msg,1) } finally{ setBusy(false) }
   };
   const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["file","Upload image","file"],["url","…or paste image URL","text"]],async v=>{
     try{
@@ -501,6 +502,7 @@ export default function App() {
     if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     if(!f.t||!f.d) return say("Title and start time are required",1);
     if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Please enter a per kill or booyah amount.",1);
+    if(busy) return say("Please wait until the thumbnail upload finishes",1);
     const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
     if(!row.starts_at) return say("Start time is invalid",1);
     const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
@@ -968,7 +970,7 @@ export default function App() {
                 <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
               </div>
               {canManageMatches&&<><label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
-              <label>Or upload thumbnail</label><input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
+              <label>Or upload thumbnail</label><input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>{thumbMsg&&<p className="hint">{thumbMsg}</p>}
               {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <button className="btn" onClick={addMatch}>Create match</button>
             </div>
@@ -998,7 +1000,7 @@ export default function App() {
               {canManageMatches&&<><label>Same thumbnail for all matches (optional)</label>
               <input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
               <label>Or upload thumbnail once</label>
-              <input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>
+              <input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>{thumbMsg&&<p className="hint">{thumbMsg}</p>}
               {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <div className="bulkPreview">
                 <div className="bulkPreviewHead"><b>Schedule preview</b><span>{parseGapMinutes(f.bulkGap||"00:10")} min gap</span></div>
