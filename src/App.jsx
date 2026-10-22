@@ -104,7 +104,7 @@ function Dlg({d, close}) {
     {d.fields.map(([k,l,t,o]) => <div key={k}><label>{l}</label>
       {t==="select" ? <select value={v[k]} onChange={e=>set(k,e.target.value)}>{o.map(x=>Array.isArray(x)?<option key={x[0]} value={x[0]}>{x[1]}</option>:<option key={x}>{x}</option>)}</select>
       : t==="area" ? <textarea rows={6} value={v[k]} onChange={e=>set(k,e.target.value)}/>
-      : t==="file" ? <input type="file" accept="image/*" onChange={e=>set(k,e.target.files[0]||"")}/>
+      : t==="file" ? <label className="fileBtn">{v[k]&&v[k].name?`✓ ${v[k].name}`:"📁 Choose image from gallery"}<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ const f=e.target.files&&e.target.files[0]; set(k,f||""); e.target.value=""; }}/></label>
       : <input type={t} value={v[k]} onChange={e=>set(k,e.target.value)}/>}</div>)}
     <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button></div></div>);
 }
@@ -1259,7 +1259,7 @@ const css = `
 .gameSaved{display:inline-block;margin-top:7px;padding:5px 9px;border-radius:99px;background:#f3f4f6;color:#444;font-size:11px}
 .socialLinks{display:flex;gap:8px;margin:12px 0}.socialLinks a{flex:1;text-align:center;text-decoration:none;padding:10px;border-radius:9px;background:#111;color:#fff;font-weight:700;font-size:12px}
 .supportGrid{display:grid;gap:10px}.supportBtn{display:block;text-align:center;text-decoration:none;color:#fff;padding:13px;border-radius:10px;font-weight:800}.tg{background:#229ed9}.wa{background:#16a34a}
-.matchDetail{background:#fff}.detailThumb,.detailFallback{width:100%;height:160px;object-fit:cover}.detailFallback{display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
+.fileBtn{display:block;width:100%;box-sizing:border-box;padding:12px;margin:6px 0 10px;border:2px dashed #dc2626;border-radius:10px;background:#fff7f7;color:#b91c1c;font-weight:700;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;word-break:break-all}.matchDetail{background:#fff}.detailThumb,.detailFallback{width:100%;height:160px;object-fit:cover}.detailFallback{display:grid;place-items:center;background:linear-gradient(135deg,#7f1d1d,#111)}
 .detailMeta{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0}.detailMeta span{padding:5px 8px;background:#f3f4f6;border-radius:99px;font-size:10px;color:#444}
 .detailGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.detailGrid div{border:1px solid #eee;border-radius:10px;padding:10px}.detailGrid small{display:block;color:#777;font-size:10px}.detailGrid b{display:block;margin-top:3px;font-size:13px}
 .detailSection{margin-top:14px;border:1px solid #eee;border-radius:12px;padding:12px}.detailSection h4{margin-bottom:8px}.rulesBox{white-space:pre-wrap;line-height:1.6;color:#333;font-size:13px}.roomBox{background:#fef2f2;border-color:#fee2e2}.copyRow{display:flex;align-items:center;gap:8px;margin-top:8px}.copyRow span{flex:1;background:#fff;border:1px solid #eee;border-radius:8px;padding:9px;font-size:11px}.copyRow b{display:block;margin-top:2px;font-size:13px;color:var(--r);user-select:all}.joinedNote,.hint{margin-top:8px;padding:9px;border-radius:8px;background:#f8fafc;color:#555;font-size:11px;line-height:1.5}
