@@ -651,20 +651,30 @@ export default function App() {
 
   const toLocalInput = t => { const d=new Date(t); if(isNaN(d)) return ""; d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16) };
 
-  const editMatch = m => ask(`Edit match · #${m.id}`,
-    [["title","Match title"],["g","Mode","select",T.map(t=>[t,t])],["m","Map"],["s","Slots","number"],["p","Prize pool ₹","number"],["fee","Entry fee ₹","number"],["d","Start time","datetime-local"]],
-    async v => {
-      if(!canManageMatches) { say("Only Admin or Acting Admin can edit matches",1); return false }
-      const starts = new Date(v.d);
-      if(!v.title?.trim() || isNaN(starts)) { say("Title and valid start time are required",1); return false }
-      if((+v.s||0) < (m.filled||0)) { say(`Slots cannot be less than ${m.filled} (already joined)`,1); return false }
-      return run(supabase.from("matches").update({
-        title:cleanTitle(v.title), mode:v.g, map:v.m||"BERMUDA", slots:+v.s||m.slots,
-        prize:+v.p||0, fee:+v.fee||0, starts_at:starts.toISOString()
-      }).eq("id",m.id), "Match updated ✅");
-    },
-    {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), fee:String(m.fee), d:toLocalInput(m.starts_at)},
-    {btn:"Save changes", note:"Prize/fee changes affect new joins and payouts. Check before saving."});
+  const editMatch = m => {
+    const pkM = isPK(m.mode);
+    const fields = [["title","Match title"],["g","Mode","select",T.map(t=>[t,t])],["m","Map"],["s","Slots","number"],
+      ...(pkM ? [["pk","Per kill ₹","number"],["bk","Booyah bonus ₹","number"]] : [["p","Prize pool ₹","number"]]),
+      ["fee","Entry fee ₹","number"],["d","Start time","datetime-local"]];
+    const initial = {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), pk:String(m.per_kill||""), bk:String(m.booyah_bonus||""), fee:String(m.fee), d:toLocalInput(m.starts_at)};
+    return ask(`Edit match · #${m.id}`, fields,
+      async v => {
+        if(!canManageMatches) { say("Only Admin or Acting Admin can edit matches",1); return false }
+        const starts = new Date(v.d);
+        if(!v.title?.trim() || isNaN(starts)) { say("Title and valid start time are required",1); return false }
+        if((+v.s||0) < (m.filled||0)) { say(`Slots cannot be less than ${m.filled} (already joined)`,1); return false }
+        const slotsN = +v.s||m.slots;
+        const money = pkM
+          ? { prize: pkPool(v.pk, v.bk, slotsN), per_kill: Math.max(0,+v.pk||0), booyah_bonus: Math.max(0,+v.bk||0) }
+          : { prize: +v.p||0, per_kill: 0, booyah_bonus: 0 };
+        return run(supabase.from("matches").update({
+          title:cleanTitle(v.title), mode:v.g, map:v.m||"BERMUDA", slots:slotsN,
+          ...money, fee:+v.fee||0, starts_at:starts.toISOString()
+        }).eq("id",m.id), "Match updated ✅");
+      },
+      initial,
+      {btn:"Save changes", note: pkM ? "Per kill and booyah amounts are used for payouts. Changes affect new joins." : "Prize/fee changes affect new joins and payouts. Check before saving."});
+  };
 
   const setSt = (m,s) => run(supabase.from("matches").update({status:s}).eq("id",m.id),"Status: "+s);
   const pay = m => openPayWinner(m);
