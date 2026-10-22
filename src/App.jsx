@@ -472,7 +472,7 @@ export default function App() {
     say("Copied \u201c"+(m.title||"match")+"\u201d. Set the start time and create.");
     window.scrollTo({top:0,behavior:"smooth"});
   };
-  const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["url","Image URL (paste a link)","text"]],async v=>{
+  const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["file","Upload image from gallery","file"],["url","…or paste image URL","text"]],async v=>{
     try{
       let url=normalizeImgUrl(v.url);
       if(v.file) url=await uploadThumbFile(v.file);
@@ -986,7 +986,7 @@ export default function App() {
                 <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
               </div>
               {canManageMatches&&<><label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:normalizeImgUrl(e.target.value)})} placeholder="https://.../thumbnail.jpg"/>
-                            {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
+                            <label>Or upload image from gallery</label><label className="fileBtn">{busy?"Uploading…":"📁 Choose image from gallery"}<input type="file" accept="image/*" disabled={busy} style={{display:"none"}} onChange={e=>{ const fl=e.target.files&&e.target.files[0]; e.target.value=""; if(fl) uploadMatchThumb(fl); }}/></label>{thumbMsg&&<p className="hint">{thumbMsg}</p>}{f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <button className="btn" onClick={addMatch}>Create match</button>
             </div>
           : <div className="createPanel bulkPanel">
@@ -1014,7 +1014,7 @@ export default function App() {
               </div>
               {canManageMatches&&<><label>Same thumbnail for all matches (optional)</label>
               <input value={f.th||""} onChange={e=>setF({...f,th:normalizeImgUrl(e.target.value)})} placeholder="https://.../thumbnail.jpg"/>
-                            {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
+                            <label>Or upload image from gallery</label><label className="fileBtn">{busy?"Uploading…":"📁 Choose image from gallery"}<input type="file" accept="image/*" disabled={busy} style={{display:"none"}} onChange={e=>{ const fl=e.target.files&&e.target.files[0]; e.target.value=""; if(fl) uploadMatchThumb(fl); }}/></label>{thumbMsg&&<p className="hint">{thumbMsg}</p>}{f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <div className="bulkPreview">
                 <div className="bulkPreviewHead"><b>Schedule preview</b><span>{parseGapMinutes(f.bulkGap||"00:10")} min gap</span></div>
                 {bulkRows().slice(0,8).map((r,i)=><div className="bulkPreviewRow" key={i}><span><b>{r.title}</b><small>{fmt(r.starts_at)} · {r.mode} · {r.slots} slots</small></span><strong>₹{r.fee}</strong></div>)}
