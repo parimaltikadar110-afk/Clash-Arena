@@ -45,6 +45,8 @@ const pkPool = (perKill,booyah,slots) => (+booyah||0) + (+perKill||0)*(+slots||0
 const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title),mode:fixMode(x.mode)}));
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
 
+// Google Drive share link -> direct image link (works for files shared as "Anyone with the link")
+const normalizeImgUrl = u => { const s=String(u||"").trim(); const m=s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=)([\w-]+)/); return m?`https://lh3.google.com/d/${m[1]}`:s; };
 const shrink = (file,max=1000,q=.72) => new Promise((ok,no)=>{ const img=new Image(); img.onload=()=>{ const k=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement("canvas"); c.width=Math.round(img.width*k); c.height=Math.round(img.height*k);
   c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); c.toBlob(b=>b?ok(b):no(new Error("Image error")),"image/jpeg",q) }; img.onerror=()=>no(new Error("Not a valid image")); img.src=URL.createObjectURL(file) });
 const R = n => (n<0?"-":"")+"₹"+Math.abs(Math.round(+n||0)).toLocaleString("en-IN");
@@ -456,14 +458,28 @@ export default function App() {
     try{ const url=await uploadThumbFile(file); setF(x=>({...x,th:url})); setThumbMsg("✅ Thumbnail attached. It will be saved with the match."); say("Thumbnail ready ✅") }
     catch(e){ const msg=thumbErr(e); setThumbMsg("❌ Upload failed: "+msg); say(msg,1) } finally{ setBusy(false) }
   };
-  const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["file","Upload image","file"],["url","…or paste image URL","text"]],async v=>{
+  // Copy an existing match into the create form (single or bulk). Start time is left blank to set a new one.
+  const copyMatchToForm = m => {
+    setF(x=>({...x,
+      bulkMode:false,
+      t:m.title||"", g:m.mode||T[0], m:m.map||"", s:String(m.slots||""),
+      p:String(m.prize||""), pk:String(m.per_kill||""), bk:String(m.booyah_bonus||""),
+      fee:String(m.fee||""), d:"", v:m.is_private?"1":"0", th:m.thumbnail_url||"",
+      bulkTitle:m.title||"", bulkModeGame:m.mode||T[0], bulkMap:m.map||"", bulkSlots:String(m.slots||""),
+      bulkPrize:String(m.prize||""), bulkPk:String(m.per_kill||""), bulkBk:String(m.booyah_bonus||""),
+      bulkFee:String(m.fee||""), bulkPrivate:m.is_private?"1":"0",
+    }));
+    say("Copied \u201c"+(m.title||"match")+"\u201d. Set the start time and create.");
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+  const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["url","Image URL (paste a link)","text"]],async v=>{
     try{
-      let url=(v.url||"").trim();
+      let url=normalizeImgUrl(v.url);
       if(v.file) url=await uploadThumbFile(v.file);
       if(!url){ say("Choose an image or paste an image URL",1); return false }
       return await run(supabase.from("matches").update({thumbnail_url:url}).eq("id",m.id),"Thumbnail updated ✅");
     }catch(e){ say(thumbErr(e),1); return false }
-  },{url:m.thumbnail_url||""},{btn:"Save thumbnail",note:"Tap Choose file. If your gallery does not open, paste an image link below instead. A wide image (16:9) looks best."});
+  },{url:m.thumbnail_url||""},{btn:"Save thumbnail",note:"Paste an image link below. Google Drive share links work too (set the file to \"Anyone with the link\"). A wide image (16:9) looks best."});
   const saveManual = () => { const m=S.manual||{}, v=(k,d="")=>f[k]??m[k]??d;
     return run(supabase.from("app_settings").upsert({key:"manual",value:{enabled:v("me_en",m.enabled===false?"0":"1")==="1",upi_id:v("upi_id").trim(),upi_name:v("upi_name").trim(),qr_url:f.qr??m.qr_url??"",note:v("note"),min:+v("min",10)||10,max:+v("max",0)||0},updated_at:new Date().toISOString()}),"Manual payment settings saved") };
   const saveGw = async (n,keys) => { const sec={}; keys.forEach(k=>{const v=(f[`gs_${n}_${k}`]||"").trim(); if(v) sec[k]=v}); const en=(f[`ge_${n}`]??(S["gw_"+n]?.enabled===true?"1":"0"))==="1";
@@ -969,9 +985,8 @@ export default function App() {
                 {inp("d","Start time","datetime-local")}
                 <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
               </div>
-              {canManageMatches&&<><label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
-              <label>Or upload thumbnail</label><input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>{thumbMsg&&<p className="hint">{thumbMsg}</p>}
-              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
+              {canManageMatches&&<><label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:normalizeImgUrl(e.target.value)})} placeholder="https://.../thumbnail.jpg"/>
+                            {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <button className="btn" onClick={addMatch}>Create match</button>
             </div>
           : <div className="createPanel bulkPanel">
@@ -998,10 +1013,8 @@ export default function App() {
                 <div><label>Match type</label><select value={f.bulkPrivate||"0"} onChange={e=>setF({...f,bulkPrivate:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
               </div>
               {canManageMatches&&<><label>Same thumbnail for all matches (optional)</label>
-              <input value={f.th||""} onChange={e=>setF({...f,th:e.target.value})} placeholder="https://.../thumbnail.jpg"/>
-              <label>Or upload thumbnail once</label>
-              <input type="file" accept="image/*" disabled={busy} onChange={e=>uploadMatchThumb(e.target.files[0])}/>{thumbMsg&&<p className="hint">{thumbMsg}</p>}
-              {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
+              <input value={f.th||""} onChange={e=>setF({...f,th:normalizeImgUrl(e.target.value)})} placeholder="https://.../thumbnail.jpg"/>
+                            {f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
               <div className="bulkPreview">
                 <div className="bulkPreviewHead"><b>Schedule preview</b><span>{parseGapMinutes(f.bulkGap||"00:10")} min gap</span></div>
                 {bulkRows().slice(0,8).map((r,i)=><div className="bulkPreviewRow" key={i}><span><b>{r.title}</b><small>{fmt(r.starts_at)} · {r.mode} · {r.slots} slots</small></span><strong>₹{r.fee}</strong></div>)}
@@ -1016,7 +1029,7 @@ export default function App() {
           <div className="uhead"><b>#{m.id} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
           <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
 <div style={{display:"flex",gap:6,margin:"8px 0"}}><input style={{flex:1}} value={f["mn"+m.id]||""} onChange={e=>setF({...f,["mn"+m.id]:e.target.value})} placeholder="Note for joined players (optional)"/><button className="sm" onClick={()=>rpc("admin_set_match_note",{p_match:String(m.id),p_note:f["mn"+m.id]||""},"Note saved")}>Save note</button></div>
-          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button>{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
+          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>copyMatchToForm(m)}>Copy</button>{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
       </div>;
     }
 
