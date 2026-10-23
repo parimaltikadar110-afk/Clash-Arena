@@ -167,3 +167,61 @@ export default function SupportChat({ supabase, mode = "user" }) {
     </div>
   );
 }
+
+
+/* Customer support switch: WhatsApp button for players (used when admin picks WhatsApp). */
+export function WhatsAppSupport({ wa }) {
+  return (
+    <div className="scWrap">
+      <style>{CSS}</style>
+      <div className="scNote">Need help? Chat with our support team on WhatsApp.</div>
+      <div style={{ textAlign: "center", marginTop: 24 }}>
+        <a className="btn" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer"
+           style={{ display: "inline-block", padding: "14px 28px", borderRadius: 10, background: "#25D366", color: "#fff", fontWeight: 700, textDecoration: "none" }}>
+          Chat on WhatsApp
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/* Admin control: choose In-app chat or WhatsApp, and set the WhatsApp number. */
+export function SupportModeBox({ supabase, cfg, onSaved }) {
+  const [mode, setMode] = useState(cfg.mode || "chat");
+  const [wa, setWa] = useState(cfg.wa || "");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { setMode(cfg.mode || "chat"); setWa(cfg.wa || ""); }, [cfg.mode, cfg.wa]);
+
+  const save = async () => {
+    const digits = wa.replace(/\D/g, "");
+    if (mode === "whatsapp" && digits.length < 8) { setMsg("Enter WhatsApp number with country code, e.g. 919123055135"); return; }
+    setMsg("Saving…");
+    const a = await supabase.rpc("admin_set_setting", { p_key: "support_mode", p_value: mode });
+    const b = await supabase.rpc("admin_set_setting", { p_key: "support_wa", p_value: digits });
+    if (a.error || b.error) { setMsg("Save failed: " + ((a.error || b.error).message)); return; }
+    setMsg("Saved ✅");
+    onSaved && onSaved();
+  };
+
+  const tab = (val, label) => (
+    <button onClick={() => setMode(val)}
+      style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #ddd", fontWeight: 700, cursor: "pointer",
+               background: mode === val ? "#111" : "#fff", color: mode === val ? "#fff" : "#111" }}>{label}</button>
+  );
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 12, background: "#fff" }}>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Customer service mode</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {tab("chat", "In-app chat")}
+        {tab("whatsapp", "WhatsApp")}
+      </div>
+      {mode === "whatsapp" && (
+        <input value={wa} onChange={e => setWa(e.target.value)} placeholder="WhatsApp number with country code, e.g. 919123055135"
+          style={{ width: "100%", boxSizing: "border-box", padding: 10, border: "1px solid #ddd", borderRadius: 10, marginBottom: 8 }} />
+      )}
+      <button onClick={save} style={{ width: "100%", padding: 11, border: 0, borderRadius: 10, background: "#dc2626", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
+      {msg && <p className="hint" style={{ marginTop: 6 }}>{msg}</p>}
+    </div>
+  );
+}
