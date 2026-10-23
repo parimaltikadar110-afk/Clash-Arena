@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
-import SupportChat from "./SupportChat";
+import SupportChat, { WhatsAppSupport, SupportModeBox } from "./SupportChat";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 // TEMP DEBUG: shows any JS error on screen (no PC console needed). Remove after the bug is fixed.
@@ -148,6 +148,7 @@ export default function App() {
   const [myNotes,setMyNotes] = useState([]);
   const [thumbMsg,setThumbMsg] = useState("");
   const [modStats,setModStats] = useState([]);
+  const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:""});
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
@@ -482,7 +483,7 @@ export default function App() {
     say("Copied \u201c"+(m.title||"match")+"\u201d. Set the start time and create.");
     window.scrollTo({top:0,behavior:"smooth"});
   };
-  const setThumbForMatch = m => ask(`Thumbnail · #${m.id}`,[["file","Upload image from gallery","file"],["url","…or paste image URL","text"]],async v=>{
+  const setThumbForMatch = m => ask(`Thumbnail · #${mNo(m)}`,[["file","Upload image from gallery","file"],["url","…or paste image URL","text"]],async v=>{
     try{
       let url=normalizeImgUrl(v.url);
       if(v.file) url=await uploadThumbFile(v.file);
@@ -629,7 +630,7 @@ export default function App() {
       const fields = pk
         ? [["w","Select player","select",opts],["k","Kills this player got","number"],["b","Won booyah (1st place)?","select",[["0","No"],["1","Yes"]]]]
         : [["w","Select winner from joined players","select",opts],["a","Prize amount ₹","number"]];
-      ask(`Pay prize · #${m.id}`, fields,
+      ask(`Pay prize · #${mNo(m)}`, fields,
         async v=>{
           const winner=rows.find(x=>x.idx===String(v.w));
           if(!winner) {say("Select a joined player.",1);return false}
@@ -652,7 +653,7 @@ export default function App() {
   };
 
   const room = m => { const o=rooms[m.id]||{};
-    ask(`Room details · #${m.id}`,
+    ask(`Room details · #${mNo(m)}`,
       [["r","Room ID","text"],["p","Room password","text"]],
       async v=>{
         if(!v.r||!v.p) {say("Room ID and password are required",1);return false}
@@ -668,7 +669,7 @@ export default function App() {
       ...(pkM ? [["pk","Per kill ₹","number"],["bk","Booyah bonus ₹","number"]] : [["p","Prize pool ₹","number"]]),
       ["fee","Entry fee ₹","number"],["d","Start time","datetime-local"]];
     const initial = {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), pk:String(m.per_kill||""), bk:String(m.booyah_bonus||""), fee:String(m.fee), d:toLocalInput(m.starts_at)};
-    return ask(`Edit match · #${m.id}`, fields,
+    return ask(`Edit match · #${mNo(m)}`, fields,
       async v => {
         if(!canManageMatches) { say("Only Admin or Acting Admin can edit matches",1); return false }
         const starts = new Date(v.d);
@@ -709,6 +710,11 @@ export default function App() {
     setHist({user:x,txs:t.data||[],deps:d.data||[],wds:w.data||[]});
   };
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
+  const reloadSupportCfg = () => supabase.from("app_settings").select("key,value").then(({data})=>{
+    const o={}; (data||[]).forEach(r=>{o[r.key]=r.value});
+    setSupportCfg({mode:o.support_mode||"chat", wa:String(o.support_wa||"").replace(/\D/g,"")});
+  });
+  useEffect(()=>{ reloadSupportCfg(); },[page]);
   const refreshModStats = () => supabase.rpc("admin_moderator_stats").then(({data})=>setModStats(data||[]));
   const setModes = x => ask(`Modes · ${x.name||"Moderator"}`,
     [["modes","Modes, comma separated (e.g. SOLO BR, DUO BR)","text"]],
@@ -935,7 +941,7 @@ export default function App() {
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
-    if(page==="support"){t="Customer Support";h=<SupportChat supabase={supabase} mode="user"/>}
+    if(page==="support"){t="Customer Support";h=(supportCfg.mode==="whatsapp"&&supportCfg.wa)?<WhatsAppSupport wa={supportCfg.wa}/>:<SupportChat supabase={supabase} mode="user"/>}
 
     const actualBack=page==="match"?null:back;
     return <><div className="pgh"><button className="pgBack" aria-label="Back" onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</button>{t}</div><div className="pgb">{h}</div></>
@@ -1096,7 +1102,7 @@ export default function App() {
         <p style={{fontSize:11,color:"#777",margin:"6px 0"}}>Webhook URL: <b style={{userSelect:"all"}}>{window.location.origin}/api/webhook?g={n}</b></p>
         <button className="btn" onClick={()=>saveGw(n,keys)}>Save {label}</button></div>)}</>}
 
-    if(cur==="Support Chat"){b=<SupportChat supabase={supabase} mode="admin"/>}
+    if(cur==="Support Chat"){b=<>{isAdmin&&<SupportModeBox supabase={supabase} cfg={supportCfg} onSaved={reloadSupportCfg}/>}<SupportChat supabase={supabase} mode="admin"/></>}
     if(cur==="Support Links"){
       const links=S.support_links||{};
       b=<div className="pnl"><h3>🔗 Customer service & community</h3><p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>These links appear in the user profile/support section.</p>
