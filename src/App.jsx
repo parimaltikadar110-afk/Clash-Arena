@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
-import SupportChat, { WhatsAppSupport, SupportModeBox } from "./SupportChat";
+import SupportChat, { , SupportModeBox } from "./SupportChat";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 // TEMP DEBUG: shows any JS error on screen (no PC console needed). Remove after the bug is fixed.
