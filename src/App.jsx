@@ -832,12 +832,27 @@ export default function App() {
       const ms=M.filter(m=>joined.includes(m.id)&&m.status===mt);
       return <><Tabs list={["upcoming","live","played","cancelled"]} cur={mt} set={setMt} flex/>{ms.length?ms.map(matchCard):<p className="empty">No matches here yet.</p>}</>;
     }
-    if(nav==="wallet"){ const md=deps.filter(d=>d.user_id===me.id).slice(0,5); return <div className="pgb">
-      <div className="wc"><span style={{fontSize:12,opacity:.9}}>Total balance</span><h2>₹{me.balance+me.winnings}</h2><div className="wsplit"><div>Deposit balance<b>₹{me.balance}</b></div><div>Winnings<b>₹{me.winnings}</b></div></div></div>
-      <div style={{display:"flex",gap:8,margin:"12px 0"}}><button className="btn gb" onClick={()=>go("deposit",{a:""})}>+ Add Money</button><button className="btn" onClick={()=>go("withdraw",{})}>Withdraw</button></div>
-      {myW.length>0&&<><p className="sh">Withdrawal requests</p>{myW.slice(0,5).map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}{w.admin_note&&<div className="hint" style={{width:"100%"}}>Admin: {w.admin_note}</div>}</div>)}</>}
-      {md.length>0&&<><p className="sh">Deposits</p>{md.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>)}</>}
-      <p className="sh">Transactions</p>{txs.length?txs.slice(0,20).map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty" style={{padding:20}}>No transactions yet</p>}</div> }
+    if(nav==="wallet"){
+      const md=deps.filter(d=>d.user_id===me.id).slice(0,5);
+      const wSt={pending:["#fff7ed","#c2410c","Pending"],approved:["#ecfdf5","#047857","Approved"],paid:["#ecfdf5","#047857","Paid"],rejected:["#fef2f2","#b91c1c","Rejected"],success:["#ecfdf5","#047857","Success"],failed:["#fef2f2","#b91c1c","Failed"]};
+      const sPill=s=>{const [bg,fg,label]=wSt[s]||["#f3f4f6","#374151",String(s||"")]; return <span style={{background:bg,color:fg,fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:999,whiteSpace:"nowrap"}}>{label}</span>};
+      const wRow=(key,title,sub,status,note)=><div key={key} style={{padding:"12px 0",borderBottom:"1px solid #f1f1f1"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+          <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:16}}>{title}</div><div style={{fontSize:12,color:"#777",marginTop:2,wordBreak:"break-word"}}>{sub}</div></div>
+          {sPill(status)}
+        </div>
+        {note&&<div style={{marginTop:8,background:"#f9fafb",borderLeft:"3px solid #dc2626",padding:"8px 10px",borderRadius:6,fontSize:13,color:"#374151"}}><b style={{color:"#111"}}>Admin note: </b>{note}</div>}
+      </div>;
+      const sec=(title,count)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",margin:"20px 0 2px"}}><h3 style={{margin:0,fontSize:16}}>{title}</h3>{count!=null&&<span style={{fontSize:12,color:"#777"}}>{count}</span>}</div>;
+      return <div className="pgb">
+        <div className="wc"><span style={{fontSize:12,opacity:.9}}>Total balance</span><h2>₹{(me.balance||0)+(me.winnings||0)}</h2><div className="wsplit"><div>Deposit balance<b>₹{me.balance||0}</b></div><div>Winnings<b>₹{me.winnings||0}</b></div></div></div>
+        <div style={{display:"flex",gap:8,margin:"14px 0 4px"}}><button className="btn gb" onClick={()=>go("deposit",{a:""})}>+ Add Money</button><button className="btn" onClick={()=>go("withdraw",{})}>Withdraw</button></div>
+        {myW.length>0&&<>{sec("Withdrawals",Math.min(myW.length,5))}{myW.slice(0,5).map(w=>wRow(w.id,`₹${w.amount}`,`${w.upi} · ${fmt(w.created_at)}`,w.status,w.admin_note))}</>}
+        {md.length>0&&<>{sec("Deposits",md.length)}{md.map(d=>wRow(d.id,`₹${d.amount}`,`${d.gateway} · ${fmt(d.created_at)}`,d.status))}</>}
+        {sec("Transactions")}
+        {txs.length? txs.slice(0,20).map(x=><div key={x.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f1f1f1"}}><div style={{minWidth:0}}><div style={{fontWeight:600,fontSize:14}}>{x.note}</div><div style={{fontSize:12,color:"#777",marginTop:2}}>{fmt(x.created_at)}</div></div><span style={{fontWeight:700,color:x.amount>0?"#16a34a":"#111",whiteSpace:"nowrap"}}>{x.amount>0?"+":""}₹{x.amount}</span></div>) : <p className="empty">No transactions yet</p>}
+      </div>;
+    }
     const r=[...lb, ...mlb.map(x=>({id:"m"+x.id, name:x.name, total_won:x.total_won, avatar_url:null}))].sort((a,b)=>(b.total_won||0)-(a.total_won||0));
     if(!r.length) return <p className="empty">No winners yet. Be the first!</p>;
     const top=[r[1],r[0],r[2]], rk=[2,1,3];
