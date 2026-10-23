@@ -41,6 +41,7 @@ const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$
 const fixMode = m => /^DUO\s+PR\s+KILL$/i.test(String(m||"").trim()) ? "DUO PER KILL" : m;
 const normLink = v => { v=String(v||"").trim(); if(!v) return ""; if(/^https?:\/\//i.test(v)) return v; if(v.startsWith("@")) return "https://t.me/"+v.slice(1); return "https://"+v.replace(/^\/+/,""); };
 const isPK = m => /PER\s+KILL/i.test(String(m||""));
+const mNo = m => (m.match_no ?? m.id);
 const pkPool = (perKill,booyah,slots) => (+booyah||0) + (+perKill||0)*(+slots||0);
 const cleanMatches = a => (a||[]).map(x=>({...x,title:cleanTitle(x.title),mode:fixMode(x.mode)}));
 const loadScript = (src, ok) => new Promise((res,rej) => { if(ok()) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("Could not load payment script")); document.body.appendChild(s) });
@@ -146,6 +147,7 @@ export default function App() {
   const [myRes,setMyRes] = useState([]);
   const [myNotes,setMyNotes] = useState([]);
   const [thumbMsg,setThumbMsg] = useState("");
+  const [modStats,setModStats] = useState([]);
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
@@ -153,6 +155,9 @@ export default function App() {
   const [payReturn,setPayReturn] = useState(()=>{ try{ return new URLSearchParams(window.location.search).get("zp") || null }catch{ return null } });
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
   const canManageMatches = isAdmin || isActingAdmin; // only Admin + Acting Admin create / edit match details
+  const canCreate = canManageMatches || isModerator; // moderators can create/edit, only in their assigned modes
+  const myModes = Array.isArray(me?.moderator_modes) ? me.moderator_modes : [];
+  const modeAllowed = mode => !isModerator || myModes.includes(mode);
 
   // ---- Gift codes ----
   const [gifts,setGifts] = useState([]);
@@ -309,6 +314,7 @@ export default function App() {
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
   useEffect(()=>{load();const i=setInterval(load,15000);return()=>clearInterval(i)},[load]);
+  useEffect(()=>{ if(isAdmin||isActingAdmin) supabase.rpc("admin_moderator_stats").then(({data})=>setModStats(data||[])); },[isAdmin,isActingAdmin,allU.length]);
   useEffect(()=>{
     const id=slotUI?.m?.id; if(!id) return;
     const t=setInterval(async()=>{
@@ -515,6 +521,7 @@ export default function App() {
   };
 
   const addMatch = async () => {
+    if(!modeAllowed(f.g)) return say("You are not assigned to this mode",1);
     if(!canManageMatches) return say("Only Admin or Acting Admin can create matches",1);
     if(!f.t||!f.d) return say("Title and start time are required",1);
     if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Please enter a per kill or booyah amount.",1);
@@ -698,6 +705,18 @@ export default function App() {
     setHist({user:x,txs:t.data||[],deps:d.data||[],wds:w.data||[]});
   };
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
+  const refreshModStats = () => supabase.rpc("admin_moderator_stats").then(({data})=>setModStats(data||[]));
+  const setModes = x => ask(`Modes · ${x.name||"Moderator"}`,
+    [["modes","Modes, comma separated (e.g. SOLO BR, DUO BR)","text"]],
+    async v => {
+      const list = String(v.modes||"").split(",").map(t=>t.trim().toUpperCase()).filter(t=>T.includes(t));
+      if(!list.length) { say("Enter at least one valid mode from the list",1); return false }
+      const ok = await rpc("admin_set_moderator_modes",{p_user:x.user_id,p_modes:list},"Modes updated");
+      if(ok) refreshModStats();
+      return ok;
+    },
+    {modes:(x.modes||[]).join(", ")},
+    {btn:"Save modes", note:"Moderator can only create and edit matches in these modes."});
   const setStaffRole = async (u, nextRole) => {
     if(!isAdmin) return say("Only the main Admin can change staff roles",1);
     const label = nextRole === "acting_admin" ? "Acting Admin" : nextRole === "moderator" ? "Moderator" : "User";
@@ -765,7 +784,7 @@ export default function App() {
       <div className="cxBot">
         <div className="cxBL">
           <div className="cxBar"><u style={{width:`${pct}%`}}/></div>
-          <div className="cxRow"><span>#{m.id}{m.status==="live"?" · LIVE":""}{note?` · ${note}`:""}</span><span className="red">{left} spots left</span></div>
+          <div className="cxRow"><span>#{mNo(m)}{m.status==="live"?" · LIVE":""}{note?` · ${note}`:""}</span><span className="red">{left} spots left</span></div>
           {cancelEl}
         </div>
         {ribbon}
@@ -973,10 +992,10 @@ export default function App() {
 
     if(cur==="Matches"){
       const q=(f.ms||"").trim().toLowerCase();
-      const list=[...M].filter(m=>!q||String(m.id).includes(q)||String(m.code||"").toLowerCase().includes(q)||String(m.title||"").toLowerCase().includes(q)).reverse();
+      const list=[...M].filter(m=>modeAllowed(m.mode)).filter(m=>!q||(/^\d+$/.test(q)?String(mNo(m))===q:(String(m.code||"").toLowerCase().includes(q)||String(m.title||"").toLowerCase().includes(q)))).reverse();
       const single= !f.bulkMode;
       b=<div className="matchAdmin">
-        {canManageMatches&&<>
+        {canCreate&&<>
         <div className="adminModeRow"><button className={"modeBtn"+(single?" active":"")} onClick={()=>setF(x=>({...x,bulkMode:false}))}>Single Create</button><button className={"modeBtn"+(!single?" active":"")} onClick={()=>setF(x=>({...x,bulkMode:true}))}>Bulk Create</button></div>
         {single
           ? <div className="createPanel">
@@ -1036,7 +1055,7 @@ export default function App() {
         </>}
         <div className="adminSearch"><input value={f.ms||""} onChange={e=>setF({...f,ms:e.target.value})} placeholder="Search match code / #ID / title"/></div>
         <div className="acards">{list.map(m=><div className="ucard" key={m.id}>
-          <div className="uhead"><b>#{m.id} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
+          <div className="uhead"><b>#{mNo(m)} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
           <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
 <div style={{display:"flex",gap:6,margin:"8px 0"}}><input style={{flex:1}} value={f["mn"+m.id]||""} onChange={e=>setF({...f,["mn"+m.id]:e.target.value})} placeholder="Note for joined players (optional)"/><button className="sm" onClick={()=>rpc("admin_set_match_note",{p_match:String(m.id),p_note:f["mn"+m.id]||""},"Note saved")}>Save note</button></div>
           <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>copyMatchToForm(m)}>Copy</button>{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
@@ -1089,6 +1108,11 @@ export default function App() {
         <h3>👥 Staff & Moderators</h3>
         <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Only the main Admin can change staff roles. Acting Admin sits between Moderator and Admin.</p>
         {staffers.length ? <div className="acards">{staffers.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}</b><span className={"pill "+x.role}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span></div><div className="uact"><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></div></div>)}</div> : <p className="empty">No moderators or acting admins yet.</p>}
+        {(isAdmin||isActingAdmin)&&<>
+        <p className="sh">Moderator matches (last 7 days)</p>
+        {isAdmin&&<button className="btn" style={{marginBottom:10,background:"#111"}} onClick={()=>rpc("admin_reset_match_counter",{},"Match numbering restarted from 1").then(()=>{})}>Restart match numbering from 1</button>}
+        <div className="acards">{modStats.length? modStats.map(x=><div className="ucard" key={x.user_id}><div className="uhead"><b>{x.name||"-"}</b><span className="pill moderator">{x.played7d} in 7 days</span></div><div className="ugrid"><span>Modes<b>{(x.modes||[]).join(", ")||"None"}</b></span></div><div className="uact">{isAdmin&&<button className="sm" onClick={()=>setModes(x)}>Set modes</button>}<button className="sm" onClick={()=>rpc("admin_reset_moderator_counter",{p_user:x.user_id},"7-day count reset for "+(x.name||"moderator")).then(refreshModStats)}>Reset 7-day count</button></div></div>) : <p className="empty">No moderators yet.</p>}</div>
+        </>}
         <p className="sh">Role powers</p>
         <div className="roleInfo"><div><b>Moderator</b><small>Room ID/Pass, rules and Live/Done status. Cannot create or edit match details.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
       </div>;
