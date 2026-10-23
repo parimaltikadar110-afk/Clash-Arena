@@ -469,7 +469,7 @@ export default function App() {
   const deleteMatch = m => ask(`Delete match #${mNo(m)}?`, [],
     async () => rpc("admin_delete_match",{p_match:String(m.id)},"Match deleted"),
     {},
-    {btn:"Yes, delete", note:`Every player who joined gets ₹${m.fee} refunded to their wallet automatically. This cannot be undone.`});
+    {btn:"Yes, delete", note: m.status==="played" ? "Played match: no refund. Only the match and its result history are removed. This cannot be undone." : `Every player who joined gets ₹${m.fee} refunded to their wallet automatically. This cannot be undone.`});
   const copyMatchToForm = m => {
     setF(x=>({...x,
       bulkMode:false,
