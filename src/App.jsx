@@ -109,7 +109,7 @@ function Dlg({d, close}) {
       : t==="area" ? <textarea rows={6} value={v[k]} onChange={e=>set(k,e.target.value)}/>
       : t==="file" ? <label className="fileBtn">{v[k]&&v[k].name?`✓ ${v[k].name}`:"📁 Choose image from gallery"}<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ const f=e.target.files&&e.target.files[0]; set(k,f||""); e.target.value=""; }}/></label>
       : <input type={t} value={v[k]} onChange={e=>set(k,e.target.value)}/>}</div>)}
-    <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button></div></div>);
+    <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button><button className="btn" disabled={busy} style={{background:"#f3f4f6",color:"#111",marginTop:8}} onClick={close}>{d.noBtn||"No, cancel"}</button></div></div>);
 }
 
 const Tabs = ({list,cur,set,flex}) => (
@@ -466,10 +466,10 @@ export default function App() {
     catch(e){ const msg=thumbErr(e); setThumbMsg("❌ Upload failed: "+msg); say(msg,1) } finally{ setBusy(false) }
   };
   // Copy an existing match into the create form (single or bulk). Start time is left blank to set a new one.
-  const deleteMatch = m => {
-    if(!window.confirm(`Delete match #${mNo(m)} "${m.title}"? This cannot be undone.`)) return;
-    rpc("admin_delete_match",{p_match:String(m.id)},"Match deleted");
-  };
+  const deleteMatch = m => ask(`Delete match #${mNo(m)}?`, [],
+    async () => rpc("admin_delete_match",{p_match:String(m.id)},"Match deleted"),
+    {},
+    {btn:"Yes, delete", note:`"${m.title}" will be removed permanently. This cannot be undone.`});
   const copyMatchToForm = m => {
     setF(x=>({...x,
       bulkMode:false,
