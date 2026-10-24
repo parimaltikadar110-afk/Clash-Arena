@@ -172,7 +172,7 @@ export default function SupportChat({ supabase, mode = "user" }) {
 /* Customer support (WhatsApp mode): shows the number only, player copies it themselves. */
 export function WhatsAppSupport({ wa }) {
   const [copied, setCopied] = useState(false);
-  const shown = "+" + String(wa || "").replace(/\D/g, "");
+  const shown = String(wa || "").replace(/\D/g, "");
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(shown);
@@ -208,7 +208,7 @@ export function SupportModeBox({ supabase, cfg, onSaved }) {
 
   const save = async () => {
     const digits = wa.replace(/\D/g, "");
-    if (mode === "whatsapp" && digits.length < 8) { setMsg("Enter WhatsApp number with country code, e.g. 919123055135"); return; }
+    if (mode === "whatsapp" && digits.length < 8) { setMsg("Enter a valid WhatsApp number"); return; }
     setMsg("Saving…");
     const a = await supabase.rpc("admin_set_setting", { p_key: "support_mode", p_value: mode });
     const b = await supabase.rpc("admin_set_setting", { p_key: "support_wa", p_value: digits });
@@ -231,7 +231,7 @@ export function SupportModeBox({ supabase, cfg, onSaved }) {
         {tab("whatsapp", "WhatsApp")}
       </div>
       {mode === "whatsapp" && (
-        <input value={wa} onChange={e => setWa(e.target.value)} placeholder="WhatsApp number with country code, e.g. 919123055135"
+        <input value={wa} onChange={e => setWa(e.target.value)} placeholder="WhatsApp number, e.g. 9123055135"
           style={{ width: "100%", boxSizing: "border-box", padding: 10, border: "1px solid #ddd", borderRadius: 10, marginBottom: 8 }} />
       )}
       <button onClick={save} style={{ width: "100%", padding: 11, border: 0, borderRadius: 10, background: "#dc2626", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Save</button>
