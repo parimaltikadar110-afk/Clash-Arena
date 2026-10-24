@@ -169,17 +169,31 @@ export default function SupportChat({ supabase, mode = "user" }) {
 }
 
 
-/* Customer support switch: WhatsApp button for players (used when admin picks WhatsApp). */
+/* Customer support (WhatsApp mode): shows the number only, player copies it themselves. */
 export function WhatsAppSupport({ wa }) {
+  const [copied, setCopied] = useState(false);
+  const shown = "+" + String(wa || "").replace(/\D/g, "");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(shown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      setCopied(false);
+    }
+  };
   return (
     <div className="scWrap">
       <style>{CSS}</style>
-      <div className="scNote">Need help? Chat with our support team on WhatsApp.</div>
-      <div style={{ textAlign: "center", marginTop: 24 }}>
-        <a className="btn" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer"
-           style={{ display: "inline-block", padding: "14px 28px", borderRadius: 10, background: "#25D366", color: "#fff", fontWeight: 700, textDecoration: "none" }}>
-          Chat on WhatsApp
-        </a>
+      <div className="scNote">Need help? Contact our support team on WhatsApp.</div>
+      <div style={{ textAlign: "center", marginTop: 28 }}>
+        <div style={{ fontSize: 13, color: "#777", marginBottom: 8 }}>WhatsApp support number</div>
+        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: 1, userSelect: "all", WebkitUserSelect: "all" }}>{shown}</div>
+        <button onClick={copy}
+          style={{ marginTop: 16, padding: "12px 24px", border: 0, borderRadius: 10, background: "#111", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
+          {copied ? "Copied ✅" : "Copy number"}
+        </button>
+        <p style={{ fontSize: 12, color: "#888", marginTop: 14 }}>Open WhatsApp and send a message to this number.</p>
       </div>
     </div>
   );
