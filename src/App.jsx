@@ -194,6 +194,31 @@ export default function App() {
   const openMid = page==="match" ? +f.mid : 0, openFilled = M.find(x=>x.id===openMid)?.filled;
   const refreshLists = id => { if(!id||!supabase) return; supabase.rpc("match_players",{p_match:id}).then(({data})=>setPlayers(data||[])); supabase.rpc("my_slots",{p_match:id}).then(({data})=>setMySlots(data||[])) };
   useEffect(()=>{ setPlayers([]); setMySlots([]); refreshLists(openMid) },[openMid,openFilled,joined.length]);
+  // Pull down from the top of the page to refresh (like Google)
+  const loadRef = useRef(null);
+  useEffect(()=>{ loadRef.current = load; });
+  useEffect(()=>{
+    let startY = null, dist = 0, busy = false;
+    const onStart = e => { startY = (window.scrollY <= 0 && !busy) ? e.touches[0].clientY : null; dist = 0; };
+    const onMove  = e => { if(startY!==null) dist = Math.max(0, e.touches[0].clientY - startY); };
+    const onEnd   = async () => {
+      if(startY!==null && dist>=90 && !busy){
+        busy = true; setToast({m:"Refreshing…"});
+        try { await loadRef.current(); setToast({m:"Updated ✅"}); setTimeout(()=>setToast(null),1500); }
+        catch(e){ setToast({m:"Refresh failed. Check your connection.",err:true}); setTimeout(()=>setToast(null),3000); }
+        busy = false;
+      }
+      startY = null; dist = 0;
+    };
+    window.addEventListener("touchstart", onStart, {passive:true});
+    window.addEventListener("touchmove", onMove, {passive:true});
+    window.addEventListener("touchend", onEnd, {passive:true});
+    return ()=>{
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+  },[]);
   useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,10000); return ()=>clearInterval(t); },[openMid,joined.length]);
   useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),2000); return()=>clearTimeout(t) },[]);
 
