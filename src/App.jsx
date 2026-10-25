@@ -64,7 +64,7 @@ const Avatar = ({url,s=32}) => url
   ? <img className="avImg" src={url} alt="" style={{width:s,height:s}} onError={e=>{e.currentTarget.style.display="none"}}/>
   : <div className="avatar avDef" style={{width:s,height:s}}><svg viewBox="0 0 24 24" width={Math.round(s*.6)} height={Math.round(s*.6)} fill="#fff"><circle cx="12" cy="8.5" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></div>;
 
-/* 2-second splash shown every time the app opens */
+/* Short splash shown every time the app opens (instant boot splash is in index.html) */
 function Splash() {
   const F=[["🛡️","FAIR PLAY","REAL RESULTS · ANTI-CHEAT"],["⚡","FAST UPI","WINNINGS PAID STRAIGHT TO YOU"],["🏆","DAILY TOURNAMENTS","SOLO · DUO · CLASH SQUAD"]];
   return (<div className="cxsRoot">
@@ -227,7 +227,7 @@ export default function App() {
     };
   },[]);
   useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,10000); return ()=>clearInterval(t); },[openMid,joined.length]);
-  useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),2000); return()=>clearTimeout(t) },[]);
+  useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),800); return()=>clearTimeout(t) },[]);
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
   const ask = (title,fields,ok,init,extra={}) => setDlg({title,fields,ok,init,...extra});
@@ -337,11 +337,11 @@ export default function App() {
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
-    const [p,m,j,t,l,r,ru,d,mw,st] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
-      q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings")]);
-    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); { const {data:ml}=await supabase.from("manual_leaderboard").select("*"); setMlb(ml||[]); }
-      { const {data:nt}=await supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(100); setNotifs(nt||[]); } setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
-    setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); { const {data:mr}=await supabase.rpc("my_match_results"); setMyRes(mr||[]); } setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), q("matches").order("starts_at"), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(50), q("leaderboard"), q("match_rooms"),
+      q("mode_rules"), q("deposits").order("created_at",{ascending:false}).limit(150), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings"), supabase.from("manual_leaderboard").select("*"), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(100), supabase.rpc("my_match_results")]);
+    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setMlb(mlR.data||[]);
+      setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
+    setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status")]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
