@@ -194,21 +194,28 @@ export default function App() {
   const openMid = page==="match" ? +f.mid : 0, openFilled = M.find(x=>x.id===openMid)?.filled;
   const refreshLists = id => { if(!id||!supabase) return; supabase.rpc("match_players",{p_match:id}).then(({data})=>setPlayers(data||[])); supabase.rpc("my_slots",{p_match:id}).then(({data})=>setMySlots(data||[])) };
   useEffect(()=>{ setPlayers([]); setMySlots([]); refreshLists(openMid) },[openMid,openFilled,joined.length]);
-  // Pull down from the top of the page to refresh (like Google)
+  // Pull down from the top of the page to refresh (Google-style spinner)
+  const [pull,setPull] = useState(0);
+  const [refreshing,setRefreshing] = useState(false);
   const loadRef = useRef(null);
   useEffect(()=>{ loadRef.current = load; });
   useEffect(()=>{
-    let startY = null, dist = 0, busy = false;
-    const onStart = e => { startY = (window.scrollY <= 0 && !busy) ? e.touches[0].clientY : null; dist = 0; };
-    const onMove  = e => { if(startY!==null) dist = Math.max(0, e.touches[0].clientY - startY); };
-    const onEnd   = async () => {
-      if(startY!==null && dist>=90 && !busy){
-        busy = true; setToast({m:"Refreshing…"});
-        try { await loadRef.current(); setToast({m:"Updated ✅"}); setTimeout(()=>setToast(null),1500); }
-        catch(e){ setToast({m:"Refresh failed. Check your connection.",err:true}); setTimeout(()=>setToast(null),3000); }
-        busy = false;
-      }
-      startY = null; dist = 0;
+    let startY = null, raw = 0, busy = false;
+    const shown = () => Math.min(raw*0.5, 80);
+    const onStart = e => { startY = (window.scrollY <= 0 && !busy) ? e.touches[0].clientY : null; raw = 0; };
+    const onMove  = e => {
+      if(startY===null) return;
+      raw = Math.max(0, e.touches[0].clientY - startY);
+      if(raw>0 && window.scrollY<=0) setPull(shown());
+    };
+    const onEnd = async () => {
+      const go = startY!==null && shown()>=55 && !busy;
+      startY = null; raw = 0;
+      if(!go){ setPull(0); return; }
+      busy = true; setRefreshing(true); setPull(56);
+      try { await loadRef.current(); }
+      catch(e){ setToast({m:"Refresh failed. Check your connection.",err:true}); setTimeout(()=>setToast(null),3000); }
+      setRefreshing(false); setPull(0); busy = false;
     };
     window.addEventListener("touchstart", onStart, {passive:true});
     window.addEventListener("touchmove", onMove, {passive:true});
@@ -1284,7 +1291,7 @@ export default function App() {
     </div></div>;
   })() : null;
 
-  const wrap = c => (<div className="x7"><style>{css}</style>{slotOv}<div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen&&!IS_APP)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
+  const wrap = c => (<div className="x7"><style>{css}</style>{(pull>0||refreshing)&&<div style={{position:"fixed",left:"50%",top:Math.max(0,pull-44),transform:"translateX(-50%)",width:38,height:38,borderRadius:"50%",background:"#fff",boxShadow:"0 2px 10px rgba(0,0,0,.22)",display:"grid",placeItems:"center",zIndex:70,opacity:Math.min(1,pull/40),pointerEvents:"none"}}><style>{"@keyframes csSpin{to{transform:rotate(360deg)}}"}</style><div style={{width:22,height:22,border:"3px solid #f3d6d6",borderTopColor:"#dc2626",borderRadius:"50%",animation:refreshing?"csSpin .8s linear infinite":"none",transform:refreshing?undefined:`rotate(${pull*5}deg)`}}/></div>}{slotOv}<div id="app" className={hash==="#admin"?"adm":(!session&&!authOpen&&!IS_APP)?"land":""}>{c}</div>{pv&&<div className="ov" onClick={()=>setPv(null)}><img src={pv} alt="proof" style={{maxWidth:"96vw",maxHeight:"92vh",borderRadius:8}}/></div>}{howto&&<div className="ov" onClick={()=>setHowto(false)}><div className="dl" onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:8}}>Install ClashX7</h3><p style={{fontSize:13,lineHeight:1.6,marginBottom:12}}><b>Android (Chrome):</b> menu ⋮ → Install app / Add to Home screen.<br/><b>iPhone (Safari):</b> Share → Add to Home Screen.<br/><br/><b>Important:</b> Installing it this way keeps the app connected to your Vercel website, so new Vercel deployments can become the live app without deleting and reinstalling it.</p><button className="btn" onClick={()=>setHowto(false)}>OK</button></div></div>}{dlg&&<Dlg d={dlg} close={()=>setDlg(null)}/>}{toast&&<div className={"toast"+(toast.err?" er":"")}>{toast.m}</div>}</div>);
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
   if(splash) return wrap(IS_APP ? <Splash/> : <WebSplash logo={LOGO_CUT}/>);
   if(!ready) return wrap(<Skeleton/>);
