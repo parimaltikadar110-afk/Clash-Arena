@@ -380,11 +380,12 @@ export default function App() {
   useEffect(()=>{ if(!session) return; const o = new URLSearchParams(window.location.search).get("zp"); if(!o) return;   // ZapUPI payment theke ferar por
     window.history.replaceState({},"",window.location.pathname+window.location.hash);
     api("deposit-check",{ref:o}).then(r=>{
-      if(r.credited) say("Payment successful ✅ Balance updated");
-      else if(r.pending) say("Payment is processing. Balance will update shortly.");
-      else say("Not credited: "+(r.reason||"unknown")+(r.zapupi?" | ZapUPI: "+JSON.stringify(r.zapupi).slice(0,200):""),1);
+      if(r.credited) say("Payment successful ✅ Your wallet has been updated.");
+      else if(r.failed) say(r.message||"Payment was not completed.",1);
+      else if(r.pending) say(r.message||"Payment is being processed.");
+      else say(r.message||"We could not confirm this payment yet.",1);
       setPayReturn(null); setNav("wallet"); load();
-    }).catch(e=>{ say("Check failed: "+(e.message||"unknown"),1); setPayReturn(null); setNav("wallet"); }) },[session]);
+    }).catch(()=>{ say("Could not check the payment right now. Please check your wallet shortly.",1); setPayReturn(null); setNav("wallet"); }) },[session]);
 
   // ---- auth ----
   const auth = async () => { const id=(f.em||"").trim(), p=f.pw||"";
