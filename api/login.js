@@ -1,6 +1,5 @@
-// POST /api/login { id, password } — id = username, mobile number, or email
 import { createClient } from "@supabase/supabase-js";
-import { makeLib, json } from "../../lib/shared.js";
+import { makeLib, json } from "../../src/lib/shared.js";
 
 export async function onRequestPost({ request, env }) {
   try {
@@ -18,7 +17,6 @@ export async function onRequestPost({ request, env }) {
       : isPhone
         ? await q.eq("phone", raw.replace(/\D/g, "").slice(-10)).maybeSingle()
         : await q.eq("username", raw.toLowerCase()).maybeSingle();
-    // Email login: the address itself is the login, so we use it directly
     const loginEmail = isEmail ? raw.toLowerCase() : data?.email;
     if (!loginEmail) return json({ error: "Invalid login details" }, 401);
 
