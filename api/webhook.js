@@ -1,6 +1,4 @@
-// POST /api/webhook?g=razorpay | cashfree | zapupi
-// Gateway dashboard e ei URL webhook hishebe boshate hobe. Signature verify na hole kichu credit hobe na.
-import { makeLib, hmacSign, safeEq } from "../../lib/shared.js";
+import { makeLib, hmacSign, safeEq } from "../../src/lib/shared.js";
 
 const txt = (body, status = 200) => new Response(body, { status });
 
@@ -30,7 +28,6 @@ export async function onRequestPost({ request, env }) {
       }
 
     } else if (g === "zapupi") {
-      // webhook only says "check this order"; the real payment is confirmed with ZapUPI's order-status API
       let o = {};
       try { o = JSON.parse(bodyText); } catch { o = Object.fromEntries(new URLSearchParams(bodyText)); }
       const id = o.order_id || o.data?.order_id || new URL(request.url).searchParams.get("order_id");
@@ -43,7 +40,7 @@ export async function onRequestPost({ request, env }) {
 
     if (ref) {
       const { error } = await sb.rpc("credit_deposit", { p_ref: ref, p_paid: paid });
-      if (error) return txt(error.message, 500); // 500 => gateway retries
+      if (error) return txt(error.message, 500);
     }
     return txt("ok");
   } catch (e) {
