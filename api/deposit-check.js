@@ -1,16 +1,17 @@
-// POST /api/deposit-check { ref }  — user ZapUPI theke ferar por (ba webhook miss hole) payment check kore wallet credit kore
-import { sb, authed, settleZap } from "./_lib.js";
+// POST /api/deposit-check { ref } — check payment and credit wallet (after return or if webhook missed)
+import { makeLib, json } from "../../lib/shared.js";
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+export async function onRequestPost({ request, env }) {
   try {
-    const u = await authed(req);
-    if (!u) return res.status(401).json({ error: "Login required" });
-    const { ref } = req.body || {};
-    const { data: dep } = await sb.from("deposits").select("user_id").eq("ref", ref || "").maybeSingle();
-    if (!dep || dep.user_id !== u.id) return res.status(404).json({ error: "Order not found" });
-    res.json(await settleZap(ref));
+    const { sb, authed, settleZap } = makeLib(env);
+    const u = await authed(request);
+    if (!u) return json({ error: "Login required" }, 401);
+    const body = await request.json().catch(() => ({}));
+    const ref = body.ref || "";
+    const { data: dep } = await sb.from("deposits").select("user_id").eq("ref", ref).maybeSingle();
+    if (!dep || dep.user_id !== u.id) return json({ error: "Order not found" }, 404);
+    return json(await settleZap(ref));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return json({ error: e.message }, 500);
   }
 }
