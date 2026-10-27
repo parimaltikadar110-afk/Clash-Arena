@@ -148,6 +148,8 @@ export default function App() {
   const [myNotes,setMyNotes] = useState([]);
   const [thumbMsg,setThumbMsg] = useState("");
   const [modStats,setModStats] = useState([]);
+  const [recovery,setRecovery] = useState(false);
+  const [forgot,setForgot] = useState(false);
   const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:""});
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
@@ -325,7 +327,7 @@ export default function App() {
     // Config missing (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not set at build time) -> show a message instead of a blank page
     if(!supabase){ setReady(true); say("Server config missing: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not set. Add them in Vercel and redeploy.",1); return }
     supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});
-    const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));
+    const {data:l}=supabase.auth.onAuthStateChange((_e,s)=>{ if(_e==="PASSWORD_RECOVERY") setRecovery(true); setSession(s); });
     return()=>{
       l.subscription.unsubscribe();
       window.removeEventListener("hashchange",h);
@@ -404,6 +406,23 @@ export default function App() {
     const r = await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,password:p})}); const j = await r.json().catch(()=>({}));
     if(!r.ok) return say(j.error||"Login failed",1);
     const {error} = await supabase.auth.setSession({access_token:j.access_token,refresh_token:j.refresh_token}); if(error) say(error.message,1) };
+  const sendReset = async () => {
+    const em=(f.fe||"").trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return say("Enter the email you used to create your account",1);
+    const {error}=await supabase.auth.resetPasswordForEmail(em,{redirectTo:window.location.origin+"/"});
+    if(error) return say(error.message,1);
+    say("If this email is registered, a reset link has been sent. Check your inbox and spam folder.");
+  };
+  const saveNewPassword = async () => {
+    const a=f.np||"", b=f.np2||"";
+    if(a.length<6) return say("Password must be at least 6 characters",1);
+    if(a!==b) return say("Passwords do not match",1);
+    const {error}=await supabase.auth.updateUser({password:a});
+    if(error) return say(error.message,1);
+    await supabase.auth.signOut(); setRecovery(false); setForgot(false); setF({});
+    window.history.replaceState({},"",window.location.pathname);
+    say("Password updated ✅ Please log in with your new password.");
+  };
   const logout = async () => {
     await supabase.auth.signOut(); try{localStorage.removeItem("x7cache")}catch{} setMe(null); setPage(null); setF({}) };
 
@@ -1321,12 +1340,21 @@ export default function App() {
   if(!supabase) return wrap(<p className="empty">Supabase is not configured. In Vercel → Settings → Environment Variables add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b>, then redeploy.</p>);
   if(splash) return wrap(IS_APP ? <Splash/> : <WebSplash logo={LOGO_CUT}/>);
   if(!ready) return wrap(<Skeleton/>);
+  if(recovery) return wrap(<div className="login"><div className="logoCenter"><Logo s={112}/></div><h2 style={{margin:"10px 0"}}>Set new password</h2>
+    {inp("np","New password","password")}{inp("np2","Confirm new password","password")}
+    <button className="btn" onClick={saveNewPassword}>Save password</button></div>);
   if(!session && !authOpen && !IS_APP) return wrap(<WebLanding logo={LOGO_ICON} modes={T} open={open} download={download} showDl support={SUPPORT_URL}/>);
   if(!session && !IS_APP) return wrap(<WebAuth mode={mode} setMode={setMode} f={f} onChange={(k,v)=>setF(x=>({...x,[k]:v}))} onSubmit={auth} onBack={()=>setAuthOpen(false)} logo={LOGO_ICON} download={download} showDl/>);
+  if(!session && forgot) return wrap(<div className="login"><div className="logoCenter"><Logo s={112}/></div><h2 style={{margin:"10px 0"}}>Reset password</h2>
+    <p className="hint" style={{marginBottom:10}}>Enter the email you used when you created your account. We will send a reset link to it.</p>
+    {inp("fe","Account email","email")}
+    <button className="btn" onClick={sendReset}>Send reset link</button>
+    <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setForgot(false)}>← Back to login</p></div>);
   if(!session) return wrap(<div className="login"><div className="logoCenter"><Logo s={112}/></div><h2 style={{margin:"10px 0"}}>ClashX7</h2>
     {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p>
+    {mode!=="up"&&<p style={{marginTop:10,color:"#666",cursor:"pointer",fontSize:13}} onClick={()=>setForgot(true)}>Forgot password?</p>}
     {!IS_APP&&<p style={{marginTop:10,color:"#666",cursor:"pointer",fontSize:12}} onClick={()=>setAuthOpen(false)}>← Back to home</p>}</div>);
   if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
   if(payReturn) return wrap(<div className="pgb" style={{textAlign:"center",padding:"80px 20px"}}><div style={{fontSize:44}}>⏳</div><h3 style={{marginTop:14}}>Checking your payment…</h3><p className="hint">Please wait. Your balance will update shortly.</p><button className="btn" style={{marginTop:18}} onClick={()=>{setPayReturn(null);setNav("wallet")}}>Go to Wallet</button></div>);
