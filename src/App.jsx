@@ -466,8 +466,21 @@ export default function App() {
     if(a<(+wd.min||0)) return say(`Minimum withdrawal is ₹${wd.min}`,1);
     if(+wd.max&&a>+wd.max) return say(`Maximum withdrawal per request is ₹${wd.max}`,1);
     if(a>(me.winnings||0)) return say("You can withdraw only from your Winning Balance",1);
-    if(!(f.u||"").trim()) return say("Enter your UPI ID",1);
-    if(await rpc("request_withdrawal",{p_amt:a,p_upi:f.u.trim()})){say("Withdrawal request sent");go(null)} };
+    const method = f.wm==="bank" ? "bank" : "upi";
+    let dest = "";
+    if(method==="upi"){
+      const u=(f.u||"").trim();
+      if(!/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(u)) return say("Enter a valid UPI ID (e.g. name@bank)",1);
+      dest = "UPI: "+u;
+    } else {
+      const name=(f.bn||"").trim(), acc=(f.ba||"").replace(/\s/g,""), acc2=(f.ba2||"").replace(/\s/g,""), ifsc=(f.bi||"").trim().toUpperCase();
+      if(name.length<3) return say("Enter the account holder name",1);
+      if(!/^\d{9,18}$/.test(acc)) return say("Enter a valid bank account number (9-18 digits)",1);
+      if(acc!==acc2) return say("Account numbers do not match",1);
+      if(!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) return say("Enter a valid IFSC code (e.g. SBIN0001234)",1);
+      dest = "BANK (IMPS): "+name+" | A/C "+acc+" | IFSC "+ifsc;
+    }
+    if(await rpc("request_withdrawal",{p_amt:a,p_upi:dest})){say("Withdrawal request sent");go(null)} };
   const saveWithdraw = () => { const w=S.withdraw||{}, mn=+(f.wmin??w.min??50), mx=+(f.wmax??w.max??0);
     if(!(mn>=0)||!(mx>=0)) return say("Enter valid amounts",1); if(mx&&mx<mn) return say("Maximum cannot be less than minimum",1);
     return run(supabase.from("app_settings").upsert({key:"withdraw",value:{enabled:(f.we??(w.enabled===false?"0":"1"))==="1",min:mn,max:mx,note:(f.wnote??w.note??"").trim()},updated_at:new Date().toISOString()}),"Withdrawal rules saved") };
@@ -990,7 +1003,14 @@ export default function App() {
       h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>
         <div className="hint" style={{marginBottom:10}}>Minimum withdrawal: <b>₹{mn}</b>{mx?` · Maximum per request: ₹${mx}`:""}{wd.note?<><br/>{wd.note}</>:null}</div>
         {wd.enabled===false&&<div className="hint" style={{background:"#fef2f2",color:"#b91c1c",marginBottom:10}}>Withdrawals are temporarily closed.</div>}
-        {inp("a","Enter amount to withdraw","number")}{inp("u","Enter UPI Id")}<button className="btn gb" disabled={wd.enabled===false} onClick={withdraw}>Withdraw</button></>}
+        {inp("a","Enter amount to withdraw","number")}
+        <div style={{display:"flex",gap:8,margin:"8px 0 10px"}}>
+          {[["upi","UPI"],["bank","Bank (IMPS)"]].map(([v,l])=>{ const on=(f.wm||"upi")===v; return <button key={v} onClick={()=>setF({...f,wm:v})} style={{flex:1,padding:10,borderRadius:10,border:"1px solid #ddd",fontWeight:700,cursor:"pointer",background:on?"#111":"#fff",color:on?"#fff":"#111"}}>{l}</button> })}
+        </div>
+        {(f.wm||"upi")==="upi"
+          ? inp("u","Enter UPI ID (e.g. name@bank)")
+          : <>{inp("bn","Account holder name")}{inp("ba","Bank account number","tel")}{inp("ba2","Re-enter account number","tel")}{inp("bi","IFSC code (e.g. SBIN0001234)")}</>}
+        <button className="btn gb" disabled={wd.enabled===false} onClick={withdraw}>Withdraw</button></>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
