@@ -191,7 +191,7 @@ export function WebAuth({ mode, setMode, f, onChange, onSubmit, onBack, logo, do
           </div>
           {up && field("un", "Username")}
           {up && field("ph", "Mobile number", "tel")}
-          {field("em", up ? "Email" : "Email / Username / Mobile", up ? "email" : "text")}
+          {field("em", up ? "Email" : "Email or Mobile number", up ? "email" : "text")}
           {field("pw", "Password", "password")}
           <button className="wsBtn" onClick={onSubmit}>{up ? "Create account" : "Login"}</button>
           {showDl && <button className="wsGhost" onClick={download}>⬇ Download Android app</button>}
