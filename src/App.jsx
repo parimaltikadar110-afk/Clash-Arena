@@ -31,6 +31,7 @@ const UA = navigator.userAgent || "";
 const IS_APP = /ClashX7App/i.test(UA) || /;\s*wv\)/i.test(UA) || (/Version\/[\d.]+/.test(UA) && /Chrome\//.test(UA)) || !!window.matchMedia?.("(display-mode: standalone)").matches || !!navigator.standalone; // true inside the APK / installed app
 const RZP_JS = "https://checkout.razorpay.com/v1/checkout.js", CF_JS = "https://sdk.cashfree.com/js/v3/cashfree.js";
 const T = ["SOLO BR","DUO BR","DUO PER KILL","SOLO PER KILL","LONE WOLF","LW HEAD","CS CHALLENGERS","CLASH SQUAD","CS HEADSHOT","LOSS TO WIN"];
+const PERMS = [["matches","Create & edit matches"],["results","Submit results"],["withdrawals","Approve withdrawals"],["deposits","Approve deposits"],["support","Support chat"],["notifications","Send notifications"],["users","Users & wallet balance"],["gift","Gift codes"],["leaderboard","Leaderboard"]];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
@@ -148,6 +149,7 @@ export default function App() {
   const [myNotes,setMyNotes] = useState([]);
   const [thumbMsg,setThumbMsg] = useState("");
   const [modStats,setModStats] = useState([]);
+  const [editing,setEditing] = useState(null);
   const [recovery,setRecovery] = useState(false);
   const [forgot,setForgot] = useState(false);
   const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:""});
@@ -157,8 +159,11 @@ export default function App() {
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
   const [payReturn,setPayReturn] = useState(()=>{ try{ return new URLSearchParams(window.location.search).get("zp") || null }catch{ return null } });
   const role = me?.role || "user", isAdmin = role==="admin" || session?.user?.email?.toLowerCase()===ADMIN_EMAIL, isActingAdmin = role==="acting_admin", isModerator = role==="moderator", isStaff = isAdmin || isActingAdmin || isModerator;
+  const LEGACY_ACTING = ["leaderboard","notifications","users","support"];
+  const myPerms = (me?.permissions?.length) ? me.permissions : (role==="acting_admin" ? LEGACY_ACTING : []);
+  const can = k => isAdmin || myPerms.includes(k);
   const canManageMatches = isAdmin || isActingAdmin; // only Admin + Acting Admin create / edit match details
-  const canCreate = canManageMatches || isModerator; // moderators can create/edit, only in their assigned modes
+  const canCreate = canManageMatches || can("matches"); // moderators can create/edit, only in their assigned modes
   const myModes = Array.isArray(me?.moderator_modes) ? me.moderator_modes : [];
   const modeAllowed = mode => !isModerator || myModes.includes(mode);
 
@@ -349,7 +354,7 @@ export default function App() {
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
   useEffect(()=>{load();const i=setInterval(load,15000);return()=>clearInterval(i)},[load]);
-  useEffect(()=>{ if(isAdmin||isActingAdmin) supabase.rpc("admin_moderator_stats").then(({data})=>setModStats(data||[])); },[isAdmin,isActingAdmin,allU.length]);
+  useEffect(()=>{ if(isAdmin||isActingAdmin) supabase.rpc("admin_staff_list").then(({data})=>setModStats(data||[])); },[isAdmin,isActingAdmin,allU.length]);
   useEffect(()=>{
     const id=slotUI?.m?.id; if(!id) return;
     const t=setInterval(async()=>{
@@ -785,7 +790,14 @@ export default function App() {
     setSupportCfg({mode:o.support_mode||"chat", wa:String(o.support_wa||"").replace(/\D/g,"")});
   });
   useEffect(()=>{ reloadSupportCfg(); },[page]);
-  const refreshModStats = () => supabase.rpc("admin_moderator_stats").then(({data})=>setModStats(data||[]));
+  const refreshModStats = () => supabase.rpc("admin_staff_list").then(({data})=>setModStats(data||[]));
+  const saveEditing = async () => {
+    if(!editing) return;
+    const ok = editing.kind==="modes"
+      ? await rpc("admin_set_moderator_modes",{p_user:editing.id,p_modes:editing.sel},"Modes updated")
+      : await rpc("admin_set_permissions",{p_user:editing.id,p_perms:editing.sel},"Permissions updated");
+    if(ok){ setEditing(null); refreshModStats(); }
+  };
   const setModes = x => ask(`Modes · ${x.name||"Moderator"}`,
     [["modes","Modes, comma separated (e.g. SOLO BR, DUO BR)","text"]],
     async v => {
@@ -1043,8 +1055,8 @@ export default function App() {
     let b=null;
     const TABS = isAdmin
       ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
-      : isActingAdmin
-        ? ["Matches","Leaderboard","Notifications","Rules","Users","Support Chat"]
+      : (isActingAdmin || isModerator)
+        ? ["Matches","Rules", ...(can("leaderboard")?["Leaderboard"]:[]), ...(can("notifications")?["Notifications"]:[]), ...(can("deposits")?["Deposits"]:[]), ...(can("withdrawals")?["Withdrawals"]:[]), ...(can("users")?["Users"]:[]), ...(can("support")?["Support Chat"]:[]), ...(can("gift")?["Gift Codes"]:[])]
         : ["Matches","Rules"];
     const cur = TABS.includes(at)?at:TABS[0];
 
@@ -1210,9 +1222,25 @@ export default function App() {
         <h3>👥 Staff & Moderators</h3>
         <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Only the main Admin can change staff roles. Acting Admin sits between Moderator and Admin.</p>
         {staffers.length ? <div className="acards">{staffers.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}</b><span className={"pill "+x.role}>{x.role==="acting_admin"?"Acting Admin":"Moderator"}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span></div><div className="uact"><select value={x.role} onChange={e=>setStaffRole(x,e.target.value)}><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option><option value="user">Remove staff</option></select></div></div>)}</div> : <p className="empty">No moderators or acting admins yet.</p>}
-        {(isAdmin||isActingAdmin)&&<>
-        <p className="sh">Moderator matches (last 7 days)</p>
-                <div className="acards">{modStats.length? modStats.map(x=><div className="ucard" key={x.user_id}><div className="uhead"><b>{x.name||"-"}</b><span className="pill moderator">{x.played7d} in 7 days</span></div><div className="ugrid"><span>Modes<b>{(x.modes||[]).join(", ")||"None"}</b></span></div><div className="uact">{isAdmin&&<button className="sm" onClick={()=>setModes(x)}>Set modes</button>}<button className="sm" onClick={()=>rpc("admin_reset_moderator_counter",{p_user:x.user_id},"7-day count reset for "+(x.name||"moderator")).then(refreshModStats)}>Reset 7-day count</button></div></div>) : <p className="empty">No moderators yet.</p>}</div>
+        {isAdmin&&<>
+        <p className="sh">Staff (moderators & acting admins)</p>
+        <div className="acards">{modStats.length? modStats.map(x=>{ const ed = editing && editing.id===x.user_id ? editing : null; const opts = ed ? (ed.kind==="modes" ? T : PERMS.map(q=>q[0])) : [];
+          return <div className="ucard" key={x.user_id}>
+            <div className="uhead"><b>{x.name||"-"}</b><span className="pill moderator">{x.role==="acting_admin"?"Acting Admin":"Moderator"} · {x.played7d} in 7 days</span></div>
+            {x.role==="moderator" && <div className="ugrid"><span>Modes<b>{(x.modes||[]).join(", ")||"None"}</b></span></div>}
+            <div className="ugrid"><span>Permissions<b>{(x.permissions&&x.permissions.length)?x.permissions.map(k=>(PERMS.find(q=>q[0]===k)||[k,k])[1]).join(", "):(x.role==="acting_admin"?"Default (not set)":"None")}</b></span></div>
+            {ed && <div style={{margin:"8px 0"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>{opts.map(v=>{ const on=ed.sel.includes(v); const label = ed.kind==="modes" ? v : PERMS.find(q=>q[0]===v)[1];
+                return <label key={v} style={{display:"flex",gap:6,alignItems:"center",fontSize:13,padding:"7px 8px",border:"1px solid #e5e7eb",borderRadius:8,background:on?"#fff1f2":"#fff",cursor:"pointer"}}>
+                  <input type="checkbox" checked={on} onChange={()=>setEditing({...ed, sel: on ? ed.sel.filter(z=>z!==v) : [...ed.sel, v]})}/>{label}</label> })}</div>
+              <div className="uact" style={{marginTop:8}}><button className="sm ok" onClick={saveEditing}>Save</button><button className="sm" onClick={()=>setEditing(null)}>Cancel</button></div>
+            </div>}
+            {!ed && <div className="uact">
+              {x.role==="moderator" && <button className="sm" onClick={()=>setEditing({id:x.user_id,kind:"modes",sel:x.modes||[],name:x.name})}>Set modes</button>}
+              <button className="sm" onClick={()=>setEditing({id:x.user_id,kind:"perms",sel:x.permissions||[],name:x.name})}>Permissions</button>
+              <button className="sm" onClick={()=>rpc("admin_reset_moderator_counter",{p_user:x.user_id},"7-day count reset for "+(x.name||"staff")).then(refreshModStats)}>Reset 7-day count</button>
+            </div>}
+          </div> }) : <p className="empty">No staff yet.</p>}</div>
         </>}
         <p className="sh">Role powers</p>
         <div className="roleInfo"><div><b>Moderator</b><small>Room ID/Pass, rules and Live/Done status. Cannot create or edit match details.</small></div><div><b>Acting Admin</b><small>Moderator powers + user search + add / deduct any user's balance. Cannot change customer-service links, access gateway settings, payouts, staff roles or delete matches.</small></div><div><b>Admin</b><small>Full control, including staff roles, finance settings, payouts and match deletion.</small></div></div>
@@ -1351,7 +1379,7 @@ export default function App() {
     <button className="btn" onClick={sendReset}>Send reset link</button>
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setForgot(false)}>← Back to login</p></div>);
   if(!session) return wrap(<div className="login"><div className="logoCenter"><Logo s={112}/></div><h2 style={{margin:"10px 0"}}>ClashX7</h2>
-    {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email / Username / Mobile",mode==="up"?"email":"text")}{inp("pw","Password","password")}
+    {mode==="up"&&<>{inp("un","Username")}{inp("ph","Mobile number","tel")}</>}{inp("em",mode==="up"?"Email":"Email or Mobile number",mode==="up"?"email":"text")}{inp("pw","Password","password")}
     <button className="btn" onClick={auth}>{mode==="up"?"Create account":"Login"}</button>
     <p style={{marginTop:14,color:"var(--r)",cursor:"pointer",fontSize:13}} onClick={()=>setMode(mode==="up"?"in":"up")}>{mode==="up"?"Already have an account? Login":"New here? Create account"}</p>
     {mode!=="up"&&<p style={{marginTop:10,color:"#666",cursor:"pointer",fontSize:13}} onClick={()=>setForgot(true)}>Forgot password?</p>}
