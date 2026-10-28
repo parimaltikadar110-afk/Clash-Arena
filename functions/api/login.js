@@ -27,6 +27,22 @@ export async function onRequestPost({ request, env }) {
       const { data } = await sb.from("profiles").select("id,email").ilike("username", likeEscape(raw)).maybeSingle();
       profile = data;
     }
+    // Fallback: if profile has no username/phone saved, look in the auth accounts' signup data
+    if (!profile && !isEmail) {
+      const key = isPhone ? raw.replace(/\D/g, "").slice(-10) : raw.toLowerCase();
+      for (let page = 1; page <= 10 && !profile; page++) {
+        const { data: list } = await sb.auth.admin.listUsers({ page, perPage: 1000 });
+        const users = list?.users || [];
+        const hit = users.find(u => {
+          const m = u.user_metadata || {};
+          return isPhone
+            ? String(m.phone || "").replace(/\D/g, "").slice(-10) === key
+            : String(m.username || "").trim().toLowerCase() === key;
+        });
+        if (hit) profile = { id: hit.id, email: hit.email || null };
+        if (users.length < 1000) break;
+      }
+    }
     if (!profile) return json({ error: "Invalid login details" }, 401);
 
     // Profile may have no email saved; take it from the auth account instead
