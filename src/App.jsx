@@ -161,9 +161,6 @@ export default function App() {
   const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:""});
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
-  const [activeMode,setActiveMode] = useState(()=>{ try{return localStorage.getItem("x7-active-mode")==="casino"?"casino":"freefire"}catch{return "freefire"} });
-  const [casinoGame,setCasinoGame] = useState(null);
-  const switchAppMode = next => { setActiveMode(next); try{localStorage.setItem("x7-active-mode",next)}catch{} setPage(null); setCasinoGame(null); setNav("home"); };
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
   const [payReturn,setPayReturn] = useState(()=>{ try{ return new URLSearchParams(window.location.search).get("zp") || null }catch{ return null } });
@@ -936,10 +933,6 @@ export default function App() {
   };
 
   const body = () => {
-    if(activeMode==="casino"){
-      const games=[{id:"aviator",name:"Aviator",icon:"✈️",desc:"A flight-multiplier game concept. Informational screen only; no bets or payouts."},{id:"roulette",name:"Roulette",icon:"🎡",desc:"A roulette wheel game concept. Informational screen only; no bets or payouts."},{id:"dragon-tiger",name:"Dragon Tiger",icon:"🐉",desc:"A card-comparison game concept. Informational screen only; no bets or payouts."}];
-      return <div className="pgb casinoHub"><div className="casinoHero"><small>CLASHX7 · CASINO MODE</small><h2>{casinoGame?games.find(g=>g.id===casinoGame)?.name:"Game Lounge"}</h2><p>No demo chips are issued. Your existing INR wallet is unchanged and is not used in these game screens.</p></div>{casinoGame ? <><div className="casinoInfo"><div style={{fontSize:42}}>{games.find(g=>g.id===casinoGame)?.icon}</div><h3>{games.find(g=>g.id===casinoGame)?.name}</h3><p>{games.find(g=>g.id===casinoGame)?.desc}</p><p className="hint">Interactive betting, stake entry, cash conversion and payouts are not enabled.</p><button className="btn" onClick={()=>setCasinoGame(null)}>← Back to games</button></div></> : <div className="casinoGrid">{games.map(g=><button key={g.id} className="casinoTile" onClick={()=>setCasinoGame(g.id)}><span>{g.icon}</span><b>{g.name}</b><small>Open info</small></button>)}</div>}<button className="btn" style={{marginTop:12,background:"#111"}} onClick={()=>switchAppMode("freefire")}>Switch to Free Fire Mode</button></div>;
-    }
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
@@ -1058,7 +1051,6 @@ export default function App() {
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      <div className="modeSwitchCard"><div><b>App Mode</b><small>Current: {activeMode==="casino"?"Casino Mode":"Free Fire Mode"}</small></div><button className="btn" style={{width:"auto",margin:0}} onClick={()=>switchAppMode(activeMode==="casino"?"freefire":"casino")}>{activeMode==="casino"?"Switch to Free Fire":"Switch to Casino"}</button></div>
       {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
@@ -1091,7 +1083,7 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Casino Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
+      ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
       : (isActingAdmin || isModerator)
         ? ["Matches","Rules", ...(can("leaderboard")?["Leaderboard"]:[]), ...(can("notifications")?["Notifications"]:[]), ...(can("deposits")?["Deposits"]:[]), ...(can("withdrawals")?["Withdrawals"]:[]), ...(can("users")?["Users"]:[]), ...(can("support")?["Support Chat"]:[]), ...(can("gift")?["Gift Codes"]:[])]
         : ["Matches","Rules"];
@@ -1122,9 +1114,6 @@ export default function App() {
           </div>
         </div></div>;
     })() : null;
-    if(cur==="Casino Dashboard"){
-      b=<><div className="pnl"><h3>🎮 Casino Dashboard</h3><p className="hint">Separate dashboard entry on the same Admin account. No demo chips are granted, and this panel does not alter the INR wallet.</p><div className="casinoAdminGrid">{[["Aviator","Flight game interface"],["Roulette","Wheel game interface"],["Dragon Tiger","Card game interface"]].map(([n,d])=><div className="ucard" key={n}><div className="uhead"><b>{n}</b><span className="pill">Interface only</span></div><small>{d}</small></div>)}</div><p className="hint" style={{marginTop:12}}>Game availability, automatic rounds, and role enforcement need a dedicated Supabase schema plus server-side policies/functions before they can be safely enabled. This UI does not pretend to save settings.</p></div></>;
-    }
     if(cur==="Dashboard"){
       const x=stats;
       if(!x) b=<div className="emptyAdmin">No dashboard data available yet.</div>;
@@ -1690,9 +1679,4 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 @keyframes cxsDrift{from{transform:rotate(-8deg) translateX(-30px)}to{transform:rotate(-8deg) translateX(30px)}}
 
 .cxR .thumbFallback{display:grid;place-items:center}
-
-.modeSwitchCard{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;margin:10px 0 14px;background:#fff}
-.modeSwitchCard b,.modeSwitchCard small{display:block}.modeSwitchCard small{font-size:11px;color:#777;margin-top:4px}
-.casinoHub{padding-top:14px}.casinoHero{padding:20px 16px;border-radius:16px;background:linear-gradient(135deg,#102f28,#176747);color:#fff;text-align:center}.casinoHero small{font-size:10px;letter-spacing:1.2px;opacity:.85}.casinoHero h2{margin:8px 0;font-size:25px}.casinoHero p{font-size:12px;line-height:1.5;opacity:.9;margin:0}.casinoGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.casinoTile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 10px;border:1px solid #e5e7eb;border-radius:14px;background:#fff;cursor:pointer;color:#111}.casinoTile span{font-size:34px}.casinoTile b{font-size:15px}.casinoTile small{font-size:11px;color:#777}.casinoInfo{padding:18px 14px;text-align:center;border:1px solid #e5e7eb;border-radius:14px;margin-top:12px}.casinoInfo h3{margin:8px 0}.casinoInfo p{font-size:13px;line-height:1.5;color:#555}.casinoAdminGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
-
 `;
