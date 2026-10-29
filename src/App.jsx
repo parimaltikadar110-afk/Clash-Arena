@@ -428,6 +428,17 @@ export default function App() {
     window.history.replaceState({},"",window.location.pathname);
     say("Password updated ✅ Please log in with your new password.");
   };
+  const joinPrivate = async () => {
+    const code = (f.c||"").trim();
+    if(!code) return say("Enter the room code",1);
+    const {data,error} = await supabase.rpc("find_private_match",{p_code:code});
+    if(error) return say(error.message,1);
+    const row = (data||[])[0];
+    if(!row) return say("No match found with this code",1);
+    setF({...f,c:""});
+    await load();
+    go("match",{mid:row.match_id,game_name:me.game_name||""});
+  };
   const logout = async () => {
     await supabase.auth.signOut(); try{localStorage.removeItem("x7cache")}catch{} setMe(null); setPage(null); setF({}) };
 
@@ -742,8 +753,10 @@ export default function App() {
     const pkM = isPK(m.mode);
     const fields = [["title","Match title"],["g","Mode","select",T.map(t=>[t,t])],["m","Map"],["s","Slots","number"],
       ...(pkM ? [["pk","Per kill ₹","number"],["bk","Booyah bonus ₹","number"]] : [["p","Prize pool ₹","number"]]),
-      ["fee","Entry fee ₹","number"],["d","Start time","datetime-local"]];
-    const initial = {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), pk:String(m.per_kill||""), bk:String(m.booyah_bonus||""), fee:String(m.fee), d:toLocalInput(m.starts_at)};
+      ["fee","Entry fee ₹","number"],["d","Start time","datetime-local"],
+      ["vis","Visibility","select",[["public","Public (everyone sees it)"],["private","Private (code only)"]]],
+      ["code","Private code (only for private; leave blank to keep current)","text"]];
+    const initial = {title:m.title, g:m.mode, m:m.map, s:String(m.slots), p:String(m.prize), pk:String(m.per_kill||""), bk:String(m.booyah_bonus||""), fee:String(m.fee), d:toLocalInput(m.starts_at), vis:m.is_private?"private":"public", code:""};
     return ask(`Edit match · #${mNo(m)}`, fields,
       async v => {
         if(!canManageMatches) { say("Only Admin or Acting Admin can edit matches",1); return false }
@@ -754,10 +767,19 @@ export default function App() {
         const money = pkM
           ? { prize: pkPool(v.pk, v.bk, slotsN), per_kill: Math.max(0,+v.pk||0), booyah_bonus: Math.max(0,+v.bk||0) }
           : { prize: +v.p||0, per_kill: 0, booyah_bonus: 0 };
-        return run(supabase.from("matches").update({
+        const okBasic = await run(supabase.from("matches").update({
           title:cleanTitle(v.title), mode:v.g, map:v.m||"BERMUDA", slots:slotsN,
           ...money, fee:+v.fee||0, starts_at:starts.toISOString()
         }).eq("id",m.id), "Match updated ✅");
+        if(!okBasic) return false;
+        const wantPrivate = v.vis==="private";
+        const codeTyped = (v.code||"").trim();
+        if(wantPrivate!==!!m.is_private || (wantPrivate && codeTyped)){
+          const {error} = await supabase.rpc("admin_set_private",{p_match:String(m.id),p_private:wantPrivate,p_code:codeTyped||null});
+          if(error){ say(error.message,1); return false }
+          say(wantPrivate ? "Visibility set to private ✅" : "Visibility set to public ✅");
+        }
+        return true;
       },
       initial,
       {btn:"Save changes", note: pkM ? "Per kill and booyah amounts are used for payouts. Changes affect new joins." : "Prize/fee changes affect new joins and payouts. Check before saving."});
@@ -1029,7 +1051,7 @@ export default function App() {
     }
     if(page==="account"){t="Account";h=<><div className="field"><label>Username</label><input value={me.name||""} disabled/></div>{inp("fn","Full name")}{inp("gn","Game Name")}{inp("g","Game ID")}{inp("ph","Mobile number","tel")}<button className="btn" onClick={saveAcc}>Save</button></>}
     if(page==="giftcode"){t="Gift Code";h=<>{inp("gc","Enter gift code")}<button className="btn" onClick={redeemGift}>Redeem</button><p className="hint">Each gift code can be used once by you. The amount is added to your Deposit balance.</p></>}
-    if(page==="private"){t="Private Tournament";h=<>{inp("c","Enter room code")}<button className="btn" onClick={async()=>{if(await rpc("join_by_code",{p_code:f.c||""}))setPage(null)}}>Join</button></>}
+    if(page==="private"){t="Private Tournament";h=<><p className="hint" style={{marginBottom:10}}>Enter the room code from the organizer to see the match.</p>{inp("c","Room code")}<button className="btn" onClick={joinPrivate}>Find match</button></>}
     if(page==="withdraw"){t="Withdrawal";const wd=S.withdraw||{}, mn=+(wd.min??0), mx=+(wd.max||0);
       h=<><div className="kv">Winning Balance<b className="gn">₹{me.winnings}</b></div>
         <div className="hint" style={{marginBottom:10}}>Minimum withdrawal: <b>₹{mn}</b>{mx?` · Maximum per request: ₹${mx}`:""}{wd.note?<><br/>{wd.note}</>:null}</div>
@@ -1170,9 +1192,9 @@ export default function App() {
         <div className="adminSearch"><input value={f.ms||""} onChange={e=>setF({...f,ms:e.target.value})} placeholder="Search match code / #ID / title"/></div>
         <div className="acards">{list.map(m=><div className="ucard" key={m.id}>
           <div className="uhead"><b>#{mNo(m)} · {m.title}</b><span className={"pill "+m.status}>{m.status}</span></div>
-          <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Private code<b>🔒 {m.code}</b></span>}</div>
+          <div className="ugrid"><span>Mode<b>{m.mode}</b></span><span>Slots<b>{m.filled||0}/{m.slots}</b></span><span>Prize / Entry<b>₹{m.prize} / ₹{m.fee}</b></span><span>Start<b>{fmt(m.starts_at)}</b></span><span>Room ID / Pass<b>{rooms[m.id]?.room_id?`${rooms[m.id].room_id} / ${rooms[m.id].room_pass}`:"not set"}</b></span>{m.is_private&&<span>Visibility<b>🔒 Private</b></span>}</div>
 <div style={{display:"flex",gap:6,margin:"8px 0"}}><input style={{flex:1}} value={f["mn"+m.id]||""} onChange={e=>setF({...f,["mn"+m.id]:e.target.value})} placeholder="Note for joined players (optional)"/><button className="sm" onClick={()=>rpc("admin_set_match_note",{p_match:String(m.id),p_note:f["mn"+m.id]||""},"Note saved")}>Save note</button></div>
-          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>copyMatchToForm(m)}>Copy</button>{canManageMatches&&<button className="sm" onClick={()=>deleteMatch(m)}>Delete</button>}{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
+          <div className="uact"><button className="sm" onClick={()=>room(m)}>ID / Pass</button><button className="sm" onClick={()=>copyMatchToForm(m)}>Copy</button>{m.is_private&&<button className="sm" onClick={async()=>{ const {data,error}=await supabase.rpc("admin_get_private_code",{p_match:String(m.id)}); say(error?error.message:"Private code: "+(data||"not set")); }}>Code</button>}{canManageMatches&&<button className="sm" onClick={()=>deleteMatch(m)}>Delete</button>}{(m.status!=="played"||canManageMatches)&&<button className="sm" onClick={()=>openResults(m)}>{m.status==="played"?"Edit results":"Results"}</button>}{canManageMatches&&m.status!=="played"&&<button className="sm" onClick={()=>editMatch(m)}>Edit</button>}{canManageMatches&&<button className="sm" onClick={()=>setThumbForMatch(m)}>Thumbnail</button>}{m.status==="upcoming"&&<button className="sm" onClick={()=>setSt(m,"live")}>Live</button>}{m.status==="live"&&<button className="sm" onClick={()=>setSt(m,"played")}>Done</button>}{isAdmin&&m.status==="played"&&<button className="sm" onClick={()=>pay(m)}>Pay</button>}{isAdmin&&<button className="sm" onClick={()=>window.confirm("Delete this match? Every joined player will be refunded automatically.")&&run(supabase.rpc("admin_delete_match",{p_match:m.id}),"Deleted · players refunded ✅")}>Del</button>}</div></div>)}{!list.length&&<p className="empty">No matches found</p>}</div>
       </div>;
     }
 
