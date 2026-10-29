@@ -113,9 +113,9 @@ function Dlg({d, close}) {
     <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button><button className="btn" disabled={busy} style={{background:"#f3f4f6",color:"#111",marginTop:8}} onClick={close}>{d.noBtn||"No, cancel"}</button></div></div>);
 }
 
-const Tabs = ({list,cur,set,flex}) => (
-  <div className="tabs">
-    {list.map(t=><b key={t} className={t===cur?"on":""} ref={t===cur?el=>{
+const Tabs = ({list,cur,set,flex,wrap}) => (
+  <div className="tabs" style={wrap?{flexWrap:"wrap",overflowX:"visible",gap:6,padding:"8px 10px"}:null}>
+    {list.map(t=><b key={t} className={t===cur?"on":""} style={wrap?{padding:"8px 12px",border:"1px solid #e5e7eb",borderRadius:999,fontSize:12,whiteSpace:"nowrap"}:undefined} ref={t===cur&&!wrap?el=>{
       if(!el||!el.parentElement||flex) return;
       const p=el.parentElement;
       const left=Math.max(0,el.offsetLeft-(p.clientWidth-el.offsetWidth)/2);
@@ -617,7 +617,8 @@ export default function App() {
     if(!f.t||!f.d) return say("Title and start time are required",1);
     if(isPK(f.g) && !(+f.pk>0 || +f.bk>0)) return say("Please enter a per kill or booyah amount.",1);
     if(busy) return say("Please wait until the thumbnail upload finishes",1);
-    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th});
+    if(f.v==="1" && (f.cd||"").trim().length<4) return say("Enter a private code (at least 4 letters/numbers)",1);
+    const row=buildMatchRow({title:f.t,mode:f.g,map:f.m,slots:f.s,prize:f.p,perKill:f.pk,booyah:f.bk,fee:f.fee,start:f.d,type:f.v,thumbnail:f.th,code:f.cd});
     if(!row.starts_at) return say("Start time is invalid",1);
     const {data:nm,error}=await supabase.from("matches").insert(row).select().single();
     if(error) return say(error.message,1);
@@ -928,7 +929,7 @@ export default function App() {
   const body = () => {
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
-      return <><Tabs list={T} cur={tab} set={setTab}/>
+      return <><Tabs list={T} cur={tab} set={setTab} wrap/>
         {ms.length?ms.map(matchCard):<p className="empty">No matches available in {tab}.</p>}
       </>;
     }
@@ -1148,7 +1149,7 @@ export default function App() {
                 </> : inp("p","Prize ₹","number")}
                 {inp("fee","Entry fee ₹","number")}
                 {inp("d","Start time","datetime-local")}
-                <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>
+                <div><label>Type</label><select value={f.v||"0"} onChange={e=>setF({...f,v:e.target.value})}><option value="0">Public</option><option value="1">Private</option></select></div>{f.v==="1"&&<div><label>Private code (min 4 letters/numbers, share only with players)</label><input value={f.cd||""} maxLength={20} onChange={e=>setF({...f,cd:e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"")})} placeholder="e.g. TEAM7X"/></div>}
               </div>
               {canManageMatches&&<><label>Thumbnail URL (optional)</label><input value={f.th||""} onChange={e=>setF({...f,th:normalizeImgUrl(e.target.value)})} placeholder="https://.../thumbnail.jpg"/>
                             <label>Or upload image from gallery</label><label className="fileBtn">{busy?"Uploading…":"📁 Choose image from gallery"}<input type="file" accept="image/*" disabled={busy} style={{display:"none"}} onChange={e=>{ const fl=e.target.files&&e.target.files[0]; e.target.value=""; if(fl) uploadMatchThumb(fl); }}/></label>{thumbMsg&&<p className="hint">{thumbMsg}</p>}{f.th&&<img className="adminThumbPreview" src={f.th} alt="thumbnail preview"/>}</>}
