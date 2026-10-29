@@ -113,16 +113,22 @@ function Dlg({d, close}) {
     <button className="btn" disabled={busy} onClick={async()=>{setBusy(true); const r = await d.ok(v); setBusy(false); if(r!==false) close()}}>{busy?"Please wait…":d.btn||"Save"}</button><button className="btn" disabled={busy} style={{background:"#f3f4f6",color:"#111",marginTop:8}} onClick={close}>{d.noBtn||"No, cancel"}</button></div></div>);
 }
 
-const Tabs = ({list,cur,set,flex,wrap}) => (
-  <div className="tabs" style={wrap?{flexWrap:"wrap",overflowX:"visible",gap:6,padding:"8px 10px"}:null}>
-    {list.map(t=><b key={t} className={t===cur?"on":""} style={wrap?{padding:"8px 12px",border:"1px solid #e5e7eb",borderRadius:999,fontSize:12,whiteSpace:"nowrap"}:undefined} ref={t===cur&&!wrap?el=>{
-      if(!el||!el.parentElement||flex) return;
-      const p=el.parentElement;
-      const left=Math.max(0,el.offsetLeft-(p.clientWidth-el.offsetWidth)/2);
-      p.scrollLeft=left;
-    }:undefined} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:null} onClick={()=>set(t)}>{t}</b>)}
-  </div>
-);
+const Tabs = ({list,cur,set,flex}) => {
+  const box = useRef(null);
+  // Smoothly bring the selected tab into view only when the selection changes (no jumping on every render)
+  useEffect(()=>{
+    if(flex || !box.current) return;
+    const el = box.current.querySelector(".on");
+    if(!el) return;
+    const left = Math.max(0, el.offsetLeft - (box.current.clientWidth - el.offsetWidth)/2);
+    box.current.scrollTo({left, behavior:"smooth"});
+  },[cur]);
+  return (
+    <div ref={box} className="tabs" style={flex?null:{overflowX:"auto",WebkitOverflowScrolling:"touch",overscrollBehaviorX:"contain",touchAction:"pan-x",scrollbarWidth:"none"}}>
+      {list.map(t=><b key={t} className={t===cur?"on":""} style={flex?{flex:1,textAlign:"center",textTransform:"capitalize"}:{whiteSpace:"nowrap",flexShrink:0}} onClick={()=>set(t)}>{t}</b>)}
+    </div>
+  );
+};
 
 /* Instant open: last known data is shown immediately, fresh data replaces it a moment later (no blank/splash screen). */
 const readLS = k => { try{ return JSON.parse(localStorage.getItem(k)) }catch{ return null } };
@@ -929,7 +935,7 @@ export default function App() {
   const body = () => {
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
-      return <><Tabs list={T} cur={tab} set={setTab} wrap/>
+      return <><Tabs list={T} cur={tab} set={setTab}/>
         {ms.length?ms.map(matchCard):<p className="empty">No matches available in {tab}.</p>}
       </>;
     }
