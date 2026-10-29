@@ -76,7 +76,8 @@ export default function SupportChat({ supabase, mode = "user" }) {
       return loadThreads();
     };
     run();
-    const t = setInterval(run, 5000);
+    // Support chat stays at 5 seconds so messages arrive quickly; it pauses only when the app is hidden
+    const t = setInterval(() => { if (document.visibilityState === "visible") run(); }, 5000);
     return () => clearInterval(t);
   }, [isAdmin, active, loadMine, loadThreads, loadAdminMsgs]);
 
