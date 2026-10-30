@@ -353,7 +353,12 @@ export default function App() {
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
     const slowFresh = Date.now() - slowAt.current < 300000; if(!slowFresh) slowAt.current = Date.now();
     const sl = x => slowFresh ? Promise.resolve({data:null}) : x;   // rules, settings and leaderboards change rarely: reuse for 5 minutes
-    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), supabase.from("matches").select("*").or(`status.in.(upcoming,live),starts_at.gte.${new Date(Date.now()-60*864e5).toISOString()}`).order("starts_at").limit(500), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("score",{ascending:false}).limit(100)), q("match_rooms"),
+    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), (async()=>{ const since=new Date(Date.now()-60*864e5).toISOString();
+      const [a,b]=await Promise.all([
+        supabase.from("matches").select("*").in("status",["upcoming","live"]).order("starts_at"),   // all open matches, no cut-off
+        supabase.from("matches").select("*").gte("starts_at",since).not("status","in","(upcoming,live)").order("starts_at",{ascending:false}).limit(300)  // recent finished matches
+      ]);
+      return {data:[...(a.data||[]),...(b.data||[])].sort((x,y)=>new Date(x.starts_at)-new Date(y.starts_at)), error:a.error||b.error}; })(), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("score",{ascending:false}).limit(100)), q("match_rooms"),
       sl(q("mode_rules")), q("deposits").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), sl(q("app_settings")), sl(supabase.from("manual_leaderboard").select("*")), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(30), supabase.rpc("my_match_results")]);
     setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); if(l.data) setLb(l.data); if(mlR.data) setMlb(mlR.data);
       setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
