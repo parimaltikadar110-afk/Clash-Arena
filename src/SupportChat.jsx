@@ -203,7 +203,37 @@ export function WhatsAppSupport({ wa, tg = "" }) {
   );
 }
 
-/* Admin control: choose In-app chat or WhatsApp, and set the WhatsApp number. */
+/* Telegram mode: in-app chat is closed; player taps the button to open Telegram. */
+export function TelegramSupport({ tg }) {
+  const [copied, setCopied] = useState(false);
+  const name = String(tg || "").replace(/^https?:\/\/(t\.me|telegram\.me)\//i, "").replace(/\/+$/, "");
+  const copy = async () => {
+    try { await navigator.clipboard.writeText("@" + name); setCopied(true); setTimeout(() => setCopied(false), 2500); }
+    catch (e) { setCopied(false); }
+  };
+  const open = () => { window.location.href = tg; };   // optional: opens Telegram if the phone allows it
+  return (
+    <div className="scWrap">
+      <style>{CSS}</style>
+      <div className="scNote">Need help? Contact our support team on Telegram.</div>
+      <div style={{ textAlign: "center", marginTop: 28 }}>
+        <div style={{ fontSize: 13, color: "#777", marginBottom: 6 }}>Telegram support username</div>
+        <div style={{ fontSize: 22, fontWeight: 800, userSelect: "all", WebkitUserSelect: "all" }}>@{name}</div>
+        <button onClick={copy}
+          style={{ marginTop: 16, width: "100%", maxWidth: 320, padding: "14px 20px", border: 0, borderRadius: 10, background: "#111", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer" }}>
+          {copied ? "Copied ✅ — now open Telegram and search" : "Copy username"}
+        </button>
+        <p style={{ fontSize: 12, color: "#888", marginTop: 14 }}>Open Telegram, tap the search bar, paste the username and send a message.</p>
+        <button onClick={open}
+          style={{ marginTop: 6, padding: "10px 18px", border: "1px solid #ddd", borderRadius: 10, background: "#fff", color: "#111", fontWeight: 700, cursor: "pointer" }}>
+          Try opening Telegram
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Admin control: choose In-app chat, WhatsApp or Telegram. */
 export function SupportModeBox({ supabase, cfg, onSaved }) {
   const [tg, setTg] = useState(cfg.tg || "");
   const [mode, setMode] = useState(cfg.mode || "chat");
@@ -214,6 +244,7 @@ export function SupportModeBox({ supabase, cfg, onSaved }) {
   const save = async () => {
     const digits = wa.replace(/\D/g, "");
     if (mode === "whatsapp" && digits.length < 8) { setMsg("Enter a valid WhatsApp number"); return; }
+    if (mode === "telegram" && !tg.trim()) { setMsg("Enter your Telegram username or link"); return; }
     // Telegram: accept "@name", "name", or a full t.me link; store as https://t.me/name
     let tgUrl = tg.trim();
     if (tgUrl && !/^https?:\/\//i.test(tgUrl)) tgUrl = "https://t.me/" + tgUrl.replace(/^@/, "");
@@ -238,6 +269,7 @@ export function SupportModeBox({ supabase, cfg, onSaved }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         {tab("chat", "In-app chat")}
         {tab("whatsapp", "WhatsApp")}
+        {tab("telegram", "Telegram")}
       </div>
       <input value={tg} onChange={e => setTg(e.target.value)} placeholder="Telegram link, e.g. https://t.me/clashx7support or @clashx7support"
         style={{ width: "100%", boxSizing: "border-box", padding: 10, border: "1px solid #ddd", borderRadius: 10, marginBottom: 8 }} />
