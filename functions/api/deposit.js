@@ -1,5 +1,5 @@
 // POST /api/deposit  { gateway: "zapupi" | "razorpay" | "cashfree", amount, phone? }
-import { makeLib, json } from "../../lib/shared.js";
+import { makeLib, json } from "../../src/lib/shared.js";
 
 export async function onRequestPost({ request, env }) {
   try {
