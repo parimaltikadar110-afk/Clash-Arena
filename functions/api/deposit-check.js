@@ -1,3 +1,4 @@
+// POST /api/deposit-check { ref } — check payment and credit wallet (after return or if webhook missed)
 import { makeLib, json } from "../../src/lib/shared.js";
 
 export async function onRequestPost({ request, env }) {
