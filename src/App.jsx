@@ -157,6 +157,7 @@ export default function App() {
   const [modStats,setModStats] = useState([]);
   const [editing,setEditing] = useState(null);
   const slowAt = useRef(0);
+  const [resConfirm,setResConfirm] = useState(null);
   const rawM = useRef([]);     // all matches as last received from the server
   const fullAt = useRef(0);    // when the full match list was last fetched
   const syncAt = useRef(0);    // when matches were last synced (full or delta)
@@ -164,6 +165,7 @@ export default function App() {
   const [forgot,setForgot] = useState(false);
   const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:"",tg:""});
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
+  useEffect(()=>{ setResConfirm(null); },[resM]);
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
   const [slotUI,setSlotUI] = useState(null); // {m,taken,sel,names,step}
@@ -715,6 +717,7 @@ export default function App() {
   };
   const submitResults = async () => {
     const m=resM, pk=isPK(m.mode);
+    // validate first; the actual payout runs only after the in-screen "Yes" (window.confirm is blocked in the app)
     const payload=resRows.map(x=>{const v=resIn[x.key]||{}; return {slot_no:x.key, user_id:x.user_id, kills:pk?Math.max(0,Math.floor(+v.k||0)):0, booyah:pk?!!v.b:false, amount:resAmt(m,v)}}).filter(x=>x.amount>0||x.kills>0);
     const total=payload.reduce((a,x)=>a+x.amount,0);
     if(!payload.length) return say("Please enter the results before submitting.",1);
@@ -723,7 +726,11 @@ export default function App() {
     const msg = resEdit
       ? `Save changes? Any increased amounts will be paid to the players.`
       : `Pay ₹${total} to ${payees} player(s) and mark this match as played?`;
-    if(!window.confirm(msg)) return;
+    setResConfirm({msg, payload, total});
+  };
+  const doSubmitResults = async () => {
+    const m=resM, payload=resConfirm?.payload||[];
+    setResConfirm(null);
     setBusy(true);
     try{
       const {error}=await supabase.rpc(resEdit ? "admin_edit_results" : "admin_submit_results",{p_match:m.id,p_results:payload});
@@ -1124,7 +1131,7 @@ export default function App() {
       const setV=(id,patch)=>setResIn({...resIn,[id]:{...(resIn[id]||{}),...patch}});
       return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"16px 10px"}}>
         <div style={{background:"#fff",color:"#111",borderRadius:16,width:"100%",maxWidth:520,padding:16}}>
-          <h3 style={{margin:"0 0 4px"}}>{resEdit?"Edit results":"Results"} · #{resM.id}</h3>
+          <h3 style={{margin:"0 0 4px"}}>{resEdit?"Edit results":"Results"} · #{mNo(resM)}</h3>
           <p style={{margin:"0 0 12px",fontSize:13,color:"#666"}}>{pk ? `Per kill ${R(resM.per_kill)} · Booyah ${R(resM.booyah_bonus)}` : `Prize pool ${R(resM.prize)} · Enter the prize amount for each player${resEdit?" · Amounts can only be increased":""}`}</p>
           {resRows.map(x=>{const v=resIn[x.key]||{}; return <div key={x.key} style={{border:"1px solid #e5e7eb",borderRadius:10,padding:10,marginBottom:8}}>
             <div style={{fontWeight:700,fontSize:16}}>{x.game_name}</div><div style={{fontSize:11,color:"#999"}}>{x.name}</div>
@@ -1137,7 +1144,15 @@ export default function App() {
             </div></div>})}
           <div style={{position:"sticky",bottom:0,background:"#fff",paddingTop:10}}>
             <p style={{margin:"0 0 8px",fontWeight:700}}>Total: {R(tot)} / Pool: {R(resM.prize)}</p>
-            <button onClick={submitResults} style={{width:"100%",padding:12,background:"#dc2626",color:"#fff",border:0,borderRadius:10,fontWeight:700,fontSize:15}}>{resEdit?"Save changes":"Submit results & pay all"}</button>
+            {resConfirm
+              ? <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:12,marginBottom:10}}>
+                  <div style={{fontWeight:700,marginBottom:10}}>{resConfirm.msg}</div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={doSubmitResults} disabled={busy} style={{flex:1,padding:12,background:"#dc2626",color:"#fff",border:0,borderRadius:10,fontWeight:700}}>Yes, confirm</button>
+                    <button onClick={()=>setResConfirm(null)} style={{flex:1,padding:12,background:"#f3f4f6",color:"#111",border:0,borderRadius:10,fontWeight:700}}>No</button>
+                  </div>
+                </div>
+              : <button onClick={submitResults} style={{width:"100%",padding:12,background:"#dc2626",color:"#fff",border:0,borderRadius:10,fontWeight:700,fontSize:15}}>{resEdit?"Save changes":"Submit results & pay all"}</button>}
             <button onClick={()=>setResM(null)} style={{width:"100%",padding:10,marginTop:8,background:"#f3f4f6",border:0,borderRadius:10}}>Cancel</button>
           </div>
         </div></div>;
