@@ -359,7 +359,22 @@ export default function App() {
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
-  useEffect(()=>{load();const i=setInterval(()=>{ if(document.visibilityState==="visible") load(); },15000);return()=>clearInterval(i)},[load]);  // refresh only while the app is on screen
+  useEffect(()=>{
+    // Refresh every 15s while the app is on screen and the user is active (touch/click in the last 2 min).
+    // When idle, refresh only once a minute. This cuts data use for people who left the app open.
+    let lastAct = Date.now(), lastLoad = Date.now();
+    const mark = () => { lastAct = Date.now(); };
+    load();
+    const tick = () => {
+      if(document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if(now - lastAct < 120000 || now - lastLoad >= 60000){ lastLoad = now; load(); }
+    };
+    const i = setInterval(tick, 15000);
+    window.addEventListener("touchstart", mark, {passive:true});
+    window.addEventListener("click", mark);
+    return ()=>{ clearInterval(i); window.removeEventListener("touchstart", mark); window.removeEventListener("click", mark); };
+  },[load]);
   useEffect(()=>{ if(isAdmin||isActingAdmin) supabase.rpc("admin_staff_list").then(({data})=>setModStats(data||[])); },[isAdmin,isActingAdmin,allU.length]);
   useEffect(()=>{
     const id=slotUI?.m?.id; if(!id) return;
@@ -968,7 +983,10 @@ export default function App() {
     if(!r.length) return <p className="empty">No winners yet. Be the first!</p>;
     const top=[r[1],r[0],r[2]], rk=[2,1,3];
     return <>
-      <div className="lbPod">{top.map((x,i)=>x?<div key={i}><div className={"lbRk r"+rk[i]}><Avatar url={x.avatar_url} s={rk[i]===1?70:58}/><span>{rk[i]}</span></div><b>{x.name}</b><div className="gn">₹{kf(x.total_won||0)}</div></div>:<div key={i}/>)}</div>
+      {(()=>{ const idx=r.findIndex(x=>x.id===me.id); const mine=idx>=0?r[idx]:null; return <div style={{margin:"0 0 14px",padding:"12px 14px",borderRadius:12,background:"#fff1f2",border:"1px solid #fecaca",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+        <div style={{minWidth:0}}><div style={{fontSize:12,color:"#777"}}>Your position</div><div style={{fontWeight:800,fontSize:16,wordBreak:"break-word"}}>{mine?`#${idx+1} · ${me.full_name||me.name||""}`:`${me.full_name||me.name||""} · Not ranked yet`}</div></div>
+        <div style={{fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>₹{kf(mine?.total_won||0)}</div></div>; })()}
+      <div className="lbPod">{top.map((x,i)=>x?<div key={i}><div className={"lbRk r"+rk[i]}><Avatar url={x.avatar_url} s={rk[i]===1?70:58}/><span>{rk[i]}</span></div><b>{x.name}{x.id===me.id?" (You)":""}</b><div className="gn">₹{kf(x.total_won||0)}</div></div>:<div key={i}/>)}</div>
       {r.length>3&&<><div className="lbHead"><span>Rank</span><span>Player</span><span>Won</span></div>
       {r.slice(3).map((x,i)=><div key={x.id} className={"lbRow"+(x.id===me.id?" me":"")}><span className="lbNo">{i+4}</span><div className="lbName"><Avatar url={x.avatar_url} s={34}/><b>{x.name}{x.id===me.id?" (You)":""}</b></div><span className="lbWin">₹{kf(x.total_won||0)}</span></div>)}</>}
     </>;
