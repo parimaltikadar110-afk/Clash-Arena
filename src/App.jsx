@@ -156,6 +156,7 @@ export default function App() {
   const [thumbMsg,setThumbMsg] = useState("");
   const [modStats,setModStats] = useState([]);
   const [editing,setEditing] = useState(null);
+  const slowAt = useRef(0);
   const [recovery,setRecovery] = useState(false);
   const [forgot,setForgot] = useState(false);
   const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:""});
@@ -350,11 +351,13 @@ export default function App() {
 
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
-    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), supabase.from("matches").select("*").or(`status.in.(upcoming,live),starts_at.gte.${new Date(Date.now()-60*864e5).toISOString()}`).order("starts_at").limit(500), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("leaderboard").order("score",{ascending:false}).limit(100), q("match_rooms"),
-      q("mode_rules"), q("deposits").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), q("app_settings"), supabase.from("manual_leaderboard").select("*"), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(30), supabase.rpc("my_match_results")]);
-    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); setLb(l.data||[]); setMlb(mlR.data||[]);
+    const slowFresh = Date.now() - slowAt.current < 300000; if(!slowFresh) slowAt.current = Date.now();
+    const sl = x => slowFresh ? Promise.resolve({data:null}) : x;   // rules, settings and leaderboards change rarely: reuse for 5 minutes
+    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), supabase.from("matches").select("*").or(`status.in.(upcoming,live),starts_at.gte.${new Date(Date.now()-60*864e5).toISOString()}`).order("starts_at").limit(500), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("score",{ascending:false}).limit(100)), q("match_rooms"),
+      sl(q("mode_rules")), q("deposits").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), sl(q("app_settings")), sl(supabase.from("manual_leaderboard").select("*")), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(30), supabase.rpc("my_match_results")]);
+    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); if(l.data) setLb(l.data); if(mlR.data) setMlb(mlR.data);
       setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
-    setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+    if(ru.data) setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); if(st.data) setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
