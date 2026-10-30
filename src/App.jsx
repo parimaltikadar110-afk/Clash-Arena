@@ -240,7 +240,7 @@ export default function App() {
       window.removeEventListener("touchend", onEnd);
     };
   },[]);
-  useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,10000); return ()=>clearInterval(t); },[openMid,joined.length]);
+  useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,30000); return ()=>clearInterval(t); },[openMid,joined.length]);
   useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),800); return()=>clearTimeout(t) },[]);
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
@@ -328,7 +328,7 @@ export default function App() {
         if(fresh && currentSig() && fresh!==currentSig()) setUpdatePending(true);
       }catch{}
     };
-    const upTimer = setInterval(checkDeployment,30000);
+    const upTimer = setInterval(checkDeployment,300000);
     checkDeployment();
 
     if(!supabase){
@@ -386,19 +386,12 @@ export default function App() {
       if(!data) return;
       const tk=data.map(Number);
       setSlotUI(u=>u&&u.m.id===id?{...u,taken:tk,sel:u.sel.filter(x=>!tk.includes(x))}:u);
-    },4000);
+    },8000);
     return()=>clearInterval(t);
   },[slotUI?.m?.id]);
 
-  // LIVE: match create / room / balance change hole sathe sathe screen update (refresh/redeploy lagbe na)
-  useEffect(()=>{
-    if(!session) return; let t; const ping = () => { clearTimeout(t); t = setTimeout(load,250) };
-    const ch = supabase.channel("x7-live");
-    ["matches","match_rooms","profiles","deposits","mode_rules","withdrawals","transactions"].forEach(tb => ch.on("postgres_changes",{event:"*",schema:"public",table:tb},ping));
-    ch.subscribe(st=>setLive(st==="SUBSCRIBED"));
-    const vis = () => document.visibilityState==="visible" && load(); document.addEventListener("visibilitychange",vis);
-    return()=>{supabase.removeChannel(ch);setLive(false);document.removeEventListener("visibilitychange",vis);clearTimeout(t)};
-  },[session,load]);
+  // Realtime is turned off for this project; the periodic refresh (load) keeps data current instead.
+  useEffect(()=>{ setLive(false); },[]);
 
 
   const go = (p,init={}) => {setF(init);setPage(p)};
