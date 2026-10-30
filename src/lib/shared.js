@@ -43,7 +43,7 @@ export function makeLib(env) {
       body: JSON.stringify({ zap_key, order_id: orderId }),
     });
     const j = await r.json().catch(() => null);
-    console.log("zapupi order-status", orderId, JSON.stringify(j));
+    console.log("zapupi order-status", orderId, j?.data?.status ?? "no-status");
     if (!j) return { state: "error" };
     const d = j.data || {};
     const st = String(d.status ?? d.payment_status ?? "").toLowerCase();
