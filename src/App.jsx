@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
-import SupportChat, { WhatsAppSupport, SupportModeBox } from "./SupportChat";
+import SupportChat, { WhatsAppSupport, SupportModeBox, TelegramSupport } from "./SupportChat";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 // TEMP DEBUG: shows any JS error on screen (no PC console needed). Remove after the bug is fixed.
@@ -157,6 +157,9 @@ export default function App() {
   const [modStats,setModStats] = useState([]);
   const [editing,setEditing] = useState(null);
   const slowAt = useRef(0);
+  const rawM = useRef([]);     // all matches as last received from the server
+  const fullAt = useRef(0);    // when the full match list was last fetched
+  const syncAt = useRef(0);    // when matches were last synced (full or delta)
   const [recovery,setRecovery] = useState(false);
   const [forgot,setForgot] = useState(false);
   const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:"",tg:""});
@@ -352,18 +355,24 @@ export default function App() {
   const load = useCallback(async()=>{
     if(!session) return; const uid = session.user.id, q = t => supabase.from(t).select("*");
     const slowFresh = Date.now() - slowAt.current < 300000; if(!slowFresh) slowAt.current = Date.now();
+    const needFull = Date.now() - fullAt.current > 300000 || !rawM.current.length;   // full list every 5 min (also catches deletions)
     const sl = x => slowFresh ? Promise.resolve({data:null}) : x;   // rules, settings and leaderboards change rarely: reuse for 5 minutes
-    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), (async()=>{ const since=new Date(Date.now()-60*864e5).toISOString();
+    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), (needFull ? (async()=>{ const since=new Date(Date.now()-60*864e5).toISOString();
       const [a,b]=await Promise.all([
         supabase.from("matches").select("*").in("status",["upcoming","live"]).order("starts_at"),   // all open matches, no cut-off
         supabase.from("matches").select("*").gte("starts_at",since).not("status","in","(upcoming,live)").order("starts_at",{ascending:false}).limit(300)  // recent finished matches
       ]);
-      return {data:[...(a.data||[]),...(b.data||[])].sort((x,y)=>new Date(x.starts_at)-new Date(y.starts_at)), error:a.error||b.error}; })(), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("score",{ascending:false}).limit(100)), q("match_rooms"),
+      return {data:[...(a.data||[]),...(b.data||[])].sort((x,y)=>new Date(x.starts_at)-new Date(y.starts_at)), error:a.error||b.error}; })() : supabase.from("matches").select("*").gt("updated_at", new Date(syncAt.current - 5000).toISOString()).limit(1000)), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("score",{ascending:false}).limit(100)), q("match_rooms"),
       sl(q("mode_rules")), q("deposits").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), sl(q("app_settings")), sl(supabase.from("manual_leaderboard").select("*")), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(30), supabase.rpc("my_match_results")]);
-    setMe(p.data); setM(cleanMatches(m.data)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); if(l.data) setLb(l.data); if(mlR.data) setMlb(mlR.data);
+    setMe(p.data); if(needFull){ rawM.current = m.data||[]; fullAt.current = Date.now(); }
+    else if(!m.error && m.data?.length){ const map=new Map(rawM.current.map(x=>[x.id,x])); m.data.forEach(x=>map.set(x.id,x)); rawM.current=[...map.values()]; }
+    if(m.error){ fullAt.current = 0; }            // delta failed: force a full list next time
+    else { syncAt.current = Date.now(); }
+    rawM.current.sort((a,b)=>new Date(a.starts_at)-new Date(b.starts_at));
+    setM(cleanMatches(rawM.current)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); if(l.data) setLb(l.data); if(mlR.data) setMlb(mlR.data);
       setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     if(ru.data) setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); if(st.data) setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
-    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(m.data),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
+    if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(rawM.current),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
@@ -1093,7 +1102,7 @@ export default function App() {
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
-    if(page==="support"){t="Customer Support";h=(supportCfg.mode==="whatsapp"&&supportCfg.wa)?<WhatsAppSupport wa={supportCfg.wa} tg={supportCfg.tg}/>:<SupportChat supabase={supabase} mode="user" tgLink={supportCfg.tg}/>}
+    if(page==="support"){t="Customer Support";h=(supportCfg.mode==="telegram"&&supportCfg.tg)?<TelegramSupport tg={supportCfg.tg}/>:(supportCfg.mode==="whatsapp"&&supportCfg.wa)?<WhatsAppSupport wa={supportCfg.wa}/>:<SupportChat supabase={supabase} mode="user"/>}
 
     const actualBack=page==="match"?null:back;
     return <><div className="pgh"><button className="pgBack" aria-label="Back" onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</button>{t}</div><div className="pgb">{h}</div></>
