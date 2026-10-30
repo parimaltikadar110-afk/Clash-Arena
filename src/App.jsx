@@ -159,7 +159,7 @@ export default function App() {
   const slowAt = useRef(0);
   const [recovery,setRecovery] = useState(false);
   const [forgot,setForgot] = useState(false);
-  const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:""});
+  const [supportCfg,setSupportCfg] = useState({mode:"chat",wa:"",tg:""});
   const [mlb,setMlb] = useState([]), [notifs,setNotifs] = useState([]), [resM,setResM] = useState(null), [resRows,setResRows] = useState([]), [resIn,setResIn] = useState({}), [resEdit,setResEdit] = useState(false), [pageMatch,setPageMatch] = useState(null), [players,setPlayers] = useState([]), [mySlots,setMySlots] = useState([]), [splash,setSplash] = useState(()=>{ let skip=false; try{ skip=!!sessionStorage.getItem("x7skipSplash"); sessionStorage.removeItem("x7skipSplash") }catch{} return window.location.hash!=="#admin" && !skip });
   const [tab,setTab] = useState(T[0]), [nav,setNav] = useState("home"), [page,setPage] = useState(null), [mt,setMt] = useState("upcoming"), [at,setAt] = useState("Dashboard"), [mode,setMode] = useState("in"), [f,setF] = useState({});
   const [hist,setHist] = useState(null); // admin: selected user history
@@ -832,7 +832,7 @@ export default function App() {
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
   const reloadSupportCfg = () => supabase.from("app_settings").select("key,value").then(({data})=>{
     const o={}; (data||[]).forEach(r=>{o[r.key]=r.value});
-    setSupportCfg({mode:o.support_mode||"chat", wa:String(o.support_wa||"").replace(/\D/g,"")});
+    setSupportCfg({mode:o.support_mode||"chat", wa:String(o.support_wa||"").replace(/\D/g,""), tg:String(o.support_tg||"")});
   });
   useEffect(()=>{ reloadSupportCfg(); },[page]);
   const refreshModStats = () => supabase.rpc("admin_staff_list").then(({data})=>setModStats(data||[]));
@@ -1093,7 +1093,7 @@ export default function App() {
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
-    if(page==="support"){t="Customer Support";h=(supportCfg.mode==="whatsapp"&&supportCfg.wa)?<WhatsAppSupport wa={supportCfg.wa}/>:<SupportChat supabase={supabase} mode="user"/>}
+    if(page==="support"){t="Customer Support";h=(supportCfg.mode==="whatsapp"&&supportCfg.wa)?<WhatsAppSupport wa={supportCfg.wa} tg={supportCfg.tg}/>:<SupportChat supabase={supabase} mode="user" tgLink={supportCfg.tg}/>}
 
     const actualBack=page==="match"?null:back;
     return <><div className="pgh"><button className="pgBack" aria-label="Back" onClick={()=>actualBack!==null?go(actualBack):setPage(null)}>←</button>{t}</div><div className="pgb">{h}</div></>
