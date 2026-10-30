@@ -36,10 +36,11 @@ const CSS = `
 .scErr{color:#dc2626;font-size:12px;margin:6px 0}
 .scThread{display:block;width:100%;text-align:left;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;margin-bottom:8px;cursor:pointer}
 .scThread b{font-size:13px}.scThread span{display:block;font-size:12px;color:#666;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scTg{display:block;text-align:center;padding:12px;border-radius:10px;background:#229ED9;color:#fff;font-weight:700;text-decoration:none;margin-bottom:10px}
 .scBack{background:none;border:0;color:#dc2626;font-weight:700;padding:4px 0;margin-bottom:6px;cursor:pointer}
 `;
 
-export default function SupportChat({ supabase, mode = "user" }) {
+export default function SupportChat({ supabase, mode = "user", tgLink = "" }) {
   const isAdmin = mode === "admin";
   const [msgs, setMsgs] = useState([]);
   const [threads, setThreads] = useState([]);
@@ -132,6 +133,7 @@ export default function SupportChat({ supabase, mode = "user" }) {
   if (!isAdmin) {
     body = (
       <>
+        {tgLink && <a className="scTg" href={tgLink} target="_blank" rel="noopener noreferrer">Open Telegram support</a>}
         <div className="scNote">{note}</div>
         {chatView}
       </>
@@ -171,7 +173,7 @@ export default function SupportChat({ supabase, mode = "user" }) {
 
 
 /* Customer support (WhatsApp mode): shows the number only, player copies it themselves. */
-export function WhatsAppSupport({ wa }) {
+export function WhatsAppSupport({ wa, tg = "" }) {
   const [copied, setCopied] = useState(false);
   const shown = String(wa || "").replace(/\D/g, "");
   const copy = async () => {
@@ -187,6 +189,7 @@ export function WhatsAppSupport({ wa }) {
     <div className="scWrap">
       <style>{CSS}</style>
       <div className="scNote">Need help? Contact our support team on WhatsApp.</div>
+      {tg && <a className="scTg" href={tg} target="_blank" rel="noopener noreferrer" style={{ marginTop: 12 }}>Open Telegram support</a>}
       <div style={{ textAlign: "center", marginTop: 28 }}>
         <div style={{ fontSize: 13, color: "#777", marginBottom: 8 }}>WhatsApp support number</div>
         <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: 1, userSelect: "all", WebkitUserSelect: "all" }}>{shown}</div>
@@ -202,18 +205,23 @@ export function WhatsAppSupport({ wa }) {
 
 /* Admin control: choose In-app chat or WhatsApp, and set the WhatsApp number. */
 export function SupportModeBox({ supabase, cfg, onSaved }) {
+  const [tg, setTg] = useState(cfg.tg || "");
   const [mode, setMode] = useState(cfg.mode || "chat");
   const [wa, setWa] = useState(cfg.wa || "");
   const [msg, setMsg] = useState("");
-  useEffect(() => { setMode(cfg.mode || "chat"); setWa(cfg.wa || ""); }, [cfg.mode, cfg.wa]);
+  useEffect(() => { setMode(cfg.mode || "chat"); setWa(cfg.wa || ""); setTg(cfg.tg || ""); }, [cfg.mode, cfg.wa, cfg.tg]);
 
   const save = async () => {
     const digits = wa.replace(/\D/g, "");
     if (mode === "whatsapp" && digits.length < 8) { setMsg("Enter a valid WhatsApp number"); return; }
+    // Telegram: accept "@name", "name", or a full t.me link; store as https://t.me/name
+    let tgUrl = tg.trim();
+    if (tgUrl && !/^https?:\/\//i.test(tgUrl)) tgUrl = "https://t.me/" + tgUrl.replace(/^@/, "");
     setMsg("Saving…");
     const a = await supabase.rpc("admin_set_setting", { p_key: "support_mode", p_value: mode });
     const b = await supabase.rpc("admin_set_setting", { p_key: "support_wa", p_value: digits });
-    if (a.error || b.error) { setMsg("Save failed: " + ((a.error || b.error).message)); return; }
+    const c = await supabase.rpc("admin_set_setting", { p_key: "support_tg", p_value: tgUrl });
+    if (a.error || b.error || c.error) { setMsg("Save failed: " + ((a.error || b.error || c.error).message)); return; }
     setMsg("Saved ✅");
     onSaved && onSaved();
   };
@@ -231,6 +239,8 @@ export function SupportModeBox({ supabase, cfg, onSaved }) {
         {tab("chat", "In-app chat")}
         {tab("whatsapp", "WhatsApp")}
       </div>
+      <input value={tg} onChange={e => setTg(e.target.value)} placeholder="Telegram link, e.g. https://t.me/clashx7support or @clashx7support"
+        style={{ width: "100%", boxSizing: "border-box", padding: 10, border: "1px solid #ddd", borderRadius: 10, marginBottom: 8 }} />
       {mode === "whatsapp" && (
         <input value={wa} onChange={e => setWa(e.target.value)} placeholder="WhatsApp number, e.g. 9123055135"
           style={{ width: "100%", boxSizing: "border-box", padding: 10, border: "1px solid #ddd", borderRadius: 10, marginBottom: 8 }} />
