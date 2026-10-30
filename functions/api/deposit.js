@@ -1,4 +1,5 @@
-import { makeLib, json } from "../../src/lib/shared.js";
+// POST /api/deposit  { gateway: "zapupi" | "razorpay" | "cashfree", amount, phone? }
+import { makeLib, json } from "../../lib/shared.js";
 
 export async function onRequestPost({ request, env }) {
   try {
@@ -15,8 +16,8 @@ export async function onRequestPost({ request, env }) {
 
     const k = await gwSecrets(gateway);
     const ph = String(phone || "").replace(/\D/g, "").slice(-10);
-    const siteOrigin = new URL(request.url).origin;
-    const appOrigin = (env.APP_URL || siteOrigin).replace(/\/$/, "");
+    const siteOrigin = new URL(request.url).origin;            // this Cloudflare site (webhooks + API)
+    const appOrigin = (env.APP_URL || siteOrigin).replace(/\/$/, ""); // where the user returns after paying
 
     if (gateway === "razorpay") {
       if (!k.key_id || !k.key_secret) return json({ error: "Razorpay keys not set in Admin → Deposit Settings" }, 500);
@@ -54,6 +55,7 @@ export async function onRequestPost({ request, env }) {
       return json({ session: o.payment_session_id, mode: prod ? "production" : "sandbox" });
     }
 
+    // zapupi
     if (!k.zap_key) return json({ error: "ZapUPI key not set in Admin → Deposit Settings" }, 500);
     if (ph.length !== 10) return json({ error: "Enter a valid 10-digit mobile number" }, 400);
     const orderId = `ZU${Date.now()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -71,7 +73,7 @@ export async function onRequestPost({ request, env }) {
     });
     const o = await r.json().catch(() => ({}));
     const url = o.payment_url || o.data?.payment_url;
-    if (!url) { console.log("zapupi create-order", JSON.stringify(o)); return json({ error: o.message || "ZapUPI error" }, 502); }
+    if (!url) { console.log("zapupi create-order failed", o?.message || "no-message"); return json({ error: o.message || "ZapUPI error" }, 502); }
     const { error } = await sb.from("deposits").insert({ user_id: u.id, amount: amt, gateway, ref: orderId });
     if (error) return json({ error: error.message }, 500);
     return json({ url });
