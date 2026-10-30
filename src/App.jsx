@@ -11,7 +11,7 @@ if (typeof window !== "undefined") {
     if (!d) { d = document.createElement("div"); d.id = "x7err";
       d.style.cssText = "position:fixed;left:0;right:0;bottom:0;max-height:50%;overflow:auto;background:#300;color:#fff;font:12px monospace;padding:10px;z-index:99999;white-space:pre-wrap";
       document.body.appendChild(d); }
-    d.te
+    d.textContent += msg + "\n\n";
   } catch {} };
   window.addEventListener("error", e => x7Err("ERROR: " + (e.message || "") + "\n" + (e.error?.stack || "")));
   window.addEventListener("unhandledrejection", e => x7Err("PROMISE: " + (e.reason?.message || e.reason) + "\n" + (e.reason?.stack || "")));
