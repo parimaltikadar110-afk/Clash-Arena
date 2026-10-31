@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
 import SupportChat, { WhatsAppSupport, SupportModeBox, TelegramSupport } from "./SupportChat";
+import CasinoHome from "./Casino";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 // TEMP DEBUG: shows any JS error on screen (no PC console needed). Remove after the bug is fixed.
@@ -34,7 +35,7 @@ const T = ["SOLO BR","DUO BR","DUO PER KILL","SOLO PER KILL","LONE WOLF","LW HEA
 const PERMS = [["matches","Create & edit matches"],["results","Submit results"],["withdrawals","Approve withdrawals"],["deposits","Approve deposits"],["support","Support chat"],["notifications","Send notifications"],["users","Users & wallet balance"],["gift","Gift codes"],["leaderboard","Leaderboard"]];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
-const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit"});
+const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit",timeZone:"Asia/Kolkata"});  // always show Indian time, whatever the phone timezone
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 // Match title-er sheshe " #1", " #2" thakle shoriye dey (match number alada, card-er niche chhoto kore dekhay)
 const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$/,"").trim(); return c||s };
@@ -181,6 +182,12 @@ export default function App() {
 
   // ---- Gift codes ----
   const [gifts,setGifts] = useState([]);
+  const [appMode,setAppMode] = useState(()=>{ try{ return localStorage.getItem("x7mode")==="casino"?"casino":"ff" }catch{ return "ff" } });
+  const switchMode = m => { setAppMode(m); try{ localStorage.setItem("x7mode",m) }catch{} setPage(null); setNav("home") };
+  const [casinoStats,setCasinoStats] = useState(null);
+  const loadCasino = () => supabase.rpc("casino_admin_stats").then(({data,error})=>{ if(error) return say(error.message,1); setCasinoStats(data) });
+  const setCasinoGame = async (g,en) => { const {error}=await supabase.rpc("casino_admin_set_game",{p_game:g,p_enabled:en}); if(error) return say(error.message,1); say("Updated ✅"); loadCasino() };
+  useEffect(()=>{ if(isAdmin && hash==="#admin" && at==="Casino Management") loadCasino() },[at,isAdmin,hash]);
   const loadGifts = async () => { const {data,error} = await supabase.rpc("admin_list_gift_codes"); if(error) return say(error.message,1); setGifts(data||[]) };
   const createGift = async () => {
     const amt = +f.gc_amt, max = +f.gc_max || 1;
@@ -359,13 +366,13 @@ export default function App() {
     const slowFresh = Date.now() - slowAt.current < 300000; if(!slowFresh) slowAt.current = Date.now();
     const needFull = Date.now() - fullAt.current > 300000 || !rawM.current.length;   // full list every 5 min (also catches deletions)
     const sl = x => slowFresh ? Promise.resolve({data:null}) : x;   // rules, settings and leaderboards change rarely: reuse for 5 minutes
-    const bsRes = await supabase.rpc("app_bootstrap",{p_since: needFull ? null : new Date(syncAt.current - 5000).toISOString(), p_slow: !slowFresh});
-    if(bsRes.error){ fullAt.current = 0; return; }   // keep what is on screen; retry next time
-    const B = bsRes.data || {};
-    const p={data:B.me||null}, m={data:B.matches||[], error:null}, j={data:B.participants||[]}, t={data:B.transactions||[]};
-    const l={data:B.leaderboard??null}, r={data:B.match_rooms||[]}, ru={data:B.mode_rules??null}, d={data:B.deposits||[]};
-    const mw={data:B.withdrawals||[]}, st={data:B.app_settings??null}, mlR={data:B.manual_leaderboard??null};
-    const ntR={data:B.notifications||[]}, mrR={data:B.my_match_results||[]};
+    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), (needFull ? (async()=>{ const since=new Date(Date.now()-60*864e5).toISOString();
+      const [a,b]=await Promise.all([
+        supabase.from("matches").select("*").in("status",["upcoming","live"]).order("starts_at"),   // all open matches, no cut-off
+        supabase.from("matches").select("*").gte("starts_at",since).not("status","in","(upcoming,live)").order("starts_at",{ascending:false}).limit(300)  // recent finished matches
+      ]);
+      return {data:[...(a.data||[]),...(b.data||[])].sort((x,y)=>new Date(x.starts_at)-new Date(y.starts_at)), error:a.error||b.error}; })() : supabase.from("matches").select("*").gt("updated_at", new Date(syncAt.current - 5000).toISOString()).limit(1000)), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("total_won",{ascending:false}).limit(200)), q("match_rooms"),
+      sl(q("mode_rules")), q("deposits").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), sl(q("app_settings")), sl(supabase.from("manual_leaderboard").select("*")), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(30), supabase.rpc("my_match_results")]);
     setMe(p.data); if(needFull){ rawM.current = m.data||[]; fullAt.current = Date.now(); }
     else if(!m.error && m.data?.length){ const map=new Map(rawM.current.map(x=>[x.id,x])); m.data.forEach(x=>map.set(x.id,x)); rawM.current=[...map.values()]; }
     if(m.error){ fullAt.current = 0; }            // delta failed: force a full list next time
@@ -965,6 +972,7 @@ export default function App() {
   };
 
   const body = () => {
+    if(appMode==="casino"&&nav==="home") return <CasinoHome supabase={supabase} me={me} reload={load} say={say}/>;
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
@@ -1086,7 +1094,9 @@ export default function App() {
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+      <div style={{display:"flex",gap:8,margin:"12px 0"}}>{[["ff","🎮 Free Fire"],["casino","🎰 Casino"]].map(([k,l])=><button key={k} onClick={()=>switchMode(k)} style={{flex:1,padding:10,borderRadius:10,border:"1px solid #ddd",fontWeight:700,background:appMode===k?"#111":"#fff",color:appMode===k?"#fff":"#111",cursor:"pointer"}}>{l}</button>)}</div>
+      {appMode==="casino"&&[["🎰 Play Casino Games",()=>{setPage(null);setNav("home")}],["📊 Game History",()=>go("tx")],["🎁 Promotions",()=>go("giftcode")],["💰 Add Money",()=>{setPage(null);setNav("wallet")}],["💬 Customer Support",()=>go("support")]].map(([n,fn])=><div className="mi" key={n} onClick={fn}>{n}<span>›</span></div>)}
+      {appMode!=="casino"&&[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
       <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
@@ -1118,7 +1128,7 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff"]
+      ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff","Casino Management"]
       : (isActingAdmin || isModerator)
         ? ["Matches","Rules", ...(can("leaderboard")?["Leaderboard"]:[]), ...(can("notifications")?["Notifications"]:[]), ...(can("deposits")?["Deposits"]:[]), ...(can("withdrawals")?["Withdrawals"]:[]), ...(can("users")?["Users"]:[]), ...(can("support")?["Support Chat"]:[]), ...(can("gift")?["Gift Codes"]:[])]
         : ["Matches","Rules"];
@@ -1380,6 +1390,17 @@ export default function App() {
         </div>
       </>;
     }
+    if(cur==="Casino Management"){
+      const S2=casinoStats||{}, G=S2.games||[], RC=S2.recent||[];
+      const card=(l,v)=><div className="ucard" style={{flex:1,minWidth:130}}><span className="hint">{l}</span><b style={{fontSize:18}}>{v}</b></div>;
+      b=<div className="pnl"><h3>🎰 Casino management</h3>
+        <p className="hint">Turn games on or off. Results are decided on the server.</p>
+        {G.map(g=><div key={g.game} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{g.game}</span><button className="sm" onClick={()=>setCasinoGame(g.game,!g.enabled)}>{g.enabled?"ON · turn off":"OFF · turn on"}</button></div>)}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"12px 0"}}>{card("Total Bets",S2.total_bets??0)}{card("Total Staked",R(S2.total_staked||0))}{card("Total Payout",R(S2.total_payout||0))}{card("House Profit",R(S2.house_profit||0))}</div>
+        <p className="sh">Recent casino rounds</p>
+        {RC.length?RC.map(x=><div className="lr" key={x.id}><b>{x.user_name||"User"} · {x.game}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span>{R(x.total_bet)} → {R(x.payout)}</span></div>):<p className="empty">No rounds yet</p>}
+        <button className="sm" style={{marginTop:10}} onClick={loadCasino}>Refresh</button></div>;
+    }
     if(cur==="Gift Codes"){
       b=<div className="pnl"><h3>🎁 Gift codes</h3>
         <p className="hint">Users redeem these from Profile → Gift Code. Each user can redeem a code only once.</p>
@@ -1461,7 +1482,7 @@ export default function App() {
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
   const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
   return wrap(<>{page ? sub() : <>
-    <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></span><span className="brand"><Logo s={34}/>ClashX7</span>
+    <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></span><span className="brand"><Logo s={34}/>{appMode==="casino"?<span style={{color:"#f5c518"}}>ClashX7 🎰</span>:"ClashX7"}</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
     {body()}
     </>}{!page&&navBar}</>);
@@ -1723,216 +1744,3 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 
 .cxR .thumbFallback{display:grid;place-items:center}
 `;
-// App state এ যোগ করুন
-const [appMode, setAppMode] = useState(() => {
-  return localStorage.getItem('appMode') || 'freefire';
-});
-
-// Profile section এ Casino Mode option যোগ করুন
-if(page==="profile"){
-  t="Profile";
-  const links=S.support_links||{};
-  h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-  
-  {/* Mode Switcher */}
-  <div style={{margin:"12px 0",padding:"14px",background:"linear-gradient(135deg,#667eea,#764ba2)",borderRadius:12,color:"#fff"}}>
-    <div style={{fontSize:13,marginBottom:8,opacity:.9}}>Current Mode</div>
-    <div style={{display:"flex",gap:8}}>
-      <button onClick={()=>{setAppMode('freefire');localStorage.setItem('appMode','freefire')}} 
-        style={{flex:1,padding:10,borderRadius:8,border:"2px solid "+(appMode==='freefire'?'#fff':'transparent'),background:appMode==='freefire'?'rgba(255,255,255,.2)':'transparent',color:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>
-        🎮 Free Fire
-      </button>
-      <button onClick={()=>{setAppMode('casino');localStorage.setItem('appMode','casino')}} 
-        style={{flex:1,padding:10,borderRadius:8,border:"2px solid "+(appMode==='casino'?'#fff':'transparent'),background:appMode==='casino'?'rgba(255,255,255,.2)':'transparent',color:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>
-        🎰 Casino
-      </button>
-    </div>
-  </div>
-
-  {appMode==='freefire' && <>
-    {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
-  </>}
-  
-  {appMode==='casino' && <>
-    <div className="mi" onClick={()=>go("casino_games")} style={{background:"#f0f9ff"}}>🎰 Play Casino Games<span>›</span></div>
-    <div className="mi" onClick={()=>go("casino_history")} style={{background:"#f0f9ff"}}>📊 Game History<span>›</span></div>
-    <div className="mi" onClick={()=>go("casino_promotions")} style={{background:"#f0f9ff"}}>🎁 Promotions<span>›</span></div>
-    <div className="mi" onClick={()=>go("support")}>💬 Customer Support<span>›</span></div>
-  </>}
-
-  {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
-  {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
-  <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
-}
-
-// Casino Games Page যোগ করুন
-if(page==="casino_games"){
-  t="🎰 Casino Games";
-  const casinoGames = [
-    {id:"roulette",name:"Auto Roulette",icon:"🎡",color:"#dc2626",desc:"Classic European Roulette"},
-    {id:"dragon_tiger",name:"Dragon Tiger",icon:"🐉",color:"#16a34a",desc:"Simple card game"},
-    {id:"aviator",name:"Aviator",icon:"✈️",color:"#f59e0b",desc:"Crash game"},
-    {id:"teen_patti",name:"Teen Patti",icon:"🃏",color:"#8b5cf6",desc:"Indian poker"},
-    {id:"andar_bahar",name:"Andar Bahar",icon:"🎴",color:"#ec4899",desc:"Traditional card game"},
-    {id:"baccarat",name:"Baccarat",icon:"💎",color:"#0ea5e9",desc:"Classic casino"},
-  ];
-  h=<div style={{padding:"10px"}}>
-    <div style={{background:"linear-gradient(135deg,#667eea,#764ba2)",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px",textAlign:"center"}}>
-      <div style={{fontSize:13,opacity:.9}}>Your Balance</div>
-      <div style={{fontSize:32,fontWeight:800,marginTop:4}}>₹{(me.balance||0)+(me.winnings||0)}</div>
-      <button className="btn" style={{marginTop:12,background:"#fff",color:"#667eea",maxWidth:200}} onClick={()=>go("deposit",{a:""})}>Add Money</button>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-      {casinoGames.map(game=>(
-        <div key={game.id} onClick={()=>go("play_game",{game:game.id})} 
-          style={{background:game.color,borderRadius:16,padding:"20px",color:"#fff",cursor:"pointer",boxShadow:"0 4px 12px "+game.color+"44",transition:"transform .2s"}}>
-          <div style={{fontSize:40,marginBottom:8}}>{game.icon}</div>
-          <div style={{fontSize:16,fontWeight:800}}>{game.name}</div>
-          <div style={{fontSize:11,opacity:.9,marginTop:4}}>{game.desc}</div>
-        </div>
-      ))}
-    </div>
-    <button className="btn" style={{marginTop:20,background:"#111"}} onClick={()=>go("profile")}>← Back to Profile</button>
-  </div>;
-}
-
-// Play Game Page
-if(page==="play_game"){
-  const game = f.game;
-  t = game === "roulette" ? "🎡 Roulette" : game === "dragon_tiger" ? "🐉 Dragon Tiger" : game === "aviator" ? "✈️ Aviator" : "🎰 Casino Game";
-  
-  h=<div style={{padding:"10px"}}>
-    <div style={{background:"#1e293b",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px",textAlign:"center",minHeight:400,display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center"}}>
-      {game === "roulette" && <>
-        <div style={{fontSize:80,marginBottom:20}}>🎡</div>
-        <div style={{fontSize:24,fontWeight:800,marginBottom:10}}>Auto Roulette</div>
-        <div style={{fontSize:13,opacity:.8,marginBottom:20}}>Place your bets on the wheel</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
-          {["Red","Black","Green","Even","Odd","1-18","19-36"].map(opt=>(
-            <button key={opt} style={{padding:12,background:"#334155",border:"2px solid #475569",borderRadius:8,color:"#fff",fontWeight:700,fontFamily:"inherit"}}>{opt}</button>
-          ))}
-        </div>
-        <input type="number" placeholder="Bet amount ₹" style={{width:"100%",padding:12,borderRadius:8,border:"1px solid #475569",background:"#334155",color:"#fff",fontSize:16,marginBottom:12,fontFamily:"inherit"}}/>
-        <button className="btn" style={{background:"#dc2626",maxWidth:300}}>Place Bet</button>
-      </>}
-      {game === "dragon_tiger" && <>
-        <div style={{fontSize:80,marginBottom:20}}>🐉🐯</div>
-        <div style={{fontSize:24,fontWeight:800,marginBottom:10}}>Dragon Tiger</div>
-        <div style={{display:"flex",gap:16,marginBottom:20}}>
-          <button style={{flex:1,padding:20,background:"#dc2626",borderRadius:12,color:"#fff",fontWeight:800,fontSize:18,fontFamily:"inherit"}}>DRAGON</button>
-          <button style={{flex:1,padding:20,background:"#f59e0b",borderRadius:12,color:"#fff",fontWeight:800,fontSize:18,fontFamily:"inherit"}}>TIGER</button>
-        </div>
-        <input type="number" placeholder="Bet amount ₹" style={{width:"100%",padding:12,borderRadius:8,border:"1px solid #475569",background:"#334155",color:"#fff",fontSize:16,marginBottom:12,fontFamily:"inherit"}}/>
-        <button className="btn" style={{background:"#16a34a",maxWidth:300}}>Place Bet</button>
-      </>}
-      {game === "aviator" && <>
-        <div style={{fontSize:80,marginBottom:20}}>✈️</div>
-        <div style={{fontSize:48,fontWeight:800,color:"#f59e0b",marginBottom:10}}>1.00x</div>
-        <div style={{fontSize:13,opacity:.8,marginBottom:20}}>Cash out before it flies away!</div>
-        <input type="number" placeholder="Bet amount ₹" style={{width:"100%",padding:12,borderRadius:8,border:"1px solid #475569",background:"#334155",color:"#fff",fontSize:16,marginBottom:12,fontFamily:"inherit"}}/>
-        <button className="btn" style={{background:"#f59e0b",maxWidth:300}}>Start Flight</button>
-      </>}
-    </div>
-    <button className="btn" style={{background:"#111"}} onClick={()=>go("casino_games")}>← Back to Games</button>
-  </div>;
-}
-
-// Casino History Page
-if(page==="casino_history"){
-  t="📊 Game History";
-  h=<div style={{padding:"10px"}}>
-    <div style={{background:"#f8fafc",borderRadius:12,padding:"16px",marginBottom:"12px"}}>
-      <div style={{fontSize:13,color:"#64748b",marginBottom:4}}>Total Spent</div>
-      <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>₹0</div>
-    </div>
-    <div style={{background:"#f8fafc",borderRadius:12,padding:"16px",marginBottom:"12px"}}>
-      <div style={{fontSize:13,color:"#64748b",marginBottom:4}}>Total Won</div>
-      <div style={{fontSize:24,fontWeight:800,color:"#16a34a"}}>₹0</div>
-    </div>
-    <p className="empty">No games played yet. Start playing to see your history!</p>
-    <button className="btn" style={{background:"#111"}} onClick={()=>go("profile")}>← Back to Profile</button>
-  </div>;
-}
-
-// Casino Promotions Page
-if(page==="casino_promotions"){
-  t="🎁 Promotions";
-  h=<div style={{padding:"10px"}}>
-    <div style={{background:"linear-gradient(135deg,#f093fb,#f5576c)",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px"}}>
-      <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>🎉 Welcome Bonus</div>
-      <div style={{fontSize:13,opacity:.9,marginBottom:12}}>Get 100% bonus on your first deposit up to ₹10,000</div>
-      <button className="btn" style={{background:"#fff",color:"#f5576c",maxWidth:200}}>Claim Now</button>
-    </div>
-    <div style={{background:"linear-gradient(135deg,#4facfe,#00f2fe)",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px"}}>
-      <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>💰 Daily Cashback</div>
-      <div style={{fontSize:13,opacity:.9,marginBottom:12}}>Get 10% cashback on your losses every day</div>
-      <button className="btn" style={{background:"#fff",color:"#4facfe",maxWidth:200}}>Learn More</button>
-    </div>
-    <button className="btn" style={{background:"#111"}} onClick={()=>go("profile")}>← Back to Profile</button>
-  </div>;
-}
-
-// Navigation bar এ Casino option যোগ করুন (optional)
-const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}{appMode==='casino' && <a className={nav==="casino"?"on":""} onClick={()=>{setPage(null);setNav("casino");go("casino_games")}}><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Casino</a>}</nav>;
-
-// Header এ mode indicator
-<div className="hdr">
-  <span className="hdrIcon" onClick={()=>go("profile")}>
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg>
-  </span>
-  <span className="brand">
-    <Logo s={34}/>
-    {appMode==='casino' ? 'ClashX7 🎰' : 'ClashX7'}
-  </span>
-  <span style={{display:"flex",gap:6}}>
-    <button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button>
-  </span>
-</div>
-
-// Admin Panel এ Casino Management tab যোগ করুন
-const TABS = isAdmin
-? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff", "Casino Management"]
-: (isActingAdmin || isModerator)
-? ["Matches","Rules", ...(can("leaderboard")?["Leaderboard"]:[]), ...(can("notifications")?["Notifications"]:[]), ...(can("deposits")?["Deposits"]:[]), ...(can("withdrawals")?["Withdrawals"]:[]), ...(can("users")?["Users"]:[]), ...(can("support")?["Support Chat"]:[]), ...(can("gift")?["Gift Codes"]:[])]
-: ["Matches","Rules"];
-
-// Casino Management tab content
-if(cur==="Casino Management"){
-  b=<div className="pnl">
-    <h3>🎰 Casino Management</h3>
-    <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Manage casino games and settings</p>
-    
-    <div style={{marginBottom:"20px"}}>
-      <h4 style={{marginBottom:8}}>Game Settings</h4>
-      <div style={{display:"grid",gap:10}}>
-        {["Roulette","Dragon Tiger","Aviator","Teen Patti","Andar Bahar","Baccarat"].map(game=>(
-          <div key={game} style={{padding:12,border:"1px solid #e5e7eb",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontWeight:700}}>{game}</div>
-              <div style={{fontSize:11,color:"#666"}}>Status: Active</div>
-            </div>
-            <label style={{position:"relative",display:"inline-block",width:50,height:26}}>
-              <input type="checkbox" defaultChecked style={{opacity:0,width:0,height:0}}/>
-              <span style={{position:"absolute",cursor:"pointer",top:0,left:0,right:0,bottom:0,background:"#16a34a",borderRadius:26,transition:".3s"}}></span>
-            </label>
-          </div>
-        ))}
-      </div>
-    </div>
-
-    <div style={{marginBottom:"20px"}}>
-      <h4 style={{marginBottom:8}}>Casino Statistics</h4>
-      <div className="dg">
-        <div className="stat"><small>Total Bets Today</small><h2>₹0</h2></div>
-        <div className="stat"><small>Total Payouts</small><h2>₹0</h2></div>
-        <div className="stat"><small>Active Players</small><h2>0</h2></div>
-        <div className="stat"><small>House Edge</small><h2>2.7%</h2></div>
-      </div>
-    </div>
-
-    <div>
-      <h4 style={{marginBottom:8}}>Recent Casino Transactions</h4>
-      <p className="hint">No casino transactions yet</p>
-    </div>
-  </div>;
-}
