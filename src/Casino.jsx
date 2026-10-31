@@ -616,9 +616,68 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 }
 
 /* ================= LOBBY ================= */
+const wedge = (cx, cy, r1, r2, a1, a2) => {
+  const pt = (r, a) => { const t = (a * Math.PI) / 180; return [cx + r * Math.sin(t), cy - r * Math.cos(t)]; };
+  const [x1, y1] = pt(r2, a1), [x2, y2] = pt(r2, a2), [x3, y3] = pt(r1, a2), [x4, y4] = pt(r1, a1);
+  const large = a2 - a1 > 180 ? 1 : 0;
+  return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 0 ${x4} ${y4} Z`;
+};
+
+/* Illustrated card art (used when no photo URL is set in cfg.images) */
+function CardArt({ kind }) {
+  if (kind === "roulette") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -40, top: -36, width: 200, height: 200 }}>
+        <defs>
+          <radialGradient id="lbWood" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor="#7a4a22" /><stop offset="1" stopColor="#1f1008" />
+          </radialGradient>
+        </defs>
+        <circle cx="100" cy="100" r="96" fill="url(#lbWood)" stroke="#d4af37" strokeWidth="3" />
+        {Array.from({ length: 12 }, (_, i) => (
+          <path key={i} d={wedge(100, 100, 44, 86, i * 30, i * 30 + 30)} fill={i % 2 ? "#111318" : "#b91c1c"} stroke="#d4af37" strokeWidth=".6" />
+        ))}
+        <circle cx="100" cy="100" r="34" fill="#1f2937" stroke="#facc15" strokeWidth="2" />
+        <circle cx="100" cy="100" r="12" fill="#facc15" />
+        <circle cx="100" cy="18" r="5" fill="#fff" />
+      </svg>
+    );
+  }
+  if (kind === "dragon") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -20, top: -14, width: 190, height: 190 }}>
+        <g transform="rotate(-12 70 100)">
+          <rect x="22" y="40" width="82" height="120" rx="10" fill="#b91c1c" stroke="#facc15" strokeWidth="2.5" />
+          <text x="63" y="112" textAnchor="middle" fill="#facc15" fontSize="40" fontWeight="900">D</text>
+        </g>
+        <g transform="rotate(12 130 100)">
+          <rect x="96" y="40" width="82" height="120" rx="10" fill="#b45309" stroke="#facc15" strokeWidth="2.5" />
+          <text x="137" y="112" textAnchor="middle" fill="#fff7c2" fontSize="40" fontWeight="900">T</text>
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 200 200" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+      <defs>
+        <linearGradient id="lbTrail" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#fde68a" stopOpacity="0" /><stop offset="1" stopColor="#fde68a" stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      {[30, 70, 110, 150].map(y => <line key={y} x1="0" x2="200" y1={y} y2={y} stroke="#ffffff10" />)}
+      <path d="M-10 185 Q 80 170 130 100 T 215 25" fill="none" stroke="url(#lbTrail)" strokeWidth="5" strokeLinecap="round" />
+      <g transform="translate(160 40) rotate(-32)">
+        <path d="M-16 0 L16 -4 L24 0 L16 4 Z" fill="#fff" />
+        <path d="M-6 0 L-22 -10 L-18 0 L-22 10 Z" fill="#fde68a" />
+      </g>
+    </svg>
+  );
+}
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
+  const images = C.images || {};
   const [view, setView] = useState("lobby");
   const common = { supabase, me, reload, say, cfg: C, onBack: () => setView("lobby") };
 
@@ -627,25 +686,38 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "aviator") return <Aviator {...common} />;
 
   const cards = [
-    ["roulette", "roulette", "Auto Roulette", "Wheel turns by itself. Bet while the timer runs.", "linear-gradient(135deg,#5a0f14,#b91c1c)"],
-    ["dragon", "dragon_tiger", "Dragon Tiger", "Higher card wins. Tie pays 11 : 1.", "linear-gradient(135deg,#0f2a4a,#1e40af)"],
-    ["aviator", "aviator", "Aviator", "Cash out before the plane flies away.", "linear-gradient(135deg,#7c2d12,#f97316)"],
+    ["roulette", "roulette", "Auto Roulette", "The wheel turns by itself. Place your bets while the timer runs.", "linear-gradient(135deg,#3f0a0f,#b91c1c)"],
+    ["dragon", "dragon_tiger", "Dragon Tiger", "Higher card wins. Tie pays 11 : 1.", "linear-gradient(135deg,#0b1d3a,#1e40af)"],
+    ["aviator", "aviator", "Aviator", "Cash out before the plane flies away.", "linear-gradient(135deg,#4a1d06,#ea580c)"],
   ].filter(([, key]) => games[key]);
 
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
       padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
-      <h2 style={{ textAlign: "center", color: GOLD_L, margin: "6px 0 16px", letterSpacing: 1 }}>Casino</h2>
+      <div style={{ textAlign: "center", margin: "6px 0 16px" }}>
+        <h2 style={{ color: GOLD_L, margin: 0, letterSpacing: 1 }}>Casino</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 12, opacity: .7 }}>Pick a table to play</p>
+      </div>
       {cards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games are open right now.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {cards.map(([v, , name, desc, bg]) => (
-          <div key={v} onClick={() => setView(v)} style={{ background: bg, borderRadius: 16, padding: 14, minHeight: 150, cursor: "pointer",
-            border: `1px solid ${GOLD}`, boxShadow: "0 8px 22px #000b", gridColumn: cards.length === 1 ? "1 / -1" : undefined }}>
-            <div style={{ fontWeight: 900, fontSize: 17 }}>{name}</div>
-            <div style={{ fontSize: 12, opacity: .88, marginTop: 6 }}>{desc}</div>
-            <div style={{ marginTop: 14, fontSize: 12, fontWeight: 900, color: GOLD_L }}>PLAY ›</div>
-          </div>
-        ))}
+        {cards.map(([v, key, name, desc, bg]) => {
+          const img = images[v];
+          return (
+            <div key={v} onClick={() => setView(v)} style={{ position: "relative", overflow: "hidden", background: bg, borderRadius: 18,
+              padding: 14, minHeight: 176, cursor: "pointer", border: `1px solid ${GOLD}`, boxShadow: "0 10px 26px #000c",
+              gridColumn: cards.length === 1 ? "1 / -1" : v === "aviator" && cards.length === 3 ? "1 / -1" : undefined }}>
+              {img
+                ? <img src={img} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: .5 }} />
+                : <CardArt kind={v} />}
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,transparent 25%,#000d 100%)" }} />
+              <div style={{ position: "relative", maxWidth: "70%" }}>
+                <div style={{ fontWeight: 900, fontSize: 18, textShadow: "0 2px 8px #000" }}>{name}</div>
+                <div style={{ fontSize: 12, opacity: .92, marginTop: 6, textShadow: "0 1px 4px #000" }}>{desc}</div>
+                <div style={{ marginTop: 16, fontSize: 12, fontWeight: 900, color: GOLD_L }}>PLAY ›</div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
