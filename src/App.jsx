@@ -182,12 +182,16 @@ export default function App() {
 
   // ---- Gift codes ----
   const [gifts,setGifts] = useState([]);
-  const [appMode,setAppMode] = useState(()=>{ try{ return localStorage.getItem("x7mode")==="casino"?"casino":"ff" }catch{ return "ff" } });
+  const [appModeRaw,setAppMode] = useState(()=>{ try{ return localStorage.getItem("x7mode")==="casino"?"casino":"ff" }catch{ return "ff" } });
+  // casino_config from app_settings (S is filled by load()); defaults used until the row exists
+  const casinoCfg = { enabled:true, min_bet:10, max_bet:50000, ...(S.casino_config||{}), games:{ roulette:true, ...(S.casino_config?.games||{}) } };
+  const casinoOn = !!casinoCfg.enabled;
+  const appMode = casinoOn ? appModeRaw : "ff";   // master OFF forces Free Fire; casino UI unmounts
   const switchMode = m => { setAppMode(m); try{ localStorage.setItem("x7mode",m) }catch{} setPage(null); setNav("home") };
   const [casinoStats,setCasinoStats] = useState(null);
+  const [ccDraft,setCcDraft] = useState(null);
   const loadCasino = () => supabase.rpc("casino_admin_stats").then(({data,error})=>{ if(error) return say(error.message,1); setCasinoStats(data) });
-  const setCasinoGame = async (g,en) => { const {error}=await supabase.rpc("casino_admin_set_game",{p_game:g,p_enabled:en}); if(error) return say(error.message,1); say("Updated ✅"); loadCasino() };
-  useEffect(()=>{ if(isAdmin && hash==="#admin" && at==="Casino Management") loadCasino() },[at,isAdmin,hash]);
+  useEffect(()=>{ if(isAdmin && hash==="#admin" && at==="Casino Settings") loadCasino() },[at,isAdmin,hash]);
   const loadGifts = async () => { const {data,error} = await supabase.rpc("admin_list_gift_codes"); if(error) return say(error.message,1); setGifts(data||[]) };
   const createGift = async () => {
     const amt = +f.gc_amt, max = +f.gc_max || 1;
@@ -972,7 +976,7 @@ export default function App() {
   };
 
   const body = () => {
-    if(appMode==="casino"&&nav==="home") return <CasinoHome supabase={supabase} me={me} reload={load} say={say}/>;
+    if(appMode==="casino"&&nav==="home") return <CasinoHome supabase={supabase} me={me} reload={load} say={say} cfg={casinoCfg}/>;
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
@@ -1094,7 +1098,7 @@ export default function App() {
       t="Profile";
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
-      <div style={{display:"flex",gap:8,margin:"12px 0"}}>{[["ff","🎮 Free Fire"],["casino","🎰 Casino"]].map(([k,l])=><button key={k} onClick={()=>switchMode(k)} style={{flex:1,padding:10,borderRadius:10,border:"1px solid #ddd",fontWeight:700,background:appMode===k?"#111":"#fff",color:appMode===k?"#fff":"#111",cursor:"pointer"}}>{l}</button>)}</div>
+      {casinoOn&&<div style={{display:"flex",gap:8,margin:"12px 0"}}>{[["ff","🎮 Free Fire"],["casino","🎰 Casino"]].map(([k,l])=><button key={k} onClick={()=>switchMode(k)} style={{flex:1,padding:10,borderRadius:10,border:"1px solid #ddd",fontWeight:700,background:appMode===k?"#111":"#fff",color:appMode===k?"#fff":"#111",cursor:"pointer"}}>{l}</button>)}</div>}
       {appMode==="casino"&&[["🎰 Play Casino Games",()=>{setPage(null);setNav("home")}],["📊 Game History",()=>go("tx")],["🎁 Promotions",()=>go("giftcode")],["💰 Add Money",()=>{setPage(null);setNav("wallet")}],["💬 Customer Support",()=>go("support")]].map(([n,fn])=><div className="mi" key={n} onClick={fn}>{n}<span>›</span></div>)}
       {appMode!=="casino"&&[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
@@ -1128,7 +1132,7 @@ export default function App() {
   const admin = () => {
     let b=null;
     const TABS = isAdmin
-      ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff","Casino Management"]
+      ? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff","Casino Settings"]
       : (isActingAdmin || isModerator)
         ? ["Matches","Rules", ...(can("leaderboard")?["Leaderboard"]:[]), ...(can("notifications")?["Notifications"]:[]), ...(can("deposits")?["Deposits"]:[]), ...(can("withdrawals")?["Withdrawals"]:[]), ...(can("users")?["Users"]:[]), ...(can("support")?["Support Chat"]:[]), ...(can("gift")?["Gift Codes"]:[])]
         : ["Matches","Rules"];
@@ -1390,16 +1394,23 @@ export default function App() {
         </div>
       </>;
     }
-    if(cur==="Casino Management"){
-      const S2=casinoStats||{}, G=S2.games||[], RC=S2.recent||[];
+    if(cur==="Casino Settings"){
+      const cc = ccDraft || casinoCfg, S2 = casinoStats||{}, RC = S2.recent||[];
+      const GL = [["roulette","Roulette"],["dragon_tiger","Dragon Tiger"],["aviator","Aviator"],["teen_patti","Teen Patti"],["andar_bahar","Andar Bahar"],["dice","Dice"]];
+      const setG = (k,v) => setCcDraft({...cc, games:{...cc.games, [k]:v}});
       const card=(l,v)=><div className="ucard" style={{flex:1,minWidth:130}}><span className="hint">{l}</span><b style={{fontSize:18}}>{v}</b></div>;
-      b=<div className="pnl"><h3>🎰 Casino management</h3>
-        <p className="hint">Turn games on or off. Results are decided on the server.</p>
-        {G.map(g=><div key={g.game} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{g.game}</span><button className="sm" onClick={()=>setCasinoGame(g.game,!g.enabled)}>{g.enabled?"ON · turn off":"OFF · turn on"}</button></div>)}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"12px 0"}}>{card("Total Bets",S2.total_bets??0)}{card("Total Staked",R(S2.total_staked||0))}{card("Total Payout",R(S2.total_payout||0))}{card("House Profit",R(S2.house_profit||0))}</div>
+      b=<div className="pnl"><h3>🎰 Casino settings</h3>
+        <p className="hint">Changes apply to users the next time the app loads.</p>
+        <div className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Casino mode (master switch)</span><button className="sm" onClick={()=>setCcDraft({...cc,enabled:!cc.enabled})}>{cc.enabled?"ON":"OFF"}</button></div>
+        {GL.map(([k,l])=><div key={k} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{l}</span><button className="sm" onClick={()=>setG(k,!cc.games?.[k])}>{cc.games?.[k]?"ON":"OFF"}</button></div>)}
+        <label>Min bet ₹</label><input type="number" value={cc.min_bet} onChange={e=>setCcDraft({...cc,min_bet:+e.target.value})}/>
+        <label>Max bet ₹</label><input type="number" value={cc.max_bet} onChange={e=>setCcDraft({...cc,max_bet:+e.target.value})}/>
+        <button className="btn" style={{marginTop:10}} onClick={()=>run(supabase.from("app_settings").upsert({key:"casino_config",value:cc,updated_at:new Date().toISOString()}),"Casino settings saved").then(ok=>{ if(ok) setCcDraft(null) })}>Save casino settings</button>
+        <p className="sh" style={{marginTop:16}}>Stats</p>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{card("Total Bets",S2.total_bets??0)}{card("Total Staked",R(S2.total_staked||0))}{card("Total Payout",R(S2.total_payout||0))}{card("House Profit",R(S2.house_profit||0))}</div>
         <p className="sh">Recent casino rounds</p>
         {RC.length?RC.map(x=><div className="lr" key={x.id}><b>{x.user_name||"User"} · {x.game}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span>{R(x.total_bet)} → {R(x.payout)}</span></div>):<p className="empty">No rounds yet</p>}
-        <button className="sm" style={{marginTop:10}} onClick={loadCasino}>Refresh</button></div>;
+        <button className="sm" style={{marginTop:10}} onClick={loadCasino}>Refresh stats</button></div>;
     }
     if(cur==="Gift Codes"){
       b=<div className="pnl"><h3>🎁 Gift codes</h3>
