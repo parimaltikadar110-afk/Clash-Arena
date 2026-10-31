@@ -359,13 +359,13 @@ export default function App() {
     const slowFresh = Date.now() - slowAt.current < 300000; if(!slowFresh) slowAt.current = Date.now();
     const needFull = Date.now() - fullAt.current > 300000 || !rawM.current.length;   // full list every 5 min (also catches deletions)
     const sl = x => slowFresh ? Promise.resolve({data:null}) : x;   // rules, settings and leaderboards change rarely: reuse for 5 minutes
-    const [p,m,j,t,l,r,ru,d,mw,st,mlR,ntR,mrR] = await Promise.all([q("profiles").eq("id",uid).maybeSingle(), (needFull ? (async()=>{ const since=new Date(Date.now()-60*864e5).toISOString();
-      const [a,b]=await Promise.all([
-        supabase.from("matches").select("*").in("status",["upcoming","live"]).order("starts_at"),   // all open matches, no cut-off
-        supabase.from("matches").select("*").gte("starts_at",since).not("status","in","(upcoming,live)").order("starts_at",{ascending:false}).limit(300)  // recent finished matches
-      ]);
-      return {data:[...(a.data||[]),...(b.data||[])].sort((x,y)=>new Date(x.starts_at)-new Date(y.starts_at)), error:a.error||b.error}; })() : supabase.from("matches").select("*").gt("updated_at", new Date(syncAt.current - 5000).toISOString()).limit(1000)), q("participants").eq("user_id",uid), q("transactions").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), sl(q("leaderboard").order("total_won",{ascending:false}).limit(200)), q("match_rooms"),
-      sl(q("mode_rules")), q("deposits").eq("user_id",uid).order("created_at",{ascending:false}).limit(20), q("withdrawals").eq("user_id",uid).order("created_at",{ascending:false}).limit(10), sl(q("app_settings")), sl(supabase.from("manual_leaderboard").select("*")), supabase.from("notifications").select("*").order("created_at",{ascending:false}).limit(30), supabase.rpc("my_match_results")]);
+    const bsRes = await supabase.rpc("app_bootstrap",{p_since: needFull ? null : new Date(syncAt.current - 5000).toISOString(), p_slow: !slowFresh});
+    if(bsRes.error){ fullAt.current = 0; return; }   // keep what is on screen; retry next time
+    const B = bsRes.data || {};
+    const p={data:B.me||null}, m={data:B.matches||[], error:null}, j={data:B.participants||[]}, t={data:B.transactions||[]};
+    const l={data:B.leaderboard??null}, r={data:B.match_rooms||[]}, ru={data:B.mode_rules??null}, d={data:B.deposits||[]};
+    const mw={data:B.withdrawals||[]}, st={data:B.app_settings??null}, mlR={data:B.manual_leaderboard??null};
+    const ntR={data:B.notifications||[]}, mrR={data:B.my_match_results||[]};
     setMe(p.data); if(needFull){ rawM.current = m.data||[]; fullAt.current = Date.now(); }
     else if(!m.error && m.data?.length){ const map=new Map(rawM.current.map(x=>[x.id,x])); m.data.forEach(x=>map.set(x.id,x)); rawM.current=[...map.values()]; }
     if(m.error){ fullAt.current = 0; }            // delta failed: force a full list next time
