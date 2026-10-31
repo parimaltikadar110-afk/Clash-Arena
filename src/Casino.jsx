@@ -708,10 +708,13 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
 }
 
 /* ================= AVIATOR ================= */
+const AV_HIST_KEY = "x7_av_hist";
 const AV_W = 300, AV_H = 170;
+const crashTone = c => (c >= 10 ? GOLD_L : c >= 2 ? "#5eead4" : "#94a3b8");
+
 function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
-  const [bal, setBal, realBal] = useBal(me);
+  const [bal, setBal] = useBal(me);
   const [tip, flash] = useFlash();
   const [phase, setPhase] = useState("idle");     // idle | flying | done
   const [chip, setChip] = useState(10);
@@ -719,14 +722,25 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const [m, setM] = useState(1);
   const [pts, setPts] = useState([1]);
   const [res, setRes] = useState(null);
-  const [boom, setBoom] = useState(false);        // plane exploded at the end of the curve
+  const [boom, setBoom] = useState(false);
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(0);
+  const [roundId, setRoundId] = useState(null);
+  const [crashes, setCrashes] = useState(() => {
+    try { const a = JSON.parse(localStorage.getItem(AV_HIST_KEY) || "[]"); return Array.isArray(a) ? a.slice(0, 10) : []; }
+    catch { return []; }
+  });
 
   const mRef = useRef(1), roundRef = useRef(null), timer = useRef(null), t0 = useRef(0), doneRef = useRef(false), stakeRef = useRef(0), autoRef = useRef(0), finRef = useRef(null);
   autoRef.current = parseFloat(autoAt) || 0;
 
   useEffect(() => () => { clearInterval(timer.current); clearInterval(finRef.current); }, []);
+
+  const pushCrash = c => setCrashes(h => {
+    const n = [c, ...h].slice(0, 10);
+    try { localStorage.setItem(AV_HIST_KEY, JSON.stringify(n)); } catch {}
+    return n;
+  });
 
   // display only: the crash point stays hidden on the server until the round settles
   function tick() {
@@ -747,6 +761,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   // after the server answers: a win keeps flying to the real crash point, a loss crashes at that point
   function finish(crash, won) {
     clearInterval(timer.current);
+    pushCrash(crash);
     if (won) {
       finRef.current = setInterval(() => {
         const v = mRef.current * 1.05;
@@ -785,13 +800,15 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
   const start = async () => {
     if (phase === "flying") return;
-    if (chip < MIN || chip > MAX) return flash(`Bet between ${R(MIN)} and ${R(MAX)}`);
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
     if (chip > bal) return flash("Balance too low");
     const before = bal;
     setBal(before - chip);
     const { data, error } = await supabase.rpc("casino_aviator_start", { p_bet: chip });
     if (error || !data?.success) { setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
-    roundRef.current = data.round_id; stakeRef.current = chip; doneRef.current = false;
+    roundRef.current = data.round_id; setRoundId(data.round_id);
+    stakeRef.current = chip; doneRef.current = false;
     clearInterval(finRef.current);
     mRef.current = 1; t0.current = Date.now();
     setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying");
@@ -799,29 +816,49 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     timer.current = setInterval(tick, 100);
   };
 
-  // chart geometry
+  const stepStake = d => setChip(c => Math.max(MIN, Math.min(MAX, c + d)));
+
+  // chart geometry (log scale on the y axis)
   const maxV = Math.max(2, ...pts);
   const xy = (i, v) => {
     const x = (i / Math.max(pts.length - 1, 1)) * AV_W;
     const y = AV_H - 12 - ((Math.log(v) / Math.log(maxV)) * (AV_H - 24));
     return [x, y];
   };
-  const path = pts.map((v, i) => { const [x, y] = xy(i, v); return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ");
+  const line = pts.map((v, i) => { const [x, y] = xy(i, v); return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ");
+  const [lx] = xy(pts.length - 1, pts[pts.length - 1]);
+  const area = `${line} L${lx.toFixed(1)} ${AV_H} L0 ${AV_H} Z`;
   const [px, py] = xy(pts.length - 1, pts[pts.length - 1]);
   const crashed = res && !res.won;
 
   return (
     <Shell title="Aviator" onBack={onBack}>
-      <div style={{ position: "relative", height: AV_H + 10, borderRadius: 14, overflow: "hidden",
-        background: "radial-gradient(ellipse at 50% 120%,#0b3b2a,#071a2e 70%)", border: `1px solid ${GOLD}`,
+      {/* last crash values */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 0 8px" }}>
+        {crashes.length === 0 && <span style={{ fontSize: 12, opacity: .6 }}>No rounds yet</span>}
+        {crashes.map((c, i) => (
+          <span key={i} style={{ flex: "0 0 auto", padding: "3px 9px", borderRadius: 99, fontSize: 12, fontWeight: 900,
+            color: crashTone(c), border: `1px solid ${crashTone(c)}66`, background: "#0a1f14" }}>{c.toFixed(2)}x</span>
+        ))}
+      </div>
+
+      {/* stage */}
+      <div style={{ position: "relative", height: AV_H + 10, borderRadius: 16, overflow: "hidden",
+        background: "radial-gradient(ellipse at 50% 110%,#143a2a,#050d09 70%)", border: `1px solid ${GOLD}`,
         animation: shake ? "x7shake .5s linear" : "none" }}>
         <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ width: "100%", height: "100%", display: "block" }}>
+          <defs>
+            <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#facc15" stopOpacity=".35" /><stop offset="1" stopColor="#facc15" stopOpacity="0" />
+            </linearGradient>
+          </defs>
           {[40, 80, 120, 160].map(y => <line key={y} x1="0" x2={AV_W} y1={y} y2={y} stroke="#ffffff0d" />)}
-          {pts.length > 1 && <path d={path} fill="none" stroke="#fb923c" strokeWidth="3" strokeLinejoin="round" />}
+          {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
+          {pts.length > 1 && <path d={line} fill="none" stroke={GOLD_L} strokeWidth="3" strokeLinejoin="round" />}
           {pts.length > 1 && !boom && (
             <g transform={`translate(${px} ${py}) rotate(-28)`}>
-              <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fff" />
-              <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#fde68a" />
+              <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#f3efe0" />
+              <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill={GOLD_L} />
             </g>
           )}
           {boom && (
@@ -833,10 +870,11 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
           )}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 46, fontWeight: 900, color: crashed ? "#fca5a5" : "#fff", textShadow: "0 3px 10px #000" }}>
+          <div style={{ fontSize: 46, fontWeight: 900, color: crashed ? "#fca5a5" : "#f3efe0", textShadow: "0 3px 10px #000" }}>
             {phase === "idle" ? "Ready" : crashed && boom ? `${res.crash.toFixed(2)}x` : `${m.toFixed(2)}x`}
           </div>
         </div>
+        {roundId && <div style={{ position: "absolute", left: 8, top: 6, fontSize: 10, opacity: .6 }}>Round #{roundId}</div>}
       </div>
 
       <div style={{ minHeight: 40, textAlign: "center", marginTop: 10, fontWeight: 900, fontSize: 15 }}>
@@ -845,7 +883,15 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         {res && !res.won && <span style={{ color: "#fca5a5" }}>FLEW AWAY at {res.crash.toFixed(2)}x · LOST <CountUp value={res.net} /></span>}
       </div>
 
+      {/* stake */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, marginTop: 6 }}>
+        <button onClick={() => stepStake(-10)} style={{ ...btn, width: 40, height: 40, padding: 0, fontSize: 18 }}>−</button>
+        <b style={{ minWidth: 90, textAlign: "center", fontSize: 18, color: GOLD_L }}>{R(chip)}</b>
+        <button onClick={() => stepStake(10)} style={{ ...btn, width: 40, height: 40, padding: 0, fontSize: 18 }}>+</button>
+      </div>
       <Chips value={chip} onChange={setChip} />
+
+      {/* actions */}
       <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
         <input type="number" min="1.1" step="0.1" placeholder="Auto x" value={autoAt} onChange={e => setAutoAt(e.target.value)}
           style={{ width: 90, padding: 10, borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0a1f14", color: "#f3efe0" }} />
