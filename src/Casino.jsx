@@ -508,11 +508,12 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
       setLastBets(list);
       setStack([]);
       setBal(data.new_balance);
-      setLast({ n: data.number, net });
+      setLast({ n: data.number, net, stake: sum, payout: data.won_amount });
+      if (net > 0) flash(`YOU WIN ${R(net)} · Total ${R(data.won_amount)}`);
       if (net > 0) setBurst(b => b + 1);
       setPhase("result");
       reload && reload();
-      setTimeout(() => { setWinNum(null); setPhase("bet"); setCount(BET_SECONDS); }, 3200);
+      setTimeout(() => { setWinNum(null); setPhase("bet"); setCount(BET_SECONDS); }, 4500);
     }, 4200);
   };
 
@@ -553,10 +554,22 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
         background: statusBg, border: `1px solid ${GOLD}66`, marginBottom: 14, padding: "6px 10px", fontWeight: 900, fontSize: 14 }}>
         {phase === "bet" && <><Ring left={count} total={BET_SECONDS} /><span>Place your bets</span></>}
         {phase === "spinning" && <span>No more bets</span>}
-        {phase === "result" && last && (
-          <span>#{last.n} · {last.net > 0 ? <>WON <CountUp value={last.net} /></> : last.net < 0 ? <>LOST <CountUp value={last.net} /></> : "RETURNED ₹0"}</span>
-        )}
+        {phase === "result" && last && <span>Result #{last.n}</span>}
       </div>
+
+      {last && last.net > 0 && (() => {
+        const k = "win";
+        const bg = k === "win" ? "linear-gradient(135deg,#15803d,#166534)" : k === "lose" ? "linear-gradient(135deg,#b91c1c,#7f1d1d)" : "#374151";
+        return (
+          <div style={{ borderRadius: 14, padding: "10px 12px", marginBottom: 14, background: bg, color: "#fff", border: `1px solid ${GOLD}`,
+            boxShadow: "0 6px 18px #000a", textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 1 }}>
+              {k === "win" ? "YOU WIN" : k === "lose" ? "YOU LOSE" : "RETURNED"} · #{last.n}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 900, marginTop: 4 }}>Bet {R(last.stake)} · Win {R(last.net)} · Total {R(last.payout)}</div>
+          </div>
+        );
+      })()}
 
       <Wheel target={target} spinId={spinId} spinning={phase === "spinning"} />
 
@@ -677,7 +690,7 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
           {busy && !res && <span style={{ opacity: .8 }}>Dealing…</span>}
           {res && (
             <span style={{ color: res.net > 0 ? "#86efac" : res.net < 0 ? "#fca5a5" : "#e5e7eb" }}>
-              {res.winner === "tie" ? "TIE" : res.winner.toUpperCase() + " WINS"} · {res.net > 0 ? <>WON <CountUp value={res.net} /></> : res.net < 0 ? <>LOST <CountUp value={res.net} /></> : "RETURNED ₹0"}
+              {res.winner === "tie" ? "TIE" : res.winner.toUpperCase() + " WINS"} · {res.net > 0 ? <>WON <CountUp value={res.net} /></> : res.net < 0 ? "" : "RETURNED ₹0"}
             </span>
           )}
         </div>
@@ -880,7 +893,6 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
       <div style={{ minHeight: 40, textAlign: "center", marginTop: 10, fontWeight: 900, fontSize: 15 }}>
         {phase === "flying" && <span>Cash out before it flies away</span>}
         {res && res.won && <span style={{ color: "#86efac" }}>CASHED OUT {res.mult.toFixed(2)}x · WON <CountUp value={res.net} /></span>}
-        {res && !res.won && <span style={{ color: "#fca5a5" }}>FLEW AWAY at {res.crash.toFixed(2)}x · LOST <CountUp value={res.net} /></span>}
       </div>
 
       {/* stake */}
