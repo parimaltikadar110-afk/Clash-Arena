@@ -1723,3 +1723,216 @@ button.joinPill{border:0;cursor:pointer;font:inherit;font-weight:800;color:#fff;
 
 .cxR .thumbFallback{display:grid;place-items:center}
 `;
+// App state এ যোগ করুন
+const [appMode, setAppMode] = useState(() => {
+  return localStorage.getItem('appMode') || 'freefire';
+});
+
+// Profile section এ Casino Mode option যোগ করুন
+if(page==="profile"){
+  t="Profile";
+  const links=S.support_links||{};
+  h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
+  
+  {/* Mode Switcher */}
+  <div style={{margin:"12px 0",padding:"14px",background:"linear-gradient(135deg,#667eea,#764ba2)",borderRadius:12,color:"#fff"}}>
+    <div style={{fontSize:13,marginBottom:8,opacity:.9}}>Current Mode</div>
+    <div style={{display:"flex",gap:8}}>
+      <button onClick={()=>{setAppMode('freefire');localStorage.setItem('appMode','freefire')}} 
+        style={{flex:1,padding:10,borderRadius:8,border:"2px solid "+(appMode==='freefire'?'#fff':'transparent'),background:appMode==='freefire'?'rgba(255,255,255,.2)':'transparent',color:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>
+        🎮 Free Fire
+      </button>
+      <button onClick={()=>{setAppMode('casino');localStorage.setItem('appMode','casino')}} 
+        style={{flex:1,padding:10,borderRadius:8,border:"2px solid "+(appMode==='casino'?'#fff':'transparent'),background:appMode==='casino'?'rgba(255,255,255,.2)':'transparent',color:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>
+        🎰 Casino
+      </button>
+    </div>
+  </div>
+
+  {appMode==='freefire' && <>
+    {[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
+  </>}
+  
+  {appMode==='casino' && <>
+    <div className="mi" onClick={()=>go("casino_games")} style={{background:"#f0f9ff"}}>🎰 Play Casino Games<span>›</span></div>
+    <div className="mi" onClick={()=>go("casino_history")} style={{background:"#f0f9ff"}}>📊 Game History<span>›</span></div>
+    <div className="mi" onClick={()=>go("casino_promotions")} style={{background:"#f0f9ff"}}>🎁 Promotions<span>›</span></div>
+    <div className="mi" onClick={()=>go("support")}>💬 Customer Support<span>›</span></div>
+  </>}
+
+  {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
+  {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
+  <button className="btn" style={{background:"#fef2f2",color:"var(--r)",marginTop:20}} onClick={logout}>Logout</button></>
+}
+
+// Casino Games Page যোগ করুন
+if(page==="casino_games"){
+  t="🎰 Casino Games";
+  const casinoGames = [
+    {id:"roulette",name:"Auto Roulette",icon:"🎡",color:"#dc2626",desc:"Classic European Roulette"},
+    {id:"dragon_tiger",name:"Dragon Tiger",icon:"🐉",color:"#16a34a",desc:"Simple card game"},
+    {id:"aviator",name:"Aviator",icon:"✈️",color:"#f59e0b",desc:"Crash game"},
+    {id:"teen_patti",name:"Teen Patti",icon:"🃏",color:"#8b5cf6",desc:"Indian poker"},
+    {id:"andar_bahar",name:"Andar Bahar",icon:"🎴",color:"#ec4899",desc:"Traditional card game"},
+    {id:"baccarat",name:"Baccarat",icon:"💎",color:"#0ea5e9",desc:"Classic casino"},
+  ];
+  h=<div style={{padding:"10px"}}>
+    <div style={{background:"linear-gradient(135deg,#667eea,#764ba2)",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px",textAlign:"center"}}>
+      <div style={{fontSize:13,opacity:.9}}>Your Balance</div>
+      <div style={{fontSize:32,fontWeight:800,marginTop:4}}>₹{(me.balance||0)+(me.winnings||0)}</div>
+      <button className="btn" style={{marginTop:12,background:"#fff",color:"#667eea",maxWidth:200}} onClick={()=>go("deposit",{a:""})}>Add Money</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      {casinoGames.map(game=>(
+        <div key={game.id} onClick={()=>go("play_game",{game:game.id})} 
+          style={{background:game.color,borderRadius:16,padding:"20px",color:"#fff",cursor:"pointer",boxShadow:"0 4px 12px "+game.color+"44",transition:"transform .2s"}}>
+          <div style={{fontSize:40,marginBottom:8}}>{game.icon}</div>
+          <div style={{fontSize:16,fontWeight:800}}>{game.name}</div>
+          <div style={{fontSize:11,opacity:.9,marginTop:4}}>{game.desc}</div>
+        </div>
+      ))}
+    </div>
+    <button className="btn" style={{marginTop:20,background:"#111"}} onClick={()=>go("profile")}>← Back to Profile</button>
+  </div>;
+}
+
+// Play Game Page
+if(page==="play_game"){
+  const game = f.game;
+  t = game === "roulette" ? "🎡 Roulette" : game === "dragon_tiger" ? "🐉 Dragon Tiger" : game === "aviator" ? "✈️ Aviator" : "🎰 Casino Game";
+  
+  h=<div style={{padding:"10px"}}>
+    <div style={{background:"#1e293b",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px",textAlign:"center",minHeight:400,display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center"}}>
+      {game === "roulette" && <>
+        <div style={{fontSize:80,marginBottom:20}}>🎡</div>
+        <div style={{fontSize:24,fontWeight:800,marginBottom:10}}>Auto Roulette</div>
+        <div style={{fontSize:13,opacity:.8,marginBottom:20}}>Place your bets on the wheel</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
+          {["Red","Black","Green","Even","Odd","1-18","19-36"].map(opt=>(
+            <button key={opt} style={{padding:12,background:"#334155",border:"2px solid #475569",borderRadius:8,color:"#fff",fontWeight:700,fontFamily:"inherit"}}>{opt}</button>
+          ))}
+        </div>
+        <input type="number" placeholder="Bet amount ₹" style={{width:"100%",padding:12,borderRadius:8,border:"1px solid #475569",background:"#334155",color:"#fff",fontSize:16,marginBottom:12,fontFamily:"inherit"}}/>
+        <button className="btn" style={{background:"#dc2626",maxWidth:300}}>Place Bet</button>
+      </>}
+      {game === "dragon_tiger" && <>
+        <div style={{fontSize:80,marginBottom:20}}>🐉🐯</div>
+        <div style={{fontSize:24,fontWeight:800,marginBottom:10}}>Dragon Tiger</div>
+        <div style={{display:"flex",gap:16,marginBottom:20}}>
+          <button style={{flex:1,padding:20,background:"#dc2626",borderRadius:12,color:"#fff",fontWeight:800,fontSize:18,fontFamily:"inherit"}}>DRAGON</button>
+          <button style={{flex:1,padding:20,background:"#f59e0b",borderRadius:12,color:"#fff",fontWeight:800,fontSize:18,fontFamily:"inherit"}}>TIGER</button>
+        </div>
+        <input type="number" placeholder="Bet amount ₹" style={{width:"100%",padding:12,borderRadius:8,border:"1px solid #475569",background:"#334155",color:"#fff",fontSize:16,marginBottom:12,fontFamily:"inherit"}}/>
+        <button className="btn" style={{background:"#16a34a",maxWidth:300}}>Place Bet</button>
+      </>}
+      {game === "aviator" && <>
+        <div style={{fontSize:80,marginBottom:20}}>✈️</div>
+        <div style={{fontSize:48,fontWeight:800,color:"#f59e0b",marginBottom:10}}>1.00x</div>
+        <div style={{fontSize:13,opacity:.8,marginBottom:20}}>Cash out before it flies away!</div>
+        <input type="number" placeholder="Bet amount ₹" style={{width:"100%",padding:12,borderRadius:8,border:"1px solid #475569",background:"#334155",color:"#fff",fontSize:16,marginBottom:12,fontFamily:"inherit"}}/>
+        <button className="btn" style={{background:"#f59e0b",maxWidth:300}}>Start Flight</button>
+      </>}
+    </div>
+    <button className="btn" style={{background:"#111"}} onClick={()=>go("casino_games")}>← Back to Games</button>
+  </div>;
+}
+
+// Casino History Page
+if(page==="casino_history"){
+  t="📊 Game History";
+  h=<div style={{padding:"10px"}}>
+    <div style={{background:"#f8fafc",borderRadius:12,padding:"16px",marginBottom:"12px"}}>
+      <div style={{fontSize:13,color:"#64748b",marginBottom:4}}>Total Spent</div>
+      <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>₹0</div>
+    </div>
+    <div style={{background:"#f8fafc",borderRadius:12,padding:"16px",marginBottom:"12px"}}>
+      <div style={{fontSize:13,color:"#64748b",marginBottom:4}}>Total Won</div>
+      <div style={{fontSize:24,fontWeight:800,color:"#16a34a"}}>₹0</div>
+    </div>
+    <p className="empty">No games played yet. Start playing to see your history!</p>
+    <button className="btn" style={{background:"#111"}} onClick={()=>go("profile")}>← Back to Profile</button>
+  </div>;
+}
+
+// Casino Promotions Page
+if(page==="casino_promotions"){
+  t="🎁 Promotions";
+  h=<div style={{padding:"10px"}}>
+    <div style={{background:"linear-gradient(135deg,#f093fb,#f5576c)",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px"}}>
+      <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>🎉 Welcome Bonus</div>
+      <div style={{fontSize:13,opacity:.9,marginBottom:12}}>Get 100% bonus on your first deposit up to ₹10,000</div>
+      <button className="btn" style={{background:"#fff",color:"#f5576c",maxWidth:200}}>Claim Now</button>
+    </div>
+    <div style={{background:"linear-gradient(135deg,#4facfe,#00f2fe)",borderRadius:16,padding:"20px",color:"#fff",marginBottom:"16px"}}>
+      <div style={{fontSize:20,fontWeight:800,marginBottom:8}}>💰 Daily Cashback</div>
+      <div style={{fontSize:13,opacity:.9,marginBottom:12}}>Get 10% cashback on your losses every day</div>
+      <button className="btn" style={{background:"#fff",color:"#4facfe",maxWidth:200}}>Learn More</button>
+    </div>
+    <button className="btn" style={{background:"#111"}} onClick={()=>go("profile")}>← Back to Profile</button>
+  </div>;
+}
+
+// Navigation bar এ Casino option যোগ করুন (optional)
+const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}{appMode==='casino' && <a className={nav==="casino"?"on":""} onClick={()=>{setPage(null);setNav("casino");go("casino_games")}}><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Casino</a>}</nav>;
+
+// Header এ mode indicator
+<div className="hdr">
+  <span className="hdrIcon" onClick={()=>go("profile")}>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg>
+  </span>
+  <span className="brand">
+    <Logo s={34}/>
+    {appMode==='casino' ? 'ClashX7 🎰' : 'ClashX7'}
+  </span>
+  <span style={{display:"flex",gap:6}}>
+    <button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button>
+  </span>
+</div>
+
+// Admin Panel এ Casino Management tab যোগ করুন
+const TABS = isAdmin
+? ["Dashboard","Matches","Leaderboard","Notifications","Rules","Deposits","Deposit Settings","Support Links","Support Chat","Gift Codes","Withdrawals","Withdraw Settings","Users","Staff", "Casino Management"]
+: (isActingAdmin || isModerator)
+? ["Matches","Rules", ...(can("leaderboard")?["Leaderboard"]:[]), ...(can("notifications")?["Notifications"]:[]), ...(can("deposits")?["Deposits"]:[]), ...(can("withdrawals")?["Withdrawals"]:[]), ...(can("users")?["Users"]:[]), ...(can("support")?["Support Chat"]:[]), ...(can("gift")?["Gift Codes"]:[])]
+: ["Matches","Rules"];
+
+// Casino Management tab content
+if(cur==="Casino Management"){
+  b=<div className="pnl">
+    <h3>🎰 Casino Management</h3>
+    <p style={{fontSize:12,color:"#666",margin:"4px 0 12px"}}>Manage casino games and settings</p>
+    
+    <div style={{marginBottom:"20px"}}>
+      <h4 style={{marginBottom:8}}>Game Settings</h4>
+      <div style={{display:"grid",gap:10}}>
+        {["Roulette","Dragon Tiger","Aviator","Teen Patti","Andar Bahar","Baccarat"].map(game=>(
+          <div key={game} style={{padding:12,border:"1px solid #e5e7eb",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:700}}>{game}</div>
+              <div style={{fontSize:11,color:"#666"}}>Status: Active</div>
+            </div>
+            <label style={{position:"relative",display:"inline-block",width:50,height:26}}>
+              <input type="checkbox" defaultChecked style={{opacity:0,width:0,height:0}}/>
+              <span style={{position:"absolute",cursor:"pointer",top:0,left:0,right:0,bottom:0,background:"#16a34a",borderRadius:26,transition:".3s"}}></span>
+            </label>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div style={{marginBottom:"20px"}}>
+      <h4 style={{marginBottom:8}}>Casino Statistics</h4>
+      <div className="dg">
+        <div className="stat"><small>Total Bets Today</small><h2>₹0</h2></div>
+        <div className="stat"><small>Total Payouts</small><h2>₹0</h2></div>
+        <div className="stat"><small>Active Players</small><h2>0</h2></div>
+        <div className="stat"><small>House Edge</small><h2>2.7%</h2></div>
+      </div>
+    </div>
+
+    <div>
+      <h4 style={{marginBottom:8}}>Recent Casino Transactions</h4>
+      <p className="hint">No casino transactions yet</p>
+    </div>
+  </div>;
+}
