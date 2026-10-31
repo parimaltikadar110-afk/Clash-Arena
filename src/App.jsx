@@ -35,6 +35,7 @@ const T = ["SOLO BR","DUO BR","DUO PER KILL","SOLO PER KILL","LONE WOLF","LW HEA
 const PERMS = [["matches","Create & edit matches"],["results","Submit results"],["withdrawals","Approve withdrawals"],["deposits","Approve deposits"],["support","Support chat"],["notifications","Send notifications"],["users","Users & wallet balance"],["gift","Gift codes"],["leaderboard","Leaderboard"]];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
+const CASINO_NAV = [["home","Casino","M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 4v10M7 12h10"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit",timeZone:"Asia/Kolkata"});  // always show Indian time, whatever the phone timezone
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 // Match title-er sheshe " #1", " #2" thakle shoriye dey (match number alada, card-er niche chhoto kore dekhay)
@@ -385,6 +386,7 @@ export default function App() {
     setM(cleanMatches(rawM.current)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); if(l.data) setLb(l.data); if(mlR.data) setMlb(mlR.data);
       setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     if(ru.data) setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); if(st.data) setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
+      supabase.from("app_settings").select("value").eq("key","casino_config").maybeSingle().then(({data})=>{ if(data) setS(o=>({...o,casino_config:data.value})) });
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(rawM.current),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
@@ -976,7 +978,7 @@ export default function App() {
   };
 
   const body = () => {
-    if(appMode==="casino"&&nav==="home") return <CasinoHome supabase={supabase} me={me} reload={load} say={say} cfg={casinoCfg}/>;
+    if(appMode==="casino"&&nav!=="wallet") return <CasinoHome supabase={supabase} me={me} reload={load} say={say} cfg={casinoCfg}/>;
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
       return <><Tabs list={T} cur={tab} set={setTab}/>
@@ -1023,7 +1025,7 @@ export default function App() {
 
   const stTxt = s => <span style={{color:s==="approved"?"#16a34a":s==="pending"?"#d97706":"#dc2626",fontWeight:600,textTransform:"capitalize"}}>{s}</span>;
   const sub = () => {
-    const back={account:"profile",private:"profile",tx:"profile",support:"profile",results:"profile",giftcode:"profile",match:null,deposit:null,withdraw:null}[page]??null;
+    const back={account:"profile",private:"profile",tx:"profile",casinotx:"profile",support:"profile",results:"profile",giftcode:"profile",match:null,deposit:null,withdraw:null}[page]??null;
     let t="",h=null;
 
     if(page==="match"){
@@ -1099,7 +1101,7 @@ export default function App() {
       const links=S.support_links||{};
       h=<><div className="profHero"><div className="avWrap"><Avatar s={96}/></div><h3>{me.name}</h3><p style={{fontSize:11,color:"#666"}}>{me.email}</p>{isStaff&&<p className="roleBadge">{isAdmin?"Admin":isActingAdmin?"Acting Admin":"Moderator"}</p>}{me.game_name&&<p className="gameSaved">🎮 {me.game_name}</p>}</div>
       {casinoOn&&<div style={{display:"flex",gap:8,margin:"12px 0"}}>{[["ff","🎮 Free Fire"],["casino","🎰 Casino"]].map(([k,l])=><button key={k} onClick={()=>switchMode(k)} style={{flex:1,padding:10,borderRadius:10,border:"1px solid #ddd",fontWeight:700,background:appMode===k?"#111":"#fff",color:appMode===k?"#fff":"#111",cursor:"pointer"}}>{l}</button>)}</div>}
-      {appMode==="casino"&&[["🎰 Play Casino Games",()=>{setPage(null);setNav("home")}],["📊 Game History",()=>go("tx")],["🎁 Promotions",()=>go("giftcode")],["💰 Add Money",()=>{setPage(null);setNav("wallet")}],["💬 Customer Support",()=>go("support")]].map(([n,fn])=><div className="mi" key={n} onClick={fn}>{n}<span>›</span></div>)}
+      {appMode==="casino"&&[["🎰 Play Casino Games",()=>{setPage(null);setNav("home")}],["📊 Game History",()=>go("casinotx")],["💰 Add Money",()=>{setPage(null);setNav("wallet")}],["💬 Customer Support",()=>go("support")]].map(([n,fn])=><div className="mi" key={n} onClick={fn}>{n}<span>›</span></div>)}
       {appMode!=="casino"&&[["Account Settings","account"],["Notifications","notifications"],["Join Private Tournament","private"],["Gift Code","giftcode"],["Results","results"],["Customer Support","support"]].map(([n,x])=><div className="mi" key={x} onClick={()=>go(x,x==="account"?{n:me.name,fn:me.full_name||"",gn:me.game_name||"",g:me.game_id,ph:me.phone||""}:{})}>{n}<span>›</span></div>)}
       {(links.whatsapp||links.telegram)&&<div className="socialLinks">{links.telegram&&<a href={normLink(links.telegram)} target="_blank" rel="noreferrer">Telegram Support</a>}{links.whatsapp&&<a href={normLink(links.whatsapp)} target="_blank" rel="noreferrer">WhatsApp Community</a>}</div>}
       {isStaff&&<a className="mi" href="#admin" style={{color:"var(--r)",textDecoration:"none",fontWeight:700}}>{isAdmin?"👑 Admin Panel":isActingAdmin?"🛡️ Acting Admin Panel":"🧰 Moderator Panel"}<span>›</span></a>}
@@ -1120,6 +1122,7 @@ export default function App() {
           ? inp("u","Enter UPI ID (e.g. name@bank)")
           : <>{inp("bn","Account holder name")}{inp("ba","Bank account number","tel")}{inp("ba2","Re-enter account number","tel")}{inp("bi","IFSC code (e.g. SBIN0001234)")}</>}
         <button className="btn gb" disabled={wd.enabled===false} onClick={withdraw}>Withdraw</button></>}
+    if(page==="casinotx"){t="Game History";const L=txs.filter(x=>/casino|roulette|dragon|aviator/i.test(x.note||""));h=L.length?L.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty">No casino games yet</p>}
     if(page==="tx"){t="Transactions";h=txs.length?txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{new Date(x.created_at).toLocaleString()}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="empty"><b>No Transactions Yet</b><br/>Your history appears here once you start playing.</p>}
     if(page==="notifications"){t="Notifications";const mine=notifs.filter(n=>n.audience==="all"||n.user_id===session?.user?.id);h=mine.length?mine.map(n=><div className="mi" key={n.id} style={{display:"block"}}><b>{n.title}</b><div className="gn" style={{whiteSpace:"pre-wrap",marginTop:4}}>{n.body}</div><div className="gn" style={{marginTop:4,fontSize:11}}>{new Date(n.created_at).toLocaleString()}</div></div>):<p className="empty">No notifications yet.</p>}
     if(page==="results"){t="Results";const ps=M.filter(m=>m.status==="played");h=ps.length?ps.map(m=><div className="mi" key={m.id} onClick={()=>go("match",{mid:m.id,game_name:me.game_name||""})}><span>{m.title}<div className="gn">Winner: {m.winner_name||"-"}</div></span><b style={{color:"var(--r)"}}>₹{m.prize}</b></div>):<p className="empty">No results announced yet.</p>}
@@ -1395,7 +1398,7 @@ export default function App() {
       </>;
     }
     if(cur==="Casino Settings"){
-      const cc = ccDraft || casinoCfg, S2 = casinoStats||{}, RC = S2.recent||[];
+      const cc = ccDraft || casinoCfg, S2 = casinoStats||{};
       const GL = [["roulette","Roulette"],["dragon_tiger","Dragon Tiger"],["aviator","Aviator"],["teen_patti","Teen Patti"],["andar_bahar","Andar Bahar"],["dice","Dice"]];
       const setG = (k,v) => setCcDraft({...cc, games:{...cc.games, [k]:v}});
       const card=(l,v)=><div className="ucard" style={{flex:1,minWidth:130}}><span className="hint">{l}</span><b style={{fontSize:18}}>{v}</b></div>;
@@ -1408,8 +1411,6 @@ export default function App() {
         <button className="btn" style={{marginTop:10}} onClick={()=>run(supabase.from("app_settings").upsert({key:"casino_config",value:cc,updated_at:new Date().toISOString()}),"Casino settings saved").then(ok=>{ if(ok) setCcDraft(null) })}>Save casino settings</button>
         <p className="sh" style={{marginTop:16}}>Stats</p>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{card("Total Bets",S2.total_bets??0)}{card("Total Staked",R(S2.total_staked||0))}{card("Total Payout",R(S2.total_payout||0))}{card("House Profit",R(S2.house_profit||0))}</div>
-        <p className="sh">Recent casino rounds</p>
-        {RC.length?RC.map(x=><div className="lr" key={x.id}><b>{x.user_name||"User"} · {x.game}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span>{R(x.total_bet)} → {R(x.payout)}</span></div>):<p className="empty">No rounds yet</p>}
         <button className="sm" style={{marginTop:10}} onClick={loadCasino}>Refresh stats</button></div>;
     }
     if(cur==="Gift Codes"){
@@ -1491,7 +1492,7 @@ export default function App() {
   if(!me) return wrap(<Skeleton onRetry={load} onLogout={logout}/>);
   if(payReturn) return wrap(<div className="pgb" style={{textAlign:"center",padding:"80px 20px"}}><div style={{fontSize:44}}>⏳</div><h3 style={{marginTop:14}}>Checking your payment…</h3><p className="hint">Please wait. Your balance will update shortly.</p><button className="btn" style={{marginTop:18}} onClick={()=>{setPayReturn(null);setNav("wallet")}}>Go to Wallet</button></div>);
   if(hash==="#admin") return wrap(isStaff?admin():<p className="empty">Not authorized. <a href="#">Back to app</a></p>);
-  const navBar = <nav>{NAV.map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
+  const navBar = <nav>{(appMode==="casino"?CASINO_NAV:NAV).map(([n,l,d])=>{const on=!page&&nav===n; return <a key={n} className={on?"on":""} onClick={()=>{setPage(null);setNav(n)}}><svg viewBox="0 0 24 24"><path d={d}/></svg>{l}</a>})}</nav>;
   return wrap(<>{page ? sub() : <>
     <div className="hdr"><span className="hdrIcon" onClick={()=>go("profile")}><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><circle cx="12" cy="8.2" r="4.2"/><path d="M3.8 21.5c.6-4.6 3.9-7.3 8.2-7.3s7.6 2.7 8.2 7.3z"/></svg></span><span className="brand"><Logo s={34}/>{appMode==="casino"?<span style={{color:"#f5c518"}}>ClashX7 🎰</span>:"ClashX7"}</span>
       <span style={{display:"flex",gap:6}}><button className="ic" onClick={()=>{setPage(null);setNav("wallet")}}>₹{me.balance+me.winnings}</button></span></div>
