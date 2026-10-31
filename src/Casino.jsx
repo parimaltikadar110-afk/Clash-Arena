@@ -13,7 +13,7 @@ const BET_SECONDS = 12;
 const ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
 const RED = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
 const SEG = 360 / 37;
-const CHIPS = [1, 5, 10, 25, 100, 500];
+const CHIPS = [10, 25, 100, 500];
 const CHIP_COL = { 1: ["#f3f4f6","#6b7280"], 5: ["#ef4444","#7f1d1d"], 10: ["#3b82f6","#1e3a8a"], 25: ["#22c55e","#14532d"], 100: ["#1f2937","#030712"], 500: ["#a855f7","#581c87"] };
 const GOLD = "#d4af37", GOLD_L = "#facc15";
 const FELT = "radial-gradient(ellipse at 50% 30%,#17703f 0%,#0d4a2a 60%,#082f1b 100%)";
@@ -110,17 +110,21 @@ function Confetti() {
   );
 }
 const Chips = ({ value, onChange }) => (
-  <div style={{ display: "flex", justifyContent: "center", gap: 9, flexWrap: "wrap", margin: "12px 0" }}>
+  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 9, flexWrap: "wrap", margin: "12px 0" }}>
     {CHIPS.map(c => {
       const on = c === value, col = CHIP_COL[c];
       return (
         <button key={c} onClick={() => onChange(c)} style={{ width: 48, height: 48, borderRadius: "50%",
           border: `3px dashed ${on ? GOLD_L : "rgba(255,255,255,.6)"}`,
-          background: `radial-gradient(circle at 35% 30%, ${col[0]}, ${col[1]})`, color: c === 1 ? "#111" : "#fff",
+          background: `radial-gradient(circle at 35% 30%, ${col[0]}, ${col[1]})`, color: "#fff",
           fontWeight: 900, fontSize: 12, cursor: "pointer", boxShadow: on ? `0 0 0 3px ${GOLD_L}, 0 6px 14px #000` : "0 4px 10px #000a",
           transform: on ? "translateY(-3px)" : "none", transition: "transform .15s" }}>{c}</button>
       );
     })}
+    <input type="number" min="10" inputMode="numeric" placeholder="Other ₹"
+      onChange={e => { const v = Math.floor(+e.target.value); if (v >= 10) onChange(v); }}
+      style={{ width: 84, height: 40, borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0a1f14", color: "#f3efe0",
+        padding: "0 8px", fontWeight: 800, boxSizing: "border-box" }} />
   </div>
 );
 const Shell = ({ title, onBack, right, children }) => (
@@ -295,31 +299,138 @@ const Cell = memo(function Cell({ type, value, label, bg, amount, win, onPlace, 
   );
 });
 
-/* ---------- statistics modal (local history only) ---------- */
-function StatsModal({ hist, onClose }) {
-  const n = hist.length;
-  const pct = c => (n ? Math.round((hist.filter(x => x.color === c).length / n) * 100) : 0);
-  const freq = Array(37).fill(0);
-  hist.forEach(x => { freq[x.n]++; });
-  const ranked = freq.map((c, i) => ({ i, c })).sort((a, b) => b.c - a.c || a.i - b.i);
-  const hot = ranked.slice(0, 5), cold = ranked.slice(-5).reverse();
-  const row = (l, v) => (
-    <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #ffffff14" }}>
-      <span>{l}</span><b>{v}</b>
+/* ---------- racetrack (straight-number bets, same placement logic as the grid) ---------- */
+function RaceTrack({ place, amounts, winNum }) {
+  return (
+    <div style={{ position: "relative", margin: "16px auto 0", width: 320, maxWidth: "100%", height: 210, background: FELT,
+      borderRadius: 130, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
+      {ORDER.map((n, i) => {
+        const t = (i * SEG * Math.PI) / 180;
+        const x = 160 + 118 * Math.sin(t), y = 105 - 80 * Math.cos(t);
+        const a = amounts[`straight:${n}`] || 0, win = winNum !== null && n === winNum;
+        return (
+          <div key={n} onClick={() => place("straight", n)} style={{ position: "absolute", left: x - 16, top: y - 16, width: 32, height: 32,
+            borderRadius: "50%", background: numColor(n), color: "#fff", border: "1px solid #ffffff55", display: "grid", placeItems: "center",
+            fontSize: 11, fontWeight: 900, cursor: "pointer", boxSizing: "border-box",
+            boxShadow: win ? `0 0 0 2px ${GOLD_L}, 0 0 14px ${GOLD_L}` : "0 2px 4px #000a" }}>
+            {n}
+            {a > 0 && <span style={{ position: "absolute", top: -7, right: -6, background: GOLD_L, color: "#111", borderRadius: 99, fontSize: 9, padding: "1px 4px", fontWeight: 900 }}>{a}</span>}
+          </div>
+        );
+      })}
+      <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", color: GOLD_L, fontWeight: 900, fontSize: 12, letterSpacing: 1, textAlign: "center" }}>
+        RACETRACK<div style={{ fontSize: 10, opacity: .7, fontWeight: 600 }}>tap a number</div>
+      </div>
     </div>
   );
+}
+
+/* ---------- statistics modal (local history only, no DB calls) ---------- */
+const CATS = [
+  ["1st 12", x => x.n >= 1 && x.n <= 12], ["2nd 12", x => x.n >= 13 && x.n <= 24], ["3rd 12", x => x.n >= 25 && x.n <= 36],
+  ["1st col", x => x.n > 0 && (x.n - 1) % 3 === 0], ["2nd col", x => x.n > 0 && (x.n - 1) % 3 === 1], ["3rd col", x => x.n > 0 && (x.n - 1) % 3 === 2],
+  ["1-18", x => x.n >= 1 && x.n <= 18], ["Even", x => x.n > 0 && x.n % 2 === 0], ["Red", x => x.color === "red"],
+  ["Black", x => x.color === "black"], ["Odd", x => x.n % 2 === 1], ["19-36", x => x.n >= 19], ["Zero", x => x.n === 0],
+];
+function StatsModal({ hist, onClose }) {
+  const [tab, setTab] = useState("hc");
+  const [len, setLen] = useState(50);
+  const H = hist.slice(0, len);              // hist is newest first
+  const n = H.length;
+  const freq = Array(37).fill(0);
+  H.forEach(x => { freq[x.n]++; });
+  const maxF = Math.max(1, ...freq);
+  const ranked = freq.map((c, i) => ({ i, c })).sort((a, b) => b.c - a.c || a.i - b.i);
+  const hot = ranked.slice(0, 5).filter(r => r.c > 0);
+  // cold = numbers absent for the longest time (in the whole history we have)
+  const lastSeen = {};
+  hist.forEach((x, idx) => { if (lastSeen[x.n] === undefined) lastSeen[x.n] = idx; });
+  const cold = [...Array(37).keys()].map(i => ({ i, age: lastSeen[i] === undefined ? 9999 : lastSeen[i] }))
+    .sort((a, b) => b.age - a.age).slice(0, 5);
+  const hotSet = new Set(hot.map(h => h.i)), coldSet = new Set(cold.map(c => c.i));
+  const pct = pred => (n ? Math.round((H.filter(pred).length / n) * 100) : 0);
+
+  const tabBtn = (k, l) => (
+    <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: 9, border: "none", background: "none", cursor: "pointer",
+      color: tab === k ? GOLD_L : "#f3efe0", fontWeight: 800, borderBottom: `2px solid ${tab === k ? GOLD_L : "transparent"}` }}>{l}</button>
+  );
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#0a1f14", border: `1px solid ${GOLD}`, borderRadius: 14, padding: 16, width: "min(92vw,360px)", maxHeight: "80vh", overflow: "auto", color: "#f3efe0" }}>
-        <h3 style={{ margin: "0 0 8px", color: GOLD_L }}>Statistics · last {n}</h3>
-        {n === 0 ? <p style={{ fontSize: 13, opacity: .7 }}>No spins yet on this device.</p> : (
-          <>
-            {row("Red", pct("red") + "%")}{row("Black", pct("black") + "%")}{row("Green (0)", pct("green") + "%")}
-            <p style={{ margin: "12px 0 4px", fontWeight: 800 }}>Hot</p>{hot.map(h => row(`#${h.i}`, `${h.c}×`))}
-            <p style={{ margin: "12px 0 4px", fontWeight: 800 }}>Cold</p>{cold.map(h => row(`#${h.i}`, `${h.c}×`))}
-          </>
-        )}
-        <button onClick={onClose} style={{ ...btn, width: "100%", marginTop: 12 }}>Close</button>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0a1f14", border: `1px solid ${GOLD}`, borderRadius: 16, width: "min(94vw,380px)",
+        maxHeight: "86vh", display: "flex", flexDirection: "column", color: "#f3efe0", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "12px 14px", borderBottom: `1px solid ${GOLD}55` }}>
+          <b style={{ flex: 1, color: GOLD_L }}>Statistics</b>
+          <button onClick={onClose} style={{ ...btn, padding: "4px 10px" }}>✕</button>
+        </div>
+        <div style={{ display: "flex", borderBottom: `1px solid ${GOLD}33` }}>
+          {tabBtn("hc", "HOT / COLD")}{tabBtn("adv", "ADVANCED")}{tabBtn("last", `LAST ${len}`)}
+        </div>
+
+        <div style={{ padding: 14, overflowY: "auto" }}>
+          {n === 0 && <p style={{ fontSize: 13, opacity: .7, textAlign: "center" }}>No spins yet on this device.</p>}
+
+          {n > 0 && tab === "hc" && (
+            <>
+              <svg viewBox="-110 -110 220 220" style={{ width: "100%", maxWidth: 260, display: "block", margin: "0 auto" }}>
+                <circle r="30" fill="#0d4a2a" stroke={GOLD} strokeWidth="1.5" />
+                {Array.from({ length: 37 }, (_, i) => {
+                  const f = freq[i], len2 = 18 + 70 * (f / maxF), t = (i * SEG * Math.PI) / 180;
+                  const hotS = hotSet.has(i), coldS = coldSet.has(i);
+                  const col = hotS ? "#ef4444" : coldS ? "#60a5fa" : "#6b7280";
+                  return <line key={i} x1={30 * Math.sin(t)} y1={-30 * Math.cos(t)} x2={(30 + len2) * Math.sin(t)} y2={-(30 + len2) * Math.cos(t)}
+                    stroke={col} strokeWidth={hotS || coldS ? 4 : 2} strokeLinecap="round" />;
+                })}
+              </svg>
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 800 }}>🔥 Hot</p>
+                  {hot.map(h => <div key={h.i} style={{ fontSize: 13, padding: "3px 0" }}>#{h.i} · {h.c}×</div>)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 800 }}>❄️ Cold</p>
+                  {cold.map(c => <div key={c.i} style={{ fontSize: 13, padding: "3px 0" }}>#{c.i} · {c.age === 9999 ? "never" : `${c.age} ago`}</div>)}
+                </div>
+              </div>
+              <p style={{ margin: "12px 0 6px", fontWeight: 800, fontSize: 12 }}>Last 20</p>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {hist.slice(0, 20).map((h, i) => (
+                  <span key={i} style={{ width: 14, height: 14, borderRadius: "50%", background: numColor(h.n), border: "1px solid #ffffff55" }} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {n > 0 && tab === "adv" && (
+            <>
+              {CATS.map(([label, pred]) => {
+                const v = pct(pred);
+                return (
+                  <div key={label} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span>{label}</span><b>{v}%</b></div>
+                    <div style={{ height: 8, borderRadius: 6, background: "#ffffff14", overflow: "hidden" }}>
+                      <div style={{ width: `${v}%`, height: "100%", background: `linear-gradient(90deg,${GOLD},${GOLD_L})`, transition: "width .5s" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {tab === "last" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(10,1fr)", gap: 4 }}>
+                {H.map((h, i) => (
+                  <span key={i} style={{ height: 24, borderRadius: 4, display: "grid", placeItems: "center", fontSize: 10, fontWeight: 800,
+                    background: numColor(h.n), color: "#fff" }}>{h.n}</span>
+                ))}
+              </div>
+              <div style={{ marginTop: 14, fontSize: 13, fontWeight: 800, textAlign: "center" }}>LAST {len} ROUNDS</div>
+              <input type="range" min="5" max="50" step="1" value={len} onChange={e => setLen(+e.target.value)}
+                style={{ width: "100%", accentColor: GOLD_L }} />
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -343,6 +454,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
   const [last, setLast] = useState(null);
   const [burst, setBurst] = useState(0);
   const [showStats, setShowStats] = useState(false);
+  const [track, setTrack] = useState(false);
 
   const aggregate = list => {
     const m = new Map();
@@ -425,6 +537,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
     <Shell title="Auto Roulette" onBack={onBack}
       right={<>
         <button onClick={() => setAuto(a => !a)} style={{ ...btn, background: auto ? GOLD : "#16291d", color: auto ? "#111" : "#f3efe0" }}>AUTO {auto ? "ON" : "OFF"}</button>
+        <button onClick={() => setTrack(t => !t)} style={btn}>{track ? "Grid" : "Track"}</button>
         <button onClick={() => setShowStats(true)} style={btn}>Stats</button>
       </>}>
 
@@ -447,7 +560,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
 
       <Wheel target={target} spinId={spinId} spinning={phase === "spinning"} />
 
-      <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
+      {track ? <RaceTrack place={place} amounts={amounts} winNum={winNum} /> : <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
         {cell("straight", 0, "0", C_GRN, { tall: 36 })}
         <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 48px", gap: 4, marginTop: 4 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -471,7 +584,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
           </div>
           <div />
         </div>
-      </div>
+      </div>}
 
       <Chips value={chip} onChange={setChip} />
       <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
