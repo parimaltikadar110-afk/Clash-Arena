@@ -6,9 +6,89 @@
    ============================================================ */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Plane, CircleDot, Swords, Orbit, Gem, Bomb, Undo2, Minus, Plus, X, Check, Hand } from "lucide-react";
 
-/* ---------------------------- constants ---------------------------- */
+/* ---------- Inline icons (no external icon dependency) ---------- */
+
+const makeIcon = paths => function Icon({ size = 24, className = "", style }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      style={style}
+      aria-hidden="true"
+    >
+      {paths}
+    </svg>
+  );
+};
+
+const Plane = makeIcon(
+  <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" />
+);
+const CircleDot = makeIcon(
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="1" />
+  </>
+);
+const Swords = makeIcon(
+  <>
+    <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
+    <path d="M13 19l6-6" />
+    <path d="M16 16l4 4" />
+    <path d="M14.5 6.5 21 3v3l-11.5 11.5" />
+    <path d="M5 14l5 5" />
+    <path d="M8 17l-3 3" />
+  </>
+);
+const Orbit = makeIcon(
+  <>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z" />
+  </>
+);
+const Gem = makeIcon(
+  <>
+    <path d="M6 3h12l4 6-10 13L2 9Z" />
+    <path d="M11 3 8 9l4 13 4-13-3-6" />
+    <path d="M2 9h20" />
+  </>
+);
+const Bomb = makeIcon(
+  <>
+    <circle cx="11" cy="13" r="8" />
+    <path d="M14.5 3.5 17 1" />
+    <path d="M18 6l1.5-1.5" />
+  </>
+);
+const Undo2 = makeIcon(
+  <>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </>
+);
+const Minus = makeIcon(<path d="M5 12h14" />);
+const Plus = makeIcon(<path d="M12 5v14M5 12h14" />);
+const X = makeIcon(<path d="M18 6 6 18M6 6l12 12" />);
+const Check = makeIcon(<path d="M20 6 9 17l-5-5" />);
+const Hand = makeIcon(
+  <>
+    <path d="M18 11V6a2 2 0 0 0-4 0v5" />
+    <path d="M14 10V4a2 2 0 0 0-4 0v7" />
+    <path d="M10 10.5V6a2 2 0 0 0-4 0v8" />
+    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-3l-3.6-5.4a2 2 0 0 1 3-2.6L6 14" />
+  </>
+);
+
+/* ---------- constants ---------- */
 
 const START_BALANCE = 44016727;
 const LIMITS = {
@@ -53,7 +133,7 @@ const GAMES = [
   { id: "mines", label: "Mines", icon: Gem },
 ];
 
-/* ---------------------------- style tokens ---------------------------- */
+/* ---------- style tokens ---------- */
 
 const STEP_BTN = "grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-amber-600/60 bg-[#16291d] text-amber-200 transition active:scale-95 disabled:opacity-40";
 const PANEL = "rounded-2xl border border-amber-800/40 bg-[#07130d]/90 p-3 shadow-[0_10px_30px_#000a]";
@@ -62,7 +142,7 @@ const GREEN = "bg-gradient-to-r from-emerald-500 to-green-600";
 const ORANGE = "bg-gradient-to-r from-amber-400 to-orange-600";
 const TOOL = "flex items-center justify-center gap-1 rounded-xl border border-amber-600/50 bg-[#16291d] py-2.5 text-xs font-black text-amber-100 transition active:scale-95 disabled:opacity-40";
 
-/* ---------------------------- helpers ---------------------------- */
+/* ---------- helpers ---------- */
 
 const round2 = v => Math.round(v * 100) / 100;
 const inrFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -104,7 +184,7 @@ const crashPoint = () => {
   return clampN(Math.floor(97 / (1 - r)) / 100, 1, 500);
 };
 
-/* ---------------------------- hooks ---------------------------- */
+/* ---------- hooks ---------- */
 
 // Web Audio synth: no audio files, created lazily after the first user gesture
 function useSound(enabled) {
@@ -179,7 +259,7 @@ function useTimers() {
   return useCallback((fn, ms) => { ids.current.push(setTimeout(fn, ms)); }, []);
 }
 
-/* ---------------------------- shared UI ---------------------------- */
+/* ---------- shared UI ---------- */
 
 function Chip({ value, size = 46, active = false }) {
   const [a, b] = CHIP_COLORS[value] || ["#64748b", "#334155"];
