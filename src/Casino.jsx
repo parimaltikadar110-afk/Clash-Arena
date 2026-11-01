@@ -69,6 +69,26 @@ const wedge = (cx, cy, r1, r2, a1, a2) => {
   return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 0 ${x4} ${y4} Z`;
 };
 
+/* ---------- casino chip ---------- */
+function ChipToken({ value, size = 48, label, selected }) {
+  const col = CHIP_COL[value] || ["#9ca3af", "#374151"];
+  const b = Math.max(1, Math.round(size * 0.04));
+  return (
+    <div style={{ position: "relative", width: size, height: size, borderRadius: "50%", boxSizing: "border-box",
+      background: `repeating-conic-gradient(${col[0]} 0deg 14deg, #ffffffee 14deg 22deg)`,
+      boxShadow: `0 ${Math.round(size * 0.08)}px ${Math.round(size * 0.2)}px #000c, inset 0 0 0 ${b}px #0007`,
+      outline: selected ? `2px solid ${GOLD_L}` : "none" }}>
+      <div style={{ position: "absolute", inset: size * 0.16, borderRadius: "50%", boxSizing: "border-box",
+        background: `radial-gradient(circle at 35% 30%, #ffffff55, transparent 42%), radial-gradient(circle, ${col[0]}, ${col[1]})`,
+        border: `${b}px dashed #ffffffcc`, display: "grid", placeItems: "center",
+        color: value === 1 ? "#111" : "#fff", fontWeight: 900, fontSize: Math.round(size * 0.3), textShadow: "0 1px 2px #000" }}>
+        {label ?? value}
+      </div>
+    </div>
+  );
+}
+const chipFor = amt => { let c = CHIPS[0]; CHIPS.forEach(x => { if (amt >= x) c = x; }); return c; };
+
 /* ---------- shared hooks / UI ---------- */
 function useBal(me) {
   const real = (+me.balance || 0) + (+me.winnings || 0);
@@ -122,16 +142,12 @@ function Confetti() {
 }
 const Chips = ({ value, onChange }) => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 9, flexWrap: "wrap", margin: "12px 0" }}>
-    {CHIPS.map(c => {
-      const on = c === value, col = CHIP_COL[c];
-      return (
-        <button key={c} onClick={() => onChange(c)} style={{ width: 48, height: 48, borderRadius: "50%",
-          border: `3px dashed ${on ? GOLD_L : "rgba(255,255,255,.6)"}`,
-          background: `radial-gradient(circle at 35% 30%, ${col[0]}, ${col[1]})`, color: "#fff",
-          fontWeight: 900, fontSize: 12, cursor: "pointer", boxShadow: on ? `0 0 0 3px ${GOLD_L}, 0 6px 14px #000` : "0 4px 10px #000a",
-          transform: on ? "translateY(-3px)" : "none", transition: "transform .15s" }}>{c}</button>
-      );
-    })}
+    {CHIPS.map(c => (
+      <button key={c} onClick={() => onChange(c)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: "50%",
+        transform: c === value ? "translateY(-4px) scale(1.06)" : "none", transition: "transform .15s" }}>
+        <ChipToken value={c} size={50} selected={c === value} />
+      </button>
+    ))}
     <input type="number" min="10" inputMode="numeric" placeholder="Other ₹"
       onChange={e => { const v = Math.floor(+e.target.value); if (v >= 10) onChange(v); }}
       style={{ width: 84, height: 40, borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0a1f14", color: "#f3efe0",
@@ -340,10 +356,7 @@ const Cell = memo(function Cell({ type, value, label, bg, amount, win, onPlace, 
         <span key={"g" + ghost} style={{ position: "absolute", top: -7, right: -5, background: `radial-gradient(circle at 35% 30%,#fff7c2,${GOLD})`,
           color: "#1a1200", borderRadius: 99, fontSize: 9, fontWeight: 900, padding: "2px 5px", animation: "x7unchip .3s ease-in forwards", pointerEvents: "none" }}>{ghost}</span>
       )}
-      {amount > 0 && (
-        <span key={amount} style={{ animation: "x7chip .35s ease-out", position: "absolute", top: -7, right: -5, background: `radial-gradient(circle at 35% 30%,#fff7c2,${GOLD})`,
-          color: "#1a1200", borderRadius: 99, fontSize: 9, fontWeight: 900, padding: "2px 5px", boxShadow: "0 2px 4px #000" }}>{amount}</span>
-      )}
+      {amount > 0 && <div key={amount} style={{ position: "absolute", top: -10, right: -8, animation: "x7chip .35s ease-out" }}><ChipToken value={chipFor(amount)} size={28} label={amount} /></div>}
     </div>
   );
 });
@@ -798,9 +811,10 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
-/* ================= AVIATOR ================= */
+/* ================= AVIATOR (live: server clock + status polling) ================= */
 const AV_HIST_KEY = "x7_av_hist";
 const AV_W = 300, AV_H = 170;
+const AV_K = 0.07;                       // must match the server: m(t) = e^(K t)
 const crashTone = c => (c >= 10 ? GOLD_L : c >= 2 ? "#5eead4" : "#94a3b8");
 
 function Aviator({ supabase, me, reload, say, cfg, onBack }) {
@@ -822,10 +836,12 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     catch { return []; }
   });
 
-  const mRef = useRef(1), roundRef = useRef(null), timer = useRef(null), t0 = useRef(0), doneRef = useRef(false), stakeRef = useRef(0), autoRef = useRef(0), finRef = useRef(null);
+  const roundRef = useRef(null), timer = useRef(null), poll = useRef(null), finRef = useRef(null);
+  const doneRef = useRef(false), stakeRef = useRef(0), autoRef = useRef(0), mRef = useRef(1);
+  const startRef = useRef(0), offRef = useRef(0);      // server start time (ms) and clock offset (server - device)
   autoRef.current = parseFloat(autoAt) || 0;
 
-  useEffect(() => () => { clearInterval(timer.current); clearInterval(finRef.current); }, []);
+  useEffect(() => () => { clearInterval(timer.current); clearInterval(poll.current); clearInterval(finRef.current); }, []);
 
   const pushCrash = c => setCrashes(h => {
     const n = [c, ...h].slice(0, 10);
@@ -833,25 +849,18 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     return n;
   });
 
-  // display only: the crash point stays hidden on the server until the round settles
-  function tick() {
-    const el = (Date.now() - t0.current) / 1000;
-    const v = Math.max(1, Math.exp(0.07 * el));
-    mRef.current = v;
-    setM(v);
-    setPts(p => (p.length > 500 ? [...p.slice(-499), v] : [...p, v]));
-    if (autoRef.current && v >= autoRef.current) cashOut();
-    if (v >= 100) cashOut();
-  }
+  // the multiplier shown is computed from the server's start time, so it matches the server's curve
+  const curM = () => Math.max(1, Math.exp(AV_K * ((Date.now() + offRef.current - startRef.current) / 1000)));
 
   function explode() {
     setBoom(true); setShake(true);
     setTimeout(() => setShake(false), 500);
   }
 
-  // after the server answers: a win keeps flying to the real crash point, a loss crashes at that point
+  // the round is over: the plane stops at the real crash point (or keeps going to it after a win)
   function finish(crash, won) {
     clearInterval(timer.current);
+    clearInterval(poll.current);
     pushCrash(crash);
     if (won) {
       finRef.current = setInterval(() => {
@@ -871,10 +880,36 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     }
   }
 
+  function tick() {
+    const v = curM();
+    mRef.current = v;
+    setM(v);
+    setPts(p => (p.length > 500 ? [...p.slice(-499), v] : [...p, v]));
+    if (autoRef.current && v >= autoRef.current) cashOut();
+    if (v >= 100) cashOut();
+  }
+
+  // asks the server whether the round has crashed; the crash point is only revealed after it happened
+  async function pollStatus() {
+    if (!roundRef.current || doneRef.current) return;
+    const { data, error } = await supabase.rpc("casino_aviator_status", { p_round: roundRef.current });
+    if (error || !data?.success || data.status === "open") return;
+    doneRef.current = true;
+    roundRef.current = null;
+    setPhase("done");
+    const net = data.won_amount - stakeRef.current;
+    setRes({ won: data.status === "cashed", crash: data.crash, mult: null, net });
+    setBal(data.new_balance);
+    if (data.status === "cashed") setBurst(b => b + 1);
+    reload && reload();
+    finish(data.crash, data.status === "cashed");
+  }
+
   async function cashOut() {
     if (!roundRef.current || doneRef.current) return;
     doneRef.current = true;
     clearInterval(timer.current);
+    clearInterval(poll.current);
     const id = roundRef.current;
     const mult = Math.min(100, Math.round(mRef.current * 100) / 100);
     const { data, error } = await supabase.rpc("casino_aviator_cashout", { p_round: id, p_mult: mult });
@@ -900,11 +935,14 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     if (error || !data?.success) { setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
     roundRef.current = data.round_id; setRoundId(data.round_id);
     stakeRef.current = chip; doneRef.current = false;
+    startRef.current = data.start_ms;
+    offRef.current = data.server_ms - Date.now();
     clearInterval(finRef.current);
-    mRef.current = 1; t0.current = Date.now();
+    mRef.current = 1;
     setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying");
-    clearInterval(timer.current);
+    clearInterval(timer.current); clearInterval(poll.current);
     timer.current = setInterval(tick, 100);
+    poll.current = setInterval(pollStatus, 2000);       // one light call every 2 seconds while flying
   };
 
   const stepStake = d => setChip(c => Math.max(MIN, Math.min(MAX, c + d)));
@@ -924,7 +962,6 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
   return (
     <Shell title="Aviator" onBack={onBack}>
-      {/* last crash values */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 0 8px" }}>
         {crashes.length === 0 && <span style={{ fontSize: 12, opacity: .6 }}>No rounds yet</span>}
         {crashes.map((c, i) => (
@@ -933,7 +970,6 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         ))}
       </div>
 
-      {/* stage */}
       <div style={{ position: "relative", height: AV_H + 10, borderRadius: 16, overflow: "hidden",
         background: "radial-gradient(ellipse at 50% 110%,#143a2a,#050d09 70%)", border: `1px solid ${GOLD}`,
         animation: shake ? "x7shake .5s linear" : "none" }}>
@@ -970,10 +1006,10 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
       <div style={{ minHeight: 40, textAlign: "center", marginTop: 10, fontWeight: 900, fontSize: 15 }}>
         {phase === "flying" && <span>Cash out before it flies away</span>}
-        {res && res.won && <span style={{ color: "#86efac" }}>CASHED OUT {res.mult.toFixed(2)}x · WON <CountUp value={res.net} /></span>}
+        {res && res.won && <span style={{ color: "#86efac" }}>CASHED OUT · WON <CountUp value={res.net} /></span>}
+        {res && !res.won && <span style={{ color: "#fca5a5" }}>FLEW AWAY at {res.crash.toFixed(2)}x</span>}
       </div>
 
-      {/* stake */}
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, marginTop: 6 }}>
         <button onClick={() => stepStake(-10)} style={{ ...btn, width: 40, height: 40, padding: 0, fontSize: 18 }}>−</button>
         <b style={{ minWidth: 90, textAlign: "center", fontSize: 18, color: GOLD_L }}>{R(chip)}</b>
@@ -981,7 +1017,6 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
       </div>
       <Chips value={chip} onChange={setChip} />
 
-      {/* actions */}
       <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
         <input type="number" min="1.1" step="0.1" placeholder="Auto x" value={autoAt} onChange={e => setAutoAt(e.target.value)}
           style={{ width: 90, padding: 10, borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0a1f14", color: "#f3efe0" }} />
