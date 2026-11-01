@@ -999,23 +999,58 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
   const onAction = () => (phase === "flying" ? cashOut() : start());
 
-  return (
-    <div className="min-h-screen bg-[#0b1120] text-slate-100 flex justify-center">
-      <style>{CSS}</style>
-      <div className="w-full max-w-md flex flex-col px-3 pt-3 pb-28">
+  // ---- styles: inline, so the screen looks right even when Tailwind is not loaded ----
+  const ST = {
+    page: { minHeight: "100vh", background: "#0b1120", color: "#f1f5f9", display: "flex", justifyContent: "center", fontFamily: "system-ui,sans-serif", boxSizing: "border-box" },
+    wrap: { width: "100%", maxWidth: 448, display: "flex", flexDirection: "column", padding: "12px 12px 120px", boxSizing: "border-box" },
+    lobby: { alignSelf: "flex-start", padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer" },
+    stage: { position: "relative", marginTop: 12, aspectRatio: "5 / 3", borderRadius: 16, overflow: "hidden", background: "#070d1c", border: "1px solid #1e293b",
+      backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)",
+      backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" },
+    label: { position: "absolute", top: 12, left: 0, right: 0, textAlign: "center", fontSize: 12, fontWeight: 900, letterSpacing: 3,
+      color: phase === "flying" ? "#fcd34d" : crashed ? "#f87171" : "#94a3b8" },
+    multWrap: { position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" },
+    mult: { fontSize: multSize, fontWeight: 900, color: crashed ? "#f87171" : "#f8fafc", textShadow: "0 3px 12px #000", transition: "font-size .2s ease-out" },
+    result: { minHeight: 24, marginTop: 8, textAlign: "center", fontSize: 14, fontWeight: 700 },
+    panel: { marginTop: 8, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 16, padding: 12, display: "grid", gap: 12, boxSizing: "border-box" },
+    betBox: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#020617", border: "1px solid #334155", borderRadius: 12, padding: "8px 16px" },
+    betLabel: { color: "#64748b", fontSize: 13, fontWeight: 800 },
+    betAmt: { color: "#ffffff", fontSize: 24, fontWeight: 900 },
+    chips: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 },
+    row: { display: "flex", alignItems: "center", gap: 8 },
+    rupee: { color: "#cbd5e1", fontSize: 14, fontWeight: 800 },
+    input: { flex: 1, minWidth: 0, padding: "10px 14px", borderRadius: 12, background: "#1e293b", border: "1px solid #475569", color: "#ffffff", fontSize: 18, fontWeight: 800, textAlign: "right", outline: "none", boxSizing: "border-box" },
+    autoRow: { display: "flex", alignItems: "center", gap: 12 },
+    autoLabel: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, color: "#e2e8f0", cursor: "pointer" },
+    autoInput: { marginLeft: "auto", width: 112, padding: "8px 10px", borderRadius: 10, border: "1px solid #475569", background: "#1e293b", color: "#ffffff", fontSize: 16, fontWeight: 800, textAlign: "right", boxSizing: "border-box" },
+    action: { width: "100%", padding: "16px", borderRadius: 14, border: "none", fontSize: 18, fontWeight: 900, letterSpacing: 1,
+      cursor: busy ? "default" : "pointer", opacity: busy ? .75 : 1,
+      background: phase === "flying" ? "#f97316" : busy ? "#334155" : "#10b981",
+      color: phase === "flying" ? "#ffffff" : busy ? "#cbd5e1" : "#022c22",
+      animation: phase === "flying" ? "x7pulse 1.2s infinite" : "none" },
+    footer: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(15,23,42,.97)", borderTop: "1px solid #1e293b",
+      padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, boxSizing: "border-box" },
+  };
+  const tokenStyle = active => ({
+    height: 48, borderRadius: 999, color: "#ffffff", fontWeight: 800, fontSize: 14, cursor: "pointer", boxSizing: "border-box",
+    border: `2px dashed ${active ? "#34d399" : "rgba(226,232,240,.45)"}`,
+    background: "radial-gradient(circle at 35% 30%, #475569, #0f172a 70%)",
+    boxShadow: active ? "0 0 0 2px #34d399, 0 6px 14px rgba(0,0,0,.5)" : "0 4px 10px rgba(0,0,0,.45)",
+    transform: active ? "translateY(-2px)" : "none",
+  });
+  const focusOn = e => { e.target.style.borderColor = "#34d399"; e.target.style.boxShadow = "0 0 0 2px rgba(52,211,153,.35)"; };
+  const focusOff = e => { e.target.style.borderColor = "#475569"; e.target.style.boxShadow = "none"; };
 
-        {/* top: lobby */}
-        <div className="flex items-center">
-          <button onClick={onBack}
-            className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold hover:bg-slate-700 active:scale-95 transition">
-            « Lobby
-          </button>
-        </div>
+  return (
+    <div style={ST.page}>
+      <style>{CSS}</style>
+      <div style={ST.wrap}>
+
+        <div><button onClick={onBack} style={ST.lobby}>« Lobby</button></div>
 
         {/* main graph */}
-        <div className="relative mt-3 aspect-[5/3] rounded-2xl overflow-hidden bg-[#070d1c] border border-slate-800"
-          style={{ backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)", backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" }}>
-          <svg viewBox={`0 0 ${AV_W} ${AV_H}`} className="absolute inset-0 w-full h-full">
+        <div style={ST.stage}>
+          <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
             <defs>
               <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stopColor="#ef4444" stopOpacity=".5" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
@@ -1027,11 +1062,9 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
             {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
             {pts.length > 1 && !boom && (
-              <g transform={`translate(${px} ${py})`}>
-                <g transform={`rotate(${planeAng.toFixed(1)})`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
-                  <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
-                  <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
-                </g>
+              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)})`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
+                <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
+                <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
               </g>
             )}
             {boom && (
@@ -1042,51 +1075,33 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             )}
           </svg>
 
-          <div className={`absolute top-3 w-full text-center text-xs font-black tracking-[.25em] ${labelCls}`}>{label}</div>
-
-          <div className="absolute inset-0 grid place-items-center pointer-events-none">
-            <div className={`font-black drop-shadow-lg transition-[font-size] duration-200 ${crashed ? "text-red-400" : "text-slate-50"}`}
-              style={{ fontSize: multSize }}>{multText}</div>
-          </div>
+          <div style={ST.label}>{label}</div>
+          <div style={ST.multWrap}><div style={ST.mult}>{multText}</div></div>
         </div>
 
-        {/* result line */}
-        <div className="min-h-[24px] mt-2 text-center text-sm font-bold">
-          {res?.won && <span className="text-emerald-400">Won {R(res.net)}</span>}
-          {res && !res.won && <span className="text-red-400">Lost {R(-res.net)}</span>}
+        {/* result */}
+        <div style={ST.result}>
+          {res?.won && <span style={{ color: "#34d399" }}>Won {R(res.net)}</span>}
+          {res && !res.won && <span style={{ color: "#f87171" }}>Lost {R(-res.net)}</span>}
         </div>
 
         {/* betting panel */}
-        <div className="mt-2 rounded-2xl bg-slate-900 border border-slate-800 p-3 space-y-3">
-
-          {/* amount display */}
-          <div className="flex items-center justify-between rounded-xl bg-slate-950 border border-slate-700 px-4 py-2">
-            <span className="text-slate-500 text-sm font-bold">BET</span>
-            <span className="text-2xl font-black text-white">{R(chip)}</span>
+        <div style={ST.panel}>
+          <div style={ST.betBox}>
+            <span style={ST.betLabel}>BET</span>
+            <span style={ST.betAmt}>{R(chip)}</span>
           </div>
 
-          {/* chip tokens */}
-          <div className="grid grid-cols-5 gap-2">
+          <div style={ST.chips}>
             {AV_QUICK.map(v => (
-              <button key={v} onClick={() => pickQuick(v)}
-                className={`h-12 rounded-full text-sm font-extrabold text-white border-2 border-dashed transition
-                  ${chip === v && !customOpen ? "border-emerald-400 ring-2 ring-emerald-400 -translate-y-0.5" : "border-slate-200/40"}
-                  bg-[radial-gradient(circle_at_35%_30%,#475569,#0f172a_70%)] shadow-md`}>
-                {v}
-              </button>
+              <button key={v} onClick={() => pickQuick(v)} style={tokenStyle(chip === v && !customOpen)}>{v}</button>
             ))}
-            <button onClick={() => { setCustomOpen(o => !o); setCustomVal(""); }}
-              className={`h-12 rounded-full text-xs font-extrabold text-white border-2 border-dashed transition
-                ${customOpen ? "border-emerald-400 ring-2 ring-emerald-400 -translate-y-0.5" : "border-slate-200/40"}
-                bg-[radial-gradient(circle_at_35%_30%,#475569,#0f172a_70%)] shadow-md`}>
-              Other ₹
-            </button>
+            <button onClick={() => { setCustomOpen(o => !o); setCustomVal(""); }} style={{ ...tokenStyle(customOpen), fontSize: 12 }}>Other ₹</button>
           </div>
 
-          {/* custom amount: clear white text, its own row, never pushes the chips */}
           {customOpen && (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-300 text-sm font-bold">₹</span>
+            <div style={ST.row}>
+              <span style={ST.rupee}>₹</span>
               <input
                 type="number"
                 inputMode="numeric"
@@ -1095,19 +1110,18 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
                 autoFocus
                 value={customVal}
                 placeholder={`${MIN} - ${MAX}`}
+                onFocus={focusOn}
+                onBlur={e => { focusOff(e); commitCustom(); }}
                 onChange={e => { setCustomVal(e.target.value); const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= MIN && n <= MAX) setChip(n); }}
-                onBlur={commitCustom}
                 onKeyDown={e => { if (e.key === "Enter") { commitCustom(); e.currentTarget.blur(); } }}
-                className="flex-1 min-w-0 rounded-xl bg-slate-950 border border-slate-600 px-4 py-2.5 text-lg font-bold text-white placeholder:text-slate-500 text-right focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40"
+                style={ST.input}
               />
             </div>
           )}
 
-          {/* auto x */}
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-200 select-none cursor-pointer">
-              <input type="checkbox" checked={autoOn} onChange={e => setAutoOn(e.target.checked)}
-                className="w-4 h-4 accent-emerald-500" />
+          <div style={ST.autoRow}>
+            <label style={ST.autoLabel}>
+              <input type="checkbox" checked={autoOn} onChange={e => setAutoOn(e.target.checked)} style={{ accentColor: "#10b981", width: 16, height: 16 }} />
               Auto x
             </label>
             <input
@@ -1116,26 +1130,20 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
               min="1.01"
               value={autoAt}
               disabled={!autoOn}
+              onFocus={focusOn}
               onChange={e => setAutoAt(e.target.value)}
-              onBlur={() => { const v = parseFloat(autoAt); if (!Number.isFinite(v) || v < 1.01) setAutoAt("2.00"); }}
-              className="ml-auto w-28 rounded-lg bg-slate-950 border border-slate-600 px-3 py-1.5 text-right text-base font-bold text-white disabled:opacity-40 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40"
+              onBlur={e => { focusOff(e); const v = parseFloat(autoAt); if (!Number.isFinite(v) || v < 1.01) setAutoAt("2.00"); }}
+              style={{ ...ST.autoInput, opacity: autoOn ? 1 : .4 }}
             />
           </div>
 
-          {/* primary action */}
-          <button onClick={onAction} disabled={actionDisabled}
-            className={`w-full py-4 rounded-xl text-lg font-black tracking-wide transition active:scale-[.99] disabled:cursor-default ${actionCls}`}>
-            {actionText}
-          </button>
+          <button onClick={onAction} disabled={actionDisabled} style={ST.action}>{actionText}</button>
         </div>
       </div>
 
-      {/* footer: balance and limits only */}
-      <div className="fixed bottom-0 inset-x-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom,0px))]">
-        <div className="max-w-md mx-auto flex items-center justify-between text-sm">
-          <div>Balance <b className="text-emerald-400">{R(bal)}</b></div>
-          <div className="text-slate-400">{R(MIN)} - {R(MAX)}</div>
-        </div>
+      <div style={ST.footer}>
+        <div>Balance <b style={{ color: "#34d399" }}>{R(bal)}</b></div>
+        <div style={{ color: "#94a3b8" }}>{R(MIN)} - {R(MAX)}</div>
       </div>
 
       <Tip t={tip} />
