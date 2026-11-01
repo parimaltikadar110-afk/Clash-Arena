@@ -43,6 +43,8 @@ const playTone = (freq, dur) => {
 const colorName = n => (n === 0 ? "green" : RED.includes(n) ? "red" : "black");
 const numColor = n => (n === 0 ? C_GRN : RED.includes(n) ? C_RED : C_BLK);
 const R = n => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
+const num = (v, d = 1) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
+const fx = v => num(v, 0).toFixed(2);
 const mod = (x, m) => ((x % m) + m) % m;
 const pt = (r, deg) => { const a = (deg * Math.PI) / 180; return [150 + r * Math.sin(a), 150 - r * Math.cos(a)]; };
 const btn = { background: "#16291d", color: "#f3efe0", border: `1px solid ${GOLD}`, borderRadius: 10, padding: "9px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" };
@@ -844,7 +846,8 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   useEffect(() => () => { clearInterval(timer.current); clearInterval(poll.current); clearInterval(finRef.current); }, []);
 
   const pushCrash = c => setCrashes(h => {
-    const n = [c, ...h].slice(0, 10);
+    if (!Number.isFinite(Number(c))) return h;
+    const n = [Number(c), ...h].slice(0, 10);
     try { localStorage.setItem(AV_HIST_KEY, JSON.stringify(n)); } catch {}
     return n;
   });
@@ -858,7 +861,8 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   }
 
   // the round is over: the plane stops at the real crash point (or keeps going to it after a win)
-  function finish(crash, won) {
+  function finish(rawCrash, won) {
+    const crash = Math.max(1, num(rawCrash, Math.max(1, mRef.current)));
     clearInterval(timer.current);
     clearInterval(poll.current);
     pushCrash(crash);
@@ -897,12 +901,13 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     doneRef.current = true;
     roundRef.current = null;
     setPhase("done");
-    const net = data.won_amount - stakeRef.current;
-    setRes({ won: data.status === "cashed", crash: data.crash, mult: null, net });
-    setBal(data.new_balance);
-    if (data.status === "cashed") setBurst(b => b + 1);
+    const won = data.status === "cashed", crash = num(data.crash, mRef.current);
+    const net = num(data.won_amount, 0) - stakeRef.current;
+    setRes({ won, crash, mult: null, net });
+    if (data.new_balance !== undefined && data.new_balance !== null) setBal(num(data.new_balance, 0));
+    if (won) setBurst(b => b + 1);
     reload && reload();
-    finish(data.crash, data.status === "cashed");
+    finish(crash, won);
   }
 
   async function cashOut() {
@@ -912,16 +917,19 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     clearInterval(poll.current);
     const id = roundRef.current;
     const mult = Math.min(100, Math.round(mRef.current * 100) / 100);
-    const { data, error } = await supabase.rpc("casino_aviator_cashout", { p_round: id, p_mult: mult });
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_aviator_cashout", { p_round: id, p_mult: mult })); }
+    catch (e) { error = e; }
     roundRef.current = null;
     setPhase("done");
     if (error || !data?.success) { say ? say(friendly(error), 1) : flash(friendly(error)); return; }
-    const net = data.won_amount - stakeRef.current;
-    setRes({ won: data.won, crash: data.crash, mult, net });
-    setBal(data.new_balance);
-    if (data.won) setBurst(b => b + 1);
+    const won = !!data.won, crash = num(data.crash, mult);
+    const net = num(data.won_amount, 0) - stakeRef.current;
+    setRes({ won, crash, mult, net });
+    if (data.new_balance !== undefined && data.new_balance !== null) setBal(num(data.new_balance, 0));
+    if (won) setBurst(b => b + 1);
     reload && reload();
-    finish(data.crash, data.won);
+    finish(crash, won);
   }
 
   const start = async () => {
@@ -964,9 +972,9 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     <Shell title="Aviator" onBack={onBack}>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 0 8px" }}>
         {crashes.length === 0 && <span style={{ fontSize: 12, opacity: .6 }}>No rounds yet</span>}
-        {crashes.map((c, i) => (
+        {crashes.filter(c => Number.isFinite(Number(c))).map((c, i) => (
           <span key={i} style={{ flex: "0 0 auto", padding: "3px 9px", borderRadius: 99, fontSize: 12, fontWeight: 900,
-            color: crashTone(c), border: `1px solid ${crashTone(c)}66`, background: "#0a1f14" }}>{c.toFixed(2)}x</span>
+            color: crashTone(c), border: `1px solid ${crashTone(c)}66`, background: "#0a1f14" }}>{fx(c)}x</span>
         ))}
       </div>
 
@@ -998,7 +1006,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
           <div style={{ fontSize: 46, fontWeight: 900, color: crashed ? "#fca5a5" : "#f3efe0", textShadow: "0 3px 10px #000" }}>
-            {phase === "idle" ? "Ready" : crashed && boom ? `${res.crash.toFixed(2)}x` : `${m.toFixed(2)}x`}
+            {phase === "idle" ? "Ready" : crashed && boom ? `${fx(res.crash)}x` : `${m.toFixed(2)}x`}
           </div>
         </div>
         {roundId && <div style={{ position: "absolute", left: 8, top: 6, fontSize: 10, opacity: .6 }}>Round #{roundId}</div>}
@@ -1007,7 +1015,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
       <div style={{ minHeight: 40, textAlign: "center", marginTop: 10, fontWeight: 900, fontSize: 15 }}>
         {phase === "flying" && <span>Cash out before it flies away</span>}
         {res && res.won && <span style={{ color: "#86efac" }}>CASHED OUT · WON <CountUp value={res.net} /></span>}
-        {res && !res.won && <span style={{ color: "#fca5a5" }}>FLEW AWAY at {res.crash.toFixed(2)}x</span>}
+        {res && !res.won && <span style={{ color: "#fca5a5" }}>FLEW AWAY at {fx(res.crash)}x</span>}
       </div>
 
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, marginTop: 6 }}>
