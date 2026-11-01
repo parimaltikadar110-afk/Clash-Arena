@@ -822,6 +822,7 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
    Presentation + round control. The server decides the crash point and settles every cash out.
    Client only: starts a round, polls the round status, sends the cash out, and draws what the server reports. */
 const AV_K = 0.07;                 // server curve: multiplier(t) = e^(K * t)
+const AV_HIST_KEY = "x7_av_hist";
 const AV_W = 300, AV_H = 180;
 const AV_QUICK = [10, 25, 100, 500];
 
@@ -842,6 +843,13 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const [res, setRes] = useState(null);                // { won, crash, net }
   const [boom, setBoom] = useState(false);
   const [shake, setShake] = useState(false);
+  const [crashes, setCrashes] = useState(() => { try { const a = JSON.parse(localStorage.getItem(AV_HIST_KEY) || "[]"); return Array.isArray(a) ? a.slice(0, 10) : []; } catch { return []; } });
+  const pushCrash = c => setCrashes(h => {
+    if (!Number.isFinite(Number(c))) return h;
+    const n = [Number(c), ...h].slice(0, 10);
+    try { localStorage.setItem(AV_HIST_KEY, JSON.stringify(n)); } catch {}
+    return n;
+  });
   const [burst, setBurst] = useState(0);
 
   const roundRef = useRef(null), timer = useRef(null), poll = useRef(null), finRef = useRef(null);
@@ -863,6 +871,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   // round is over. A win keeps the plane flying to the real crash point; a loss stops it there.
   function finish(rawCrash, won) {
     const crash = Math.max(1, num(rawCrash, Math.max(1, mRef.current)));
+    pushCrash(crash);
     playSfx(won ? 880 : 110, won ? 0.2 : 0.5);
     clearInterval(timer.current);
     clearInterval(poll.current);
@@ -1053,6 +1062,12 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
       <div style={ST.wrap}>
 
         <div><button onClick={onBack} style={ST.lobby}>« Lobby</button></div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 10 }}>
+          {crashes.map((c, i) => (
+            <span key={i} style={{ flex: "0 0 auto", padding: "3px 10px", borderRadius: 99, fontSize: 12, fontWeight: 800,
+              color: c >= 10 ? "#f0abfc" : c >= 2 ? "#5eead4" : "#cbd5e1", border: `1px solid ${c >= 10 ? "#a21caf" : c >= 2 ? "#0f766e" : "#334155"}`, background: "#0f172a" }}>{fx(c)}x</span>
+          ))}
+        </div>
 
         {/* main graph */}
         <div style={ST.stage}>
@@ -1068,9 +1083,10 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
             {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
             {pts.length > 1 && !boom && (
-              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)})`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
-                <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
-                <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
+              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)}) scale(1.7)`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
+                <path d="M-44 0 L-22 -3 L-22 3 Z" fill="#fb923c" opacity=".65" />
+                <path d="M-18 -3 L-6 -3 L-8 -14 L-2 -14 L6 -3 L14 -3 L22 0 L14 3 L6 3 L-2 14 L-8 14 L-6 3 L-18 3 L-22 7 L-24 7 L-22 0 L-24 -7 L-22 -7 Z"
+                  fill="#f8fafc" stroke="#ef4444" strokeWidth=".8" strokeLinejoin="round" />
               </g>
             )}
             {boom && (
@@ -1285,11 +1301,11 @@ function Mines({ supabase, me, reload, say, cfg, onBack }) {
 
 /* ================= VORTEX (server decides the slot) ================= */
 const VORTEX = [
-  { m: 0, t: "0x" }, { m: 2, t: "2x" }, { m: 3.9, t: "3.9x" }, { m: 7, t: "7x" },
-  { m: 12.5, t: "12.5x" }, { m: 27.5, t: "27.5x" }, { m: 50, t: "50x" }, { m: 200, t: "200x" },
+  { m: 0, t: "0x" }, { m: 0.5, t: "0.5x" }, { m: 1.5, t: "1.5x" }, { m: 2, t: "2x" }, { m: 3.9, t: "3.9x" },
+  { m: 7, t: "7x" }, { m: 12.5, t: "12.5x" }, { m: 27.5, t: "27.5x" }, { m: 50, t: "50x" },
 ];
 const VSEG = 360 / VORTEX.length;
-const VCOL = ["#374151", "#7c2d12", "#1e40af", "#0f766e", "#7e22ce", "#b45309", "#be123c", "#facc15"];
+const VCOL = ["#374151", "#92400e", "#1d4ed8", "#7c2d12", "#0f766e", "#7e22ce", "#b45309", "#be123c", "#facc15"];
 function Vortex({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
   const [bal, setBal] = useBal(me);
