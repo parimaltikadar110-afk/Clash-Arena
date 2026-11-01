@@ -145,7 +145,7 @@ function Confetti() {
 const Chips = ({ value, onChange }) => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 9, flexWrap: "wrap", margin: "12px 0" }}>
     {CHIPS.map(c => (
-      <button key={c} onClick={() => onChange(c)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: "50%",
+      <button key={c} onClick={() => { playSfx(520, 0.03); onChange(c); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: "50%",
         transform: c === value ? "translateY(-4px) scale(1.06)" : "none", transition: "transform .15s" }}>
         <ChipToken value={c} size={50} selected={c === value} />
       </button>
@@ -746,7 +746,7 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
     if (chip < MIN || chip > MAX) return flash(`Bet between ${R(MIN)} and ${R(MAX)}`);
     if (chip > bal) return flash("Balance too low");
     const before = bal;
-    setBusy(true); setRes(null); setShown(false); setCards(null); setBal(before - chip); setDeal(d => d + 1);
+    setBusy(true); setRes(null); setShown(false); setCards(null); setBal(before - chip); setDeal(d => d + 1); playSfx(300, 0.06);
     const { data, error } = await supabase.rpc("casino_dragon_tiger", { p_bet: chip, p_side: side });
     if (error || !data?.success) { setBal(before); setBusy(false); return say ? say(friendly(error), 1) : flash(friendly(error)); }
     setCards({ dragon: data.dragon, tiger: data.tiger });
@@ -794,6 +794,7 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
         {sideBtn("dragon", "DRAGON", "1 : 1")}
         {sideBtn("tie", "TIE", "11 : 1")}
         {sideBtn("tiger", "TIGER", "1 : 1")}
+        {sideBtn("suited_tie", "SUITED TIE", "50 : 1")}
       </div>
 
       <Chips value={chip} onChange={setChip} />
@@ -862,6 +863,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   // round is over. A win keeps the plane flying to the real crash point; a loss stops it there.
   function finish(rawCrash, won) {
     const crash = Math.max(1, num(rawCrash, Math.max(1, mRef.current)));
+    playSfx(won ? 880 : 110, won ? 0.2 : 0.5);
     clearInterval(timer.current);
     clearInterval(poll.current);
     if (won) {
@@ -951,7 +953,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     offRef.current = num(data.server_ms, Date.now()) - Date.now();
     clearInterval(finRef.current);
     mRef.current = 1;
-    setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying");
+    setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying"); playSfx(330, 0.12);
     clearInterval(timer.current); clearInterval(poll.current);
     timer.current = setInterval(tick, 100);
     poll.current = setInterval(pollStatus, 2000);        // one light status call every 2 seconds while flying
@@ -1173,7 +1175,7 @@ const actionBtn = { width: "100%", padding: "14px", borderRadius: 14, border: "n
   background: "linear-gradient(180deg,#fde68a,#d4af37)", color: "#111", cursor: "pointer", marginTop: 12 };
 
 /* ================= MINES (server decides mine positions) ================= */
-const MINE_OPTIONS = [3, 5, 10, 15];
+const MINE_OPTIONS = [1, 3, 5, 10, 15];
 function Mines({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
   const [bal, setBal] = useBal(me);
@@ -1283,11 +1285,11 @@ function Mines({ supabase, me, reload, say, cfg, onBack }) {
 
 /* ================= VORTEX (server decides the slot) ================= */
 const VORTEX = [
-  { m: 0, t: "0x" }, { m: 0.5, t: "0.5x" }, { m: 1.5, t: "1.5x" }, { m: 2, t: "2x" },
-  { m: 5, t: "5x" }, { m: 10, t: "10x" }, { m: 50, t: "50x" },
+  { m: 0, t: "0x" }, { m: 2, t: "2x" }, { m: 3.9, t: "3.9x" }, { m: 7, t: "7x" },
+  { m: 12.5, t: "12.5x" }, { m: 27.5, t: "27.5x" }, { m: 50, t: "50x" }, { m: 200, t: "200x" },
 ];
 const VSEG = 360 / VORTEX.length;
-const VCOL = ["#374151", "#7c2d12", "#1e40af", "#0f766e", "#7e22ce", "#b45309", "#be123c"];
+const VCOL = ["#374151", "#7c2d12", "#1e40af", "#0f766e", "#7e22ce", "#b45309", "#be123c", "#facc15"];
 function Vortex({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
   const [bal, setBal] = useBal(me);
@@ -1331,23 +1333,33 @@ function Vortex({ supabase, me, reload, say, cfg, onBack }) {
   return (
     <Shell title="Vortex" onBack={onBack} right={<SoundBtn />}>
       <div style={{ position: "relative", width: "min(78vw,300px)", aspectRatio: "1", margin: "10px auto 0" }}>
-        <div style={{ position: "absolute", left: "50%", top: -8, transform: "translateX(-50%)", width: 0, height: 0,
-          borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: `16px solid ${GOLD_L}`, zIndex: 3 }} />
+        <div style={{ position: "absolute", left: "50%", top: -10, transform: "translateX(-50%)", width: 0, height: 0,
+          borderLeft: "10px solid transparent", borderRight: "10px solid transparent", borderTop: "18px solid #fde68a", zIndex: 3,
+          filter: "drop-shadow(0 0 6px #facc15)" }} />
         <svg viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block", transform: `rotate(${rot}deg)`,
           transition: anim ? "transform 3.5s cubic-bezier(.17,.67,.2,1)" : "none", filter: "drop-shadow(0 18px 24px #000c)" }}>
-          <circle cx="150" cy="150" r="148" fill="#1f1305" />
+          <defs>
+            <radialGradient id="vxCore" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stopColor="#fff7c2" /><stop offset=".35" stopColor="#c084fc" /><stop offset="1" stopColor="#2e1065" />
+            </radialGradient>
+          </defs>
+          <circle cx="150" cy="150" r="148" fill="#14081f" />
+          <circle cx="150" cy="150" r="146" fill="none" stroke={GOLD_L} strokeWidth="3" />
           {VORTEX.map((v, i) => {
             const a1 = i * VSEG, a2 = (i + 1) * VSEG;
             const [x1, y1] = pt(140, a1), [x2, y2] = pt(140, a2);
-            const [tx, ty] = pt(92, a1 + VSEG / 2);
+            const [ix1, iy1] = pt(96, a1), [ix2, iy2] = pt(96, a2);
+            const [tx, ty] = pt(118, a1 + VSEG / 2);
             return (
               <g key={i}>
-                <path d={`M150 150 L${x1} ${y1} A140 140 0 0 1 ${x2} ${y2} Z`} fill={VCOL[i]} stroke={GOLD_L} strokeWidth="1" />
-                <text x={tx} y={ty} fill="#fff" fontSize="13" fontWeight="900" textAnchor="middle" dominantBaseline="middle"
+                <path d={`M${x1} ${y1} A140 140 0 0 1 ${x2} ${y2} L${ix2} ${iy2} A96 96 0 0 0 ${ix1} ${iy1} Z`} fill={VCOL[i]} opacity=".92" stroke={GOLD_L} strokeWidth="1" />
+                <text x={tx} y={ty} fill="#fff" fontSize="11" fontWeight="900" textAnchor="middle" dominantBaseline="middle"
                   transform={`rotate(${a1 + VSEG / 2} ${tx} ${ty})`}>{v.t}</text>
               </g>
             );
           })}
+          <circle cx="150" cy="150" r="92" fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="6 8" opacity=".7" />
+          <circle cx="150" cy="150" r="62" fill="url(#vxCore)" />
           <circle cx="150" cy="150" r="26" fill={GOLD_L} />
         </svg>
       </div>
