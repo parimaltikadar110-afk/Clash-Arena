@@ -35,6 +35,19 @@ const CSS = `
 
 // Web Audio: the browser only lets sound play after a user tap, so the context is unlocked on the first tap.
 let _ac = null;
+// one master gain (louder) + compressor (no distortion) for every sound
+let _master = null;
+const masterOut = ac => {
+  if (!_master || _master.context !== ac) {
+    const g = ac.createGain();
+    g.gain.value = 2.6;
+    const c = ac.createDynamicsCompressor();
+    c.threshold.value = -10; c.knee.value = 6; c.ratio.value = 4; c.attack.value = 0.003; c.release.value = 0.2;
+    g.connect(c); c.connect(ac.destination);
+    _master = g;
+  }
+  return _master;
+};
 const getAC = () => {
   try {
     _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
@@ -54,7 +67,7 @@ const playTone = (freq, dur) => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.18, t + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(ac.destination);
+    o.connect(g); g.connect(masterOut(ac));
     o.start(t); o.stop(t + dur + 0.03);
   } catch {}
 };
@@ -619,7 +632,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
       setStack([]);
       setBal(data.new_balance);
       setLast({ n: data.number, net, stake: sum, payout: data.won_amount });
-      if (net > 0) { flash(`WON ${R(data.won_amount)}`); playSfx(880, 0.25); }
+      if (net > 0) { flash(`WON ${R(data.won_amount)}`); playSfx(880, 0.25); speakWin(data.won_amount); }
       if (net > 0) setBurst(b => b + 1);
       setPhase("result");
       reload && reload();
@@ -773,9 +786,9 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
     setTimeout(() => setShown(true), 600);          // flip after the deal animation
     setTimeout(() => {
       const net = data.won_amount - chip;
-      setRes({ winner: data.winner, net });
+      setRes({ winner: data.winner, net, won: num(data.won_amount, 0) });
       setBal(data.new_balance);
-      if (net > 0) setBurst(b => b + 1);
+      if (net > 0) { setBurst(b => b + 1); speakWin(data.won_amount); }
       const nh = [{ w: data.winner, ts: Date.now() }, ...hist].slice(0, 50);
       setHist(nh);
       try { localStorage.setItem(DT_KEY, JSON.stringify(nh)); } catch {}
@@ -804,7 +817,7 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
           {busy && !res && <span style={{ opacity: .8 }}>Dealing…</span>}
           {res && (
             <span style={{ color: res.net > 0 ? "#86efac" : res.net < 0 ? "#fca5a5" : "#e5e7eb" }}>
-              {res.winner === "tie" ? "TIE" : res.winner.toUpperCase() + " WINS"} · {res.net > 0 ? <>WON <CountUp value={res.net} /></> : res.net < 0 ? "" : "RETURNED ₹0"}
+              {res.winner === "tie" ? "TIE" : res.winner.toUpperCase() + " WINS"} · {res.net > 0 ? <>WON <CountUp value={res.won} /></> : res.net < 0 ? "" : "RETURNED ₹0"}
             </span>
           )}
         </div>
@@ -1218,14 +1231,14 @@ const SFX = {
     const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.03);
     const f = ac.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 2400; f.Q.value = 2;
     const g = ac.createGain(); envG(ac, g, t, 0.5, 0.03);
-    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.04);
+    src.connect(f); f.connect(g); g.connect(masterOut(ac)); src.start(t); src.stop(t + 0.04);
   },
   deal(ac, t) {                        // card swish
     const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.16);
     const f = ac.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 1.2;
     f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(2800, t + 0.13);
     const g = ac.createGain(); envG(ac, g, t, 0.35, 0.16);
-    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.17);
+    src.connect(f); f.connect(g); g.connect(masterOut(ac)); src.start(t); src.stop(t + 0.17);
   },
   takeoff(ac, t) {                     // plane engine rising
     const o = ac.createOscillator(); o.type = "sawtooth";
@@ -1233,25 +1246,25 @@ const SFX = {
     const f = ac.createBiquadFilter(); f.type = "lowpass";
     f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2200, t + 0.9);
     const g = ac.createGain(); envG(ac, g, t, 0.12, 1.0);
-    o.connect(f); f.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 1.05);
+    o.connect(f); f.connect(g); g.connect(masterOut(ac)); o.start(t); o.stop(t + 1.05);
   },
   crash(ac, t) {                       // plane crash: noise falling + low thump
     const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.8);
     const f = ac.createBiquadFilter(); f.type = "lowpass";
     f.frequency.setValueAtTime(1200, t); f.frequency.exponentialRampToValueAtTime(70, t + 0.7);
     const g = ac.createGain(); envG(ac, g, t, 0.7, 0.75);
-    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.8);
+    src.connect(f); f.connect(g); g.connect(masterOut(ac)); src.start(t); src.stop(t + 0.8);
     const o = ac.createOscillator(); o.type = "sine";
     o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.5);
     const g2 = ac.createGain(); envG(ac, g2, t, 0.45, 0.55);
-    o.connect(g2); g2.connect(ac.destination); o.start(t); o.stop(t + 0.6);
+    o.connect(g2); g2.connect(masterOut(ac)); o.start(t); o.stop(t + 0.6);
   },
   boom(ac, t) {                        // mine explosion
     const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.45);
     const f = ac.createBiquadFilter(); f.type = "lowpass";
     f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(60, t + 0.4);
     const g = ac.createGain(); envG(ac, g, t, 0.9, 0.45);
-    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.5);
+    src.connect(f); f.connect(g); g.connect(masterOut(ac)); src.start(t); src.stop(t + 0.5);
   },
   win(ac, t) {                         // bell arpeggio
     [523.25, 659.25, 783.99, 1046.5].forEach((fr, i) => {
@@ -1259,15 +1272,25 @@ const SFX = {
       [1, 2].forEach(h => {
         const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = fr * h;
         const g = ac.createGain(); envG(ac, g, st, h === 1 ? 0.22 : 0.06, 0.9);
-        o.connect(g); g.connect(ac.destination); o.start(st); o.stop(st + 1.0);
+        o.connect(g); g.connect(masterOut(ac)); o.start(st); o.stop(st + 1.0);
       });
     });
   },
   tick(ac, t) {                        // small UI blip
     const o = ac.createOscillator(); o.type = "triangle"; o.frequency.value = 900;
     const g = ac.createGain(); envG(ac, g, t, 0.12, 0.05);
-    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.06);
+    o.connect(g); g.connect(masterOut(ac)); o.start(t); o.stop(t + 0.06);
   },
+};
+// spoken win message, e.g. "You won 20" (falls back to the chime if speech is not available)
+const speakWin = amt => {
+  try {
+    if (!soundOn() || typeof window === "undefined" || !window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(`You won ${Math.floor(num(amt, 0))}`);
+    u.lang = "en-US"; u.rate = 1.05; u.pitch = 1.05; u.volume = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  } catch {}
 };
 const playSfx = (f, d) => {
   if (!soundOn()) return;
