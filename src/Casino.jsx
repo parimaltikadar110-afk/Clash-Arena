@@ -1140,7 +1140,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
         {/* result */}
         <div style={ST.result}>
-          {res?.won && <span style={{ color: "#34d399" }}>Won {RM(res.net)}</span>}
+          {res?.won && <span style={{ color: "#34d399" }}>Won {RM(res.net + stakeRef.current)}</span>}
           {res && !res.won && <span style={{ color: "#f87171" }}>Lost {R(-res.net)}</span>}
         </div>
 
