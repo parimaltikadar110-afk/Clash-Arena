@@ -544,7 +544,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
   const [sound, setSound] = useState(soundOn);
   const [favBets, setFavBets] = useState(() => { try { return JSON.parse(localStorage.getItem("x7_fav_bets") || "[]"); } catch { return []; } });
   const toggleSound = () => { setSound(v => { const n = !v; try { localStorage.setItem("x7_sound", n ? "on" : "off"); } catch {} return n; }); };
-  const sfx = (f, d) => { if (sound) playTone(f, d); };
+  const sfx = (f, d) => { if (sound) playSfx(f, d); };
 
   const aggregate = list => {
     const m = new Map();
@@ -1200,7 +1200,90 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
 /* ================= SOUND (one switch for the whole casino) ================= */
 const soundOn = () => { try { return localStorage.getItem("x7_sound") !== "off"; } catch { return true; } };
-const playSfx = (f, d) => { if (soundOn()) playTone(f, d); };
+// Richer effects synthesized with Web Audio (noise bursts, filter sweeps, bell chimes)
+const noiseBuf = (ac, dur) => {
+  const n = Math.max(1, Math.floor(ac.sampleRate * dur));
+  const b = ac.createBuffer(1, n, ac.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;   // audio noise, not game logic
+  return b;
+};
+const envG = (ac, g, t, peak, dur) => {
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+};
+const SFX = {
+  click(ac, t) {                       // chip press
+    const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.03);
+    const f = ac.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 2400; f.Q.value = 2;
+    const g = ac.createGain(); envG(ac, g, t, 0.5, 0.03);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.04);
+  },
+  deal(ac, t) {                        // card swish
+    const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.16);
+    const f = ac.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(2800, t + 0.13);
+    const g = ac.createGain(); envG(ac, g, t, 0.35, 0.16);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.17);
+  },
+  takeoff(ac, t) {                     // plane engine rising
+    const o = ac.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(520, t + 0.9);
+    const f = ac.createBiquadFilter(); f.type = "lowpass";
+    f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2200, t + 0.9);
+    const g = ac.createGain(); envG(ac, g, t, 0.12, 1.0);
+    o.connect(f); f.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 1.05);
+  },
+  crash(ac, t) {                       // plane crash: noise falling + low thump
+    const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.8);
+    const f = ac.createBiquadFilter(); f.type = "lowpass";
+    f.frequency.setValueAtTime(1200, t); f.frequency.exponentialRampToValueAtTime(70, t + 0.7);
+    const g = ac.createGain(); envG(ac, g, t, 0.7, 0.75);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.8);
+    const o = ac.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.5);
+    const g2 = ac.createGain(); envG(ac, g2, t, 0.45, 0.55);
+    o.connect(g2); g2.connect(ac.destination); o.start(t); o.stop(t + 0.6);
+  },
+  boom(ac, t) {                        // mine explosion
+    const src = ac.createBufferSource(); src.buffer = noiseBuf(ac, 0.45);
+    const f = ac.createBiquadFilter(); f.type = "lowpass";
+    f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(60, t + 0.4);
+    const g = ac.createGain(); envG(ac, g, t, 0.9, 0.45);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); src.stop(t + 0.5);
+  },
+  win(ac, t) {                         // bell arpeggio
+    [523.25, 659.25, 783.99, 1046.5].forEach((fr, i) => {
+      const st = t + i * 0.09;
+      [1, 2].forEach(h => {
+        const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = fr * h;
+        const g = ac.createGain(); envG(ac, g, st, h === 1 ? 0.22 : 0.06, 0.9);
+        o.connect(g); g.connect(ac.destination); o.start(st); o.stop(st + 1.0);
+      });
+    });
+  },
+  tick(ac, t) {                        // small UI blip
+    const o = ac.createOscillator(); o.type = "triangle"; o.frequency.value = 900;
+    const g = ac.createGain(); envG(ac, g, t, 0.12, 0.05);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.06);
+  },
+};
+const playSfx = (f, d) => {
+  if (!soundOn()) return;
+  const ac = getAC();
+  if (!ac) return;
+  try {
+    const t = ac.currentTime;
+    if (f >= 800 && d >= 0.2) SFX.win(ac, t);
+    else if (f <= 120 && d >= 0.45) SFX.crash(ac, t);
+    else if (f <= 150 && d >= 0.25) SFX.boom(ac, t);
+    else if (f === 330 && d > 0.1) SFX.takeoff(ac, t);
+    else if (f >= 500 && f <= 560) SFX.click(ac, t);
+    else if (f >= 250 && f <= 310) SFX.deal(ac, t);
+    else SFX.tick(ac, t);
+  } catch {}
+};
 function SoundBtn() {
   const [on, setOn] = useState(soundOn);
   const toggle = () => {
