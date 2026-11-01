@@ -1,1512 +1,1500 @@
-/* ============================================================
-   Casino.jsx — multi-game mobile casino lounge
-   Games: Aviator · Auto Roulette · Dragon Tiger · Vortex · Mines
-   Balance and outcomes are simulated in the browser. For real-money
-   use, outcomes must be generated and settled on the server.
-   ============================================================ */
+import { useState, useEffect, useMemo, useCallback, memo, useRef } from "react";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+/* ClashX7 Casino v5
+   Lobby -> Auto Roulette | Dragon Tiger | Aviator
+   - Every outcome is decided on the server. One RPC per action. The client never picks a result.
+   - Roulette wheel and ball are animated through refs (no re-render per frame).
+   - Stats/history come from localStorage only. No DB calls for stats.
+   - Optimistic balance: deducted at once, reverted if the RPC fails.
+   - Props: supabase, me, reload (App load), say (App toast), cfg (app_settings 'casino_config') */
 
-/* ---------- Inline icons (no external icon dependency) ---------- */
-
-const makeIcon = paths => function Icon({ size = 24, className = "", style }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      style={style}
-      aria-hidden="true"
-    >
-      {paths}
-    </svg>
-  );
-};
-
-const Plane = makeIcon(
-  <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" />
-);
-const CircleDot = makeIcon(
-  <>
-    <circle cx="12" cy="12" r="10" />
-    <circle cx="12" cy="12" r="1" />
-  </>
-);
-const Swords = makeIcon(
-  <>
-    <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
-    <path d="M13 19l6-6" />
-    <path d="M16 16l4 4" />
-    <path d="M14.5 6.5 21 3v3l-11.5 11.5" />
-    <path d="M5 14l5 5" />
-    <path d="M8 17l-3 3" />
-  </>
-);
-const Orbit = makeIcon(
-  <>
-    <circle cx="12" cy="12" r="3" />
-    <path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z" />
-  </>
-);
-const Gem = makeIcon(
-  <>
-    <path d="M6 3h12l4 6-10 13L2 9Z" />
-    <path d="M11 3 8 9l4 13 4-13-3-6" />
-    <path d="M2 9h20" />
-  </>
-);
-const Bomb = makeIcon(
-  <>
-    <circle cx="11" cy="13" r="8" />
-    <path d="M14.5 3.5 17 1" />
-    <path d="M18 6l1.5-1.5" />
-  </>
-);
-const Undo2 = makeIcon(
-  <>
-    <path d="M9 14 4 9l5-5" />
-    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-  </>
-);
-const Minus = makeIcon(<path d="M5 12h14" />);
-const Plus = makeIcon(<path d="M12 5v14M5 12h14" />);
-const X = makeIcon(<path d="M18 6 6 18M6 6l12 12" />);
-const Check = makeIcon(<path d="M20 6 9 17l-5-5" />);
-const Hand = makeIcon(
-  <>
-    <path d="M18 11V6a2 2 0 0 0-4 0v5" />
-    <path d="M14 10V4a2 2 0 0 0-4 0v7" />
-    <path d="M10 10.5V6a2 2 0 0 0-4 0v8" />
-    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-3l-3.6-5.4a2 2 0 0 1 3-2.6L6 14" />
-  </>
-);
-
-/* ---------- constants ---------- */
-
-const START_BALANCE = 44016727;
-const LIMITS = {
-  aviator: [10, 50000],
-  roulette: [10, 50000],
-  dragon: [10, 100000],
-  vortex: [10, 25000],
-  mines: [10, 20000],
-};
-const CHIP_VALUES = [10, 25, 100, 500];
-const CHIP_COLORS = {
-  10: ["#2563eb", "#1e3a8a"],
-  25: ["#16a34a", "#14532d"],
-  100: ["#1f2937", "#030712"],
-  500: ["#9333ea", "#4c1d95"],
-};
+const HIST_KEY = "x7_casino_hist", DT_KEY = "x7_dt_hist", HIST_MAX = 50;
+const BET_SECONDS = 12;
 const ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-const RED_NUMS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const RED = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
 const SEG = 360 / 37;
-const BET_SECS = 12;
-const GROWTH = 0.085; // Aviator: multiplier = e^(GROWTH * seconds)
-const SUITS = ["♠", "♥", "♦", "♣"];
-const RANKS = ["", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-const VORTEX_RING = ["0x", "0.5x", "1x", "0x", "2x", "0.5x", "0x", "5x", "200x", "0.5x", "50x", "10x"];
-const VORTEX_TABLE = [
-  { label: "0x", p: 0.7015 }, { label: "0.5x", p: 0.2 }, { label: "1x", p: 0.05 }, { label: "2x", p: 0.02 },
-  { label: "5x", p: 0.02 }, { label: "10x", p: 0.005 }, { label: "50x", p: 0.003 }, { label: "200x", p: 0.0005 },
-];
-const INNER_MULTS = [1, 2, 1, 3, 1, 2];
-const VORTEX_COLORS = {
-  "0x": "#3f3f46", "0.5x": "#0e7490", "1x": "#047857", "2x": "#2563eb",
-  "5x": "#7c3aed", "10x": "#c026d3", "50x": "#ea580c", "200x": "#eab308",
+const CHIPS = [10, 25, 100, 500];
+const CHIP_COL = { 1: ["#f3f4f6","#6b7280"], 5: ["#ef4444","#7f1d1d"], 10: ["#3b82f6","#1e3a8a"], 25: ["#22c55e","#14532d"], 100: ["#1f2937","#030712"], 500: ["#a855f7","#581c87"] };
+const GOLD = "#d4af37", GOLD_L = "#facc15";
+const FELT = "radial-gradient(ellipse at 50% 30%,#17703f 0%,#0d4a2a 60%,#082f1b 100%)";
+const C_RED = "#b91c1c", C_BLK = "#111318", C_GRN = "#0f7a3c";
+const RANK = ["", "A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+
+const CSS = `
+@keyframes x7drop{0%{transform:translateY(0)}70%{transform:translateY(34px)}80%{transform:translateY(25px)}88%{transform:translateY(31px)}94%{transform:translateY(28px)}100%{transform:translateY(32px)}}
+@keyframes x7fall{0%{transform:translateY(-8vh) rotate(0);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:.9}}
+@keyframes x7deal{0%{transform:translateY(-70px) scale(.8);opacity:0}100%{transform:none;opacity:1}}
+@keyframes x7boom{0%{transform:scale(.2);opacity:1}100%{transform:scale(2.8);opacity:0}}
+@keyframes x7shake{0%,100%{transform:translate(0)}20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-2px)}60%{transform:translate(-4px,1px)}80%{transform:translate(4px,-1px)}}
+@keyframes x7chip{0%{transform:translateY(-34px) scale(1.7);opacity:0}70%{transform:translateY(2px) scale(.94);opacity:1}100%{transform:none}}
+@keyframes x7unchip{to{transform:scale(.2);opacity:0}}
+@keyframes x7pulse{0%,100%{box-shadow:0 0 0 0 #facc1566}50%{box-shadow:0 0 0 10px #facc1500}}
+`;
+
+let _ac = null;
+const playTone = (freq, dur) => {
+  try {
+    _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+    const o = _ac.createOscillator(), g = _ac.createGain();
+    o.frequency.value = freq; o.type = "sine"; g.gain.value = 0.06;
+    o.connect(g); g.connect(_ac.destination); o.start(); o.stop(_ac.currentTime + dur);
+  } catch {}
 };
-const MINE_OPTIONS = [3, 5, 10, 15];
-const FELT = "radial-gradient(ellipse at 50% 30%, #17703f 0%, #0d4a2a 60%, #082f1b 100%)";
-
-const GAMES = [
-  { id: "aviator", label: "Aviator", icon: Plane },
-  { id: "roulette", label: "Roulette", icon: CircleDot },
-  { id: "dragon", label: "Dragon Tiger", icon: Swords },
-  { id: "vortex", label: "Vortex", icon: Orbit },
-  { id: "mines", label: "Mines", icon: Gem },
-];
-
-/* ---------- style tokens ---------- */
-
-const STEP_BTN = "grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-amber-600/60 bg-[#16291d] text-amber-200 transition active:scale-95 disabled:opacity-40";
-const PANEL = "rounded-2xl border border-amber-800/40 bg-[#07130d]/90 p-3 shadow-[0_10px_30px_#000a]";
-const ACTION = "w-full rounded-2xl py-4 text-base font-black tracking-wide text-white shadow-[0_6px_0_#0006] transition-all active:translate-y-1 active:shadow-none disabled:opacity-50 disabled:active:translate-y-0";
-const GREEN = "bg-gradient-to-r from-emerald-500 to-green-600";
-const ORANGE = "bg-gradient-to-r from-amber-400 to-orange-600";
-const TOOL = "flex items-center justify-center gap-1 rounded-xl border border-amber-600/50 bg-[#16291d] py-2.5 text-xs font-black text-amber-100 transition active:scale-95 disabled:opacity-40";
-
-/* ---------- helpers ---------- */
-
-const round2 = v => Math.round(v * 100) / 100;
-const inrFormat = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
-const fmt = v => `₹${inrFormat.format(round2(v))}`;
-const clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const colorName = n => (n === 0 ? "green" : RED.includes(n) ? "red" : "black");
+const numColor = n => (n === 0 ? C_GRN : RED.includes(n) ? C_RED : C_BLK);
+const R = n => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
+const num = (v, d = 1) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
+const fx = v => num(v, 0).toFixed(2);
 const mod = (x, m) => ((x % m) + m) % m;
-const rand = n => Math.floor(Math.random() * n);
-const sumAmt = list => list.reduce((s, b) => s + b.amt, 0);
-const colorName = n => (n === 0 ? "green" : RED_NUMS.has(n) ? "red" : "black");
-const numFill = n => (n === 0 ? "#0f7a3c" : RED_NUMS.has(n) ? "#b91c1c" : "#111318");
-const polar = (r, deg) => { const t = (deg * Math.PI) / 180; return [150 + r * Math.sin(t), 150 - r * Math.cos(t)]; };
-const wedge = (r1, r2, a1, a2) => {
-  const [x1, y1] = polar(r2, a1), [x2, y2] = polar(r2, a2), [x3, y3] = polar(r1, a2), [x4, y4] = polar(r1, a1);
-  const large = a2 - a1 > 180 ? 1 : 0;
-  return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 0 ${x4} ${y4} Z`;
-};
-const multFor = (k, m) => {
-  let p = 1;
-  for (let i = 0; i < k; i++) p *= (25 - i) / (25 - m - i);
-  return p * 0.97;
-};
-const grossOf = key => (key.startsWith("n:") ? 36 : key.startsWith("d:") || key.startsWith("c:") ? 3 : 2);
-const hitKey = (key, n) => {
-  if (key.startsWith("n:")) return n === +key.slice(2);
-  if (key.startsWith("d:")) { const d = +key.slice(2); return n !== 0 && n >= (d - 1) * 12 + 1 && n <= d * 12; }
-  if (key.startsWith("c:")) { const c = +key.slice(2); return n !== 0 && (n - 1) % 3 === c - 1; }
-  switch (key) {
-    case "red": return RED_NUMS.has(n);
-    case "black": return n !== 0 && !RED_NUMS.has(n);
+const pt = (r, deg) => { const a = (deg * Math.PI) / 180; return [150 + r * Math.sin(a), 150 - r * Math.cos(a)]; };
+const btn = { background: "#16291d", color: "#f3efe0", border: `1px solid ${GOLD}`, borderRadius: 10, padding: "9px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" };
+const friendly = e => { const m = e?.message || ""; return /closed|not available|Insufficient|Bet|Place|Too many|Unknown|login|Invalid|Round/i.test(m) ? m : "Connection lost"; };
+
+const hits = (type, v, n) => {
+  switch (type) {
+    case "straight": return n === +v;
+    case "red": return RED.includes(n);
+    case "black": return n !== 0 && !RED.includes(n);
     case "even": return n !== 0 && n % 2 === 0;
     case "odd": return n % 2 === 1;
     case "low": return n >= 1 && n <= 18;
-    case "high": return n >= 19;
+    case "high": return n >= 19 && n <= 36;
+    case "dozen": return n !== 0 && n >= (v - 1) * 12 + 1 && n <= v * 12;
+    case "column": return n !== 0 && (n - 1) % 3 === v - 1;
     default: return false;
   }
 };
-const crashPoint = () => {
-  const r = Math.random();
-  return clampN(Math.floor(97 / (1 - r)) / 100, 1, 500);
+const wedge = (cx, cy, r1, r2, a1, a2) => {
+  const p = (r, a) => { const t = (a * Math.PI) / 180; return [cx + r * Math.sin(t), cy - r * Math.cos(t)]; };
+  const [x1, y1] = p(r2, a1), [x2, y2] = p(r2, a2), [x3, y3] = p(r1, a2), [x4, y4] = p(r1, a1);
+  const large = a2 - a1 > 180 ? 1 : 0;
+  return `M${x1} ${y1} A${r2} ${r2} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${r1} ${r1} 0 ${large} 0 ${x4} ${y4} Z`;
 };
 
-/* ---------- hooks ---------- */
-
-// Web Audio synth: no audio files, created lazily after the first user gesture
-function useSound(enabled) {
-  const enabledRef = useRef(enabled);
-  const ctxRef = useRef(null);
-  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
-
-  return useMemo(() => {
-    const ctx = () => {
-      if (!enabledRef.current) return null;
-      if (!ctxRef.current) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return null;
-        ctxRef.current = new AC();
-      }
-      if (ctxRef.current.state === "suspended") ctxRef.current.resume();
-      return ctxRef.current;
-    };
-    const tone = (c, { f, to, at = 0, dur = 0.12, type = "sine", vol = 0.08 }) => {
-      const t0 = c.currentTime + at;
-      const osc = c.createOscillator();
-      const g = c.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(f, t0);
-      if (to) osc.frequency.exponentialRampToValueAtTime(to, t0 + dur);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(g).connect(c.destination);
-      osc.start(t0);
-      osc.stop(t0 + dur + 0.02);
-    };
-    return {
-      click() {
-        const c = ctx();
-        if (c) tone(c, { f: 1500, to: 700, dur: 0.05, type: "triangle", vol: 0.06 });
-      },
-      deal() {
-        const c = ctx();
-        if (!c) return;
-        const len = Math.floor(c.sampleRate * 0.035);
-        const buf = c.createBuffer(1, len, c.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-        const src = c.createBufferSource();
-        const band = c.createBiquadFilter();
-        const g = c.createGain();
-        band.type = "bandpass";
-        band.frequency.value = 2600;
-        band.Q.value = 1.4;
-        g.gain.value = 0.7;
-        src.buffer = buf;
-        src.connect(band).connect(g).connect(c.destination);
-        src.start();
-      },
-      win() {
-        const c = ctx();
-        if (c) [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(c, { f, at: i * 0.1, dur: 0.4, vol: 0.07 }));
-      },
-      lose() {
-        const c = ctx();
-        if (c) tone(c, { f: 220, to: 85, dur: 0.45, type: "sawtooth", vol: 0.035 });
-      },
-    };
-  }, []);
-}
-
-// Timeouts scheduled through this helper are cleared on unmount
-function useTimers() {
-  const ids = useRef([]);
-  useEffect(() => () => ids.current.forEach(clearTimeout), []);
-  return useCallback((fn, ms) => { ids.current.push(setTimeout(fn, ms)); }, []);
-}
-
-/* ---------- shared UI ---------- */
-
-function Chip({ value, size = 46, active = false }) {
-  const [a, b] = CHIP_COLORS[value] || ["#64748b", "#334155"];
+/* ---------- casino chip ---------- */
+function ChipToken({ value, size = 48, label, selected }) {
+  const col = CHIP_COL[value] || ["#9ca3af", "#374151"];
+  const b = Math.max(1, Math.round(size * 0.04));
   return (
-    <span
-      className="relative grid shrink-0 place-items-center rounded-full"
-      style={{
-        width: size,
-        height: size,
-        background: `repeating-conic-gradient(${a} 0deg 15deg, #f8fafc 15deg 22.5deg)`,
-        boxShadow: active ? "0 0 0 2px #fde68a, 0 6px 14px #000a" : "0 4px 10px #0009",
-      }}
-    >
-      <span
-        className="grid place-items-center rounded-full font-black text-white"
-        style={{
-          width: size * 0.7,
-          height: size * 0.7,
-          background: `radial-gradient(circle at 35% 30%, #ffffff55, transparent 45%), ${b}`,
-          border: "2px dashed #ffffffcc",
-          fontSize: size * 0.22,
-          textShadow: "0 1px 2px #000",
-        }}
-      >
-        {value}
-      </span>
-    </span>
+    <div style={{ position: "relative", width: size, height: size, borderRadius: "50%", boxSizing: "border-box",
+      background: `repeating-conic-gradient(${col[0]} 0deg 14deg, #ffffffee 14deg 22deg)`,
+      boxShadow: `0 ${Math.round(size * 0.08)}px ${Math.round(size * 0.2)}px #000c, inset 0 0 0 ${b}px #0007`,
+      outline: selected ? `2px solid ${GOLD_L}` : "none" }}>
+      <div style={{ position: "absolute", inset: size * 0.16, borderRadius: "50%", boxSizing: "border-box",
+        background: `radial-gradient(circle at 35% 30%, #ffffff55, transparent 42%), radial-gradient(circle, ${col[0]}, ${col[1]})`,
+        border: `${b}px dashed #ffffffcc`, display: "grid", placeItems: "center",
+        color: value === 1 ? "#111" : "#fff", fontWeight: 900, fontSize: Math.round(size * 0.3), textShadow: "0 1px 2px #000" }}>
+        {label ?? value}
+      </div>
+    </div>
   );
 }
+const chipFor = amt => { let c = CHIPS[0]; CHIPS.forEach(x => { if (amt >= x) c = x; }); return c; };
 
-function ChipRail({ value, onPick, disabled }) {
+/* ---------- shared hooks / UI ---------- */
+function useBal(me) {
+  const real = (+me.balance || 0) + (+me.winnings || 0);
+  const [bal, setBal] = useState(real);
+  useEffect(() => { setBal(real); }, [real]);
+  return [bal, setBal, real];
+}
+function useFlash() {
+  const [tip, setTip] = useState(null);
+  const flash = useCallback(t => { setTip(t); setTimeout(() => setTip(null), 3000); }, []);
+  return [tip, flash];
+}
+const Tip = ({ t }) => !t ? null : (
+  <div style={{ position: "fixed", top: "40%", left: "50%", transform: "translateX(-50%)", background: "rgba(6,20,12,.96)",
+    border: `1px solid ${GOLD}`, color: "#f3efe0", padding: "10px 16px", borderRadius: 12, fontWeight: 700, fontSize: 13,
+    zIndex: 80, whiteSpace: "nowrap", boxShadow: "0 8px 24px #000" }}>{t}</div>
+);
+// number that counts up from 0 to |value|
+function CountUp({ value, prefix = "" }) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    let raf, t0 = null;
+    const target = Math.abs(value);
+    const step = ts => {
+      if (t0 === null) t0 = ts;
+      const k = Math.min(1, (ts - t0) / 900);
+      setV(Math.round(target * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{prefix}{R(v)}</>;
+}
+// confetti burst, removes itself after ~3s
+function Confetti() {
+  const [on, setOn] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setOn(false), 3000); return () => clearTimeout(t); }, []);
+  if (!on) return null;
+  const pieces = Array.from({ length: 48 }, (_, i) => ({
+    l: (i * 37) % 100, d: (i % 9) * 0.08, c: ["#facc15", "#f87171", "#60a5fa", "#4ade80", "#f472b6", "#ffffff"][i % 6], w: 6 + (i % 4) * 2,
+  }));
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2.5">
-      {CHIP_VALUES.map(v => (
-        <button
-          key={v}
-          type="button"
-          disabled={disabled}
-          onClick={() => onPick(v)}
-          aria-label={`Chip ${v}`}
-          className={`rounded-full transition-transform disabled:opacity-40 ${v === value ? "-translate-y-1 scale-110" : ""}`}
-        >
-          <Chip value={v} active={v === value} />
-        </button>
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 95, overflow: "hidden" }}>
+      {pieces.map((p, i) => (
+        <span key={i} style={{ position: "absolute", top: "-5vh", left: p.l + "%", width: p.w, height: p.w * 1.6, background: p.c,
+          borderRadius: 2, animation: `x7fall 2.4s ${p.d}s ease-in forwards` }} />
       ))}
     </div>
   );
 }
-
-function AmountControl({ value, onChange, min, max, disabled }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  const step = value >= 500 ? 100 : value >= 100 ? 50 : 10;
-  const set = v => onChange(clampN(Math.round(v), min, max));
-
-  return (
-    <div className="flex items-center gap-2">
-      <button type="button" className={STEP_BTN} disabled={disabled} onClick={() => set(value - step)} aria-label="Decrease bet">
-        <Minus size={18} />
+const Chips = ({ value, onChange }) => (
+  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 9, flexWrap: "wrap", margin: "12px 0" }}>
+    {CHIPS.map(c => (
+      <button key={c} onClick={() => onChange(c)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: "50%",
+        transform: c === value ? "translateY(-4px) scale(1.06)" : "none", transition: "transform .15s" }}>
+        <ChipToken value={c} size={50} selected={c === value} />
       </button>
-      <label className="flex flex-1 items-center rounded-xl border border-amber-500/60 bg-black px-3 py-2 focus-within:border-amber-300">
-        <span className="mr-1 font-black text-amber-300">₹</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          disabled={disabled}
-          placeholder="Other ₹"
-          value={draft}
-          onChange={e => {
-            setDraft(e.target.value);
-            const n = Math.floor(Number(e.target.value));
-            if (Number.isFinite(n) && n >= min && n <= max) onChange(n);
-          }}
-          onBlur={() => {
-            const n = Math.floor(Number(draft));
-            const v = clampN(Number.isFinite(n) ? n : value, min, max);
-            onChange(v);
-            setDraft(String(v));
-          }}
-          onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
-          className="w-full min-w-0 bg-transparent text-lg font-black text-white outline-none placeholder:text-zinc-500 disabled:opacity-50"
-        />
-      </label>
-      <button type="button" className={STEP_BTN} disabled={disabled} onClick={() => set(value + step)} aria-label="Increase bet">
-        <Plus size={18} />
-      </button>
+    ))}
+    <input type="number" min="10" inputMode="numeric" placeholder="Other ₹"
+      onFocus={e => setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 300)}
+      onChange={e => { const v = Math.floor(+e.target.value); if (v >= 10) onChange(v); }}
+      style={{ width: 84, height: 40, borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0a1f14", color: "#f3efe0",
+        padding: "0 8px", fontWeight: 800, boxSizing: "border-box" }} />
+  </div>
+);
+const Shell = ({ title, onBack, right, children }) => (
+  <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
+    padding: "8px 10px 110px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
+    <style>{CSS}</style>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <button onClick={onBack} style={btn}>← Lobby</button>
+      <b style={{ flex: 1, color: GOLD_L, letterSpacing: .5 }}>{title}</b>
+      {right}
     </div>
+    {children}
+  </div>
+);
+const BalBar = ({ bal, extra }) => (
+  <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "#050d09", borderTop: `1px solid ${GOLD}`,
+    padding: "8px 12px calc(8px + env(safe-area-inset-bottom,0px))", display: "flex", justifyContent: "space-between",
+    alignItems: "center", fontSize: 12, zIndex: 50 }}>
+    <div>Balance <b style={{ color: GOLD_L }}>{R(bal)}</b></div>
+    <div style={{ opacity: .85, textAlign: "right" }}>{extra}</div>
+  </div>
+);
+const Ring = ({ left, total }) => {
+  const p = Math.max(0, Math.min(1, left / total)), C = 2 * Math.PI * 18;
+  return (
+    <svg width="46" height="46" viewBox="0 0 46 46">
+      <circle cx="23" cy="23" r="18" stroke="rgba(255,255,255,.15)" strokeWidth="4" fill="none" />
+      <circle cx="23" cy="23" r="18" stroke={GOLD_L} strokeWidth="4" fill="none" strokeDasharray={C}
+        strokeDashoffset={C * (1 - p)} transform="rotate(-90 23 23)" style={{ transition: "stroke-dashoffset 1s linear" }} />
+      <text x="23" y="28" textAnchor="middle" fill="#fff" fontSize="13" fontWeight="900">{left}</text>
+    </svg>
   );
+};
+
+/* ---------- roulette local history (localStorage, max 50) ---------- */
+function useLocalHistory() {
+  const [hist, setHist] = useState(() => {
+    try { const a = JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); return Array.isArray(a) ? a.slice(0, HIST_MAX) : []; }
+    catch { return []; }
+  });
+  const push = useCallback(n => {
+    setHist(h => {
+      const next = [{ n, color: colorName(n), ts: Date.now() }, ...h].slice(0, HIST_MAX);
+      try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+  return [hist, push];
 }
 
-function Notice({ text }) {
-  if (!text) return null;
-  return <p className="mt-2 text-center text-xs font-semibold text-amber-100/85">{text}</p>;
-}
+/* ---------- wheel ----------
+   Idle: slow turn while bets are open (DOM refs, no React re-render).
+   Spin: the wheel turns to the server's pocket. The ball is driven by its own physics loop:
+   it runs fast in the other direction, slows down, drops from the track, bounces with decaying
+   height and wobble, and comes to rest exactly in the winning pocket at the top. */
+const TRACK_R = 128, POCKET_R = 96, SPIN_MS = 4400, DROP_AT = 0.62;
+const easeOutBounce = t => {
+  const n1 = 7.5625, d1 = 2.75;
+  if (t < 1 / d1) return n1 * t * t;
+  if (t < 2 / d1) { t -= 1.5 / d1; return n1 * t * t + 0.75; }
+  if (t < 2.5 / d1) { t -= 2.25 / d1; return n1 * t * t + 0.9375; }
+  t -= 2.625 / d1; return n1 * t * t + 0.984375;
+};
 
-/* ============================================================
-   AVIATOR
-   ============================================================ */
+const Wheel = memo(function Wheel({ target, spinId, spinning }) {
+  const wheelRef = useRef(null), ballRef = useRef(null), ballCircleRef = useRef(null);
+  const rotRef = useRef(0), ballRotRef = useRef(0), rafRef = useRef(null), idleRef = useRef(null);
 
-function Aviator({ credit, debit, sfx }) {
-  const later = useTimers();
-  const [min, max] = LIMITS.aviator;
-  const [phase, setPhase] = useState("wait");     // wait | fly | crash
-  const [count, setCount] = useState(5);
-  const [elapsed, setElapsed] = useState(0);
-  const [crashAt, setCrashAt] = useState(1);
-  const [bet, setBet] = useState(null);
-  const [amount, setAmount] = useState(100);
-  const [autoOn, setAutoOn] = useState(false);
-  const [autoAt, setAutoAt] = useState("2.00");
-  const [history, setHistory] = useState([]);
-  const [msg, setMsg] = useState("");
-  const betRef = useRef(null);
-  const crashRef = useRef(1);
-  const startRef = useRef(0);
-  const autoRef = useRef({ on: false, at: 2 });
-
-  useEffect(() => {
-    autoRef.current = { on: autoOn, at: Math.max(1.01, parseFloat(autoAt) || 2) };
-  }, [autoOn, autoAt]);
-
-  // Countdown while waiting for takeoff
-  useEffect(() => {
-    if (phase !== "wait") return;
-    const id = setInterval(() => setCount(c => c - 1), 1000);
-    return () => clearInterval(id);
-  }, [phase]);
-
-  // Takeoff when the countdown reaches zero
-  useEffect(() => {
-    if (phase === "wait" && count <= 0) {
-      crashRef.current = crashPoint();
-      startRef.current = performance.now();
-      setCrashAt(crashRef.current);
-      setElapsed(0);
-      setPhase("fly");
-    }
-  }, [phase, count]);
-
-  const cashOut = m => {
-    const b = betRef.current;
-    if (!b || b.cashed || b.lost) return;
-    const payout = round2(b.amt * m);
-    credit(payout);
-    const done = { ...b, cashed: true, payout };
-    betRef.current = done;
-    setBet(done);
-    sfx.win();
-    setMsg(`Cashed out at ${m.toFixed(2)}x · +${fmt(payout - b.amt)}`);
+  const setWheel = (deg, dur) => {
+    const el = wheelRef.current;
+    if (!el) return;
+    el.style.transition = dur ? `transform ${dur} cubic-bezier(.17,.67,.2,1)` : "none";
+    el.style.transform = `rotate(${deg}deg)`;
+  };
+  const setBall = (deg, r) => {
+    if (ballRef.current) ballRef.current.style.transform = `rotate(${deg}deg)`;
+    if (ballCircleRef.current) ballCircleRef.current.setAttribute("cy", String(150 - r));
   };
 
-  const crashNow = () => {
-    const cp = crashRef.current;
-    setElapsed(Math.log(cp) / GROWTH);
-    setPhase("crash");
-    const b = betRef.current;
-    if (b && !b.cashed) {
-      const lost = { ...b, lost: true };
-      betRef.current = lost;
-      setBet(lost);
-      sfx.lose();
-    }
-    setHistory(h => [cp, ...h].slice(0, 12));
-    setMsg(b && !b.cashed ? `Flew away — lost ${fmt(b.amt)}` : "Round over");
-    later(() => {
-      betRef.current = null;
-      setBet(null);
-      setMsg("");
-      setCount(5);
-      setPhase("wait");
-    }, 3200);
-  };
-
-  // Flight loop: updates elapsed time, checks crash point and auto cash-out
+  // idle: slow turn while bets are open
   useEffect(() => {
-    if (phase !== "fly") return;
-    let raf;
-    const tick = () => {
-      const t = (performance.now() - startRef.current) / 1000;
-      const m = Math.exp(GROWTH * t);
-      if (m >= crashRef.current) { crashNow(); return; }
-      const b = betRef.current;
-      if (b && !b.cashed && !b.lost && autoRef.current.on && m >= autoRef.current.at) cashOut(autoRef.current.at);
-      setElapsed(t);
-      raf = requestAnimationFrame(tick);
+    if (spinning) return;
+    idleRef.current = setInterval(() => {
+      rotRef.current += 0.4;
+      ballRotRef.current -= 0.9;
+      setWheel(rotRef.current, null);
+      setBall(ballRotRef.current, TRACK_R);
+    }, 50);
+    return () => clearInterval(idleRef.current);
+  }, [spinning]);
+
+  // spin
+  useEffect(() => {
+    if (spinId === 0 || target == null) return;
+    clearInterval(idleRef.current);
+    const idx = ORDER.indexOf(target);
+    const wStart = rotRef.current;
+    const wEnd = wStart + 1800 + mod(-(idx * SEG) - wStart, 360);
+    rotRef.current = wEnd;
+    setWheel(wEnd, "3.6s");
+
+    const b0 = ballRotRef.current;
+    const bEnd = b0 - 2160 - mod(b0, 360);     // a whole number of turns: the ball ends at the top pocket
+    const K = b0 - bEnd;
+    const t0 = performance.now();
+    const step = now => {
+      const t = Math.min(1, (now - t0) / SPIN_MS);
+      if (t >= 1) {
+        ballRotRef.current = bEnd;
+        setBall(bEnd, POCKET_R);
+        return;
+      }
+      let theta = b0 - K * (1 - Math.pow(1 - t, 3));   // fast at first, slows down
+      let r = TRACK_R;
+      if (t > DROP_AT) {
+        const q = (t - DROP_AT) / (1 - DROP_AT);
+        r = TRACK_R - (TRACK_R - POCKET_R) * easeOutBounce(q);   // drops and bounces
+        theta += (1 - q) * 9 * Math.sin(q * 26);                   // wobble that dies out on landing
+      }
+      setBall(theta, r);
+      rafRef.current = requestAnimationFrame(step);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [phase]);
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [spinId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const placeBet = () => {
-    if (phase !== "wait" || betRef.current) return;
-    if (!debit(amount)) { setMsg("Insufficient balance"); return; }
-    const b = { amt: amount, cashed: false, lost: false };
-    betRef.current = b;
-    setBet(b);
-    sfx.click();
-    setMsg("Bet placed for the next takeoff");
-  };
-
-  const mult = phase === "fly" ? Math.exp(GROWTH * elapsed) : phase === "crash" ? crashAt : 1;
-  const shown = Math.floor(mult * 100) / 100;
-  const canEdit = phase === "wait" && !bet;
-
-  // Curve geometry (viewBox 320 x 170)
-  const W = 320, H = 170;
-  const T = Math.max(6, elapsed);
-  const pts = [];
-  for (let i = 0; i <= 48; i++) {
-    const s = (elapsed * i) / 48;
-    const m = Math.exp(GROWTH * s);
-    pts.push([12 + (s / T) * (W - 34), H - 14 - (H - 40) * ((m - 1) / (m - 1 + 4))]);
-  }
-  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} ${H - 14} L12 ${H - 14} Z`;
-  const [px, py] = pts[pts.length - 1];
-  const [qx, qy] = pts[pts.length - 2];
-  const heading = (Math.atan2(py - qy, px - qx) * 180) / Math.PI;
-
-  const status = phase === "wait"
-    ? { text: `WAITING · ${Math.max(0, count)}s`, cls: "text-amber-200" }
-    : phase === "fly"
-      ? { text: "FLYING", cls: "text-emerald-300" }
-      : { text: `FLEW AWAY AT ${crashAt.toFixed(2)}x`, cls: "text-rose-400" };
-
-  const cashing = phase === "fly" && bet && !bet.cashed && !bet.lost;
-  let action;
-  if (cashing) {
-    action = { text: `CASH OUT ${fmt(bet.amt * shown)}`, run: () => cashOut(shown), tone: ORANGE };
-  } else if (phase === "wait") {
-    action = bet
-      ? { text: "BET PLACED", run: null, tone: GREEN }
-      : { text: `BET ${fmt(amount)}`, run: placeBet, tone: GREEN };
-  } else if (bet && bet.cashed) {
-    action = { text: `CASHED OUT ${fmt(bet.payout)}`, run: null, tone: GREEN };
-  } else {
-    action = { text: "WAIT FOR NEXT ROUND", run: null, tone: GREEN };
-  }
+  const pockets = useMemo(() => ORDER.map((n, i) => {
+    const a1 = i * SEG - SEG / 2, a2 = i * SEG + SEG / 2;
+    const [x1, y1] = pt(126, a1), [x2, y2] = pt(126, a2), [x3, y3] = pt(66, a2), [x4, y4] = pt(66, a1);
+    const d = `M${x1} ${y1} A126 126 0 0 1 ${x2} ${y2} L${x3} ${y3} A66 66 0 0 0 ${x4} ${y4} Z`;
+    const [fx1, fy1] = pt(66, a1), [fx2, fy2] = pt(126, a1);
+    const [tx, ty] = pt(96, i * SEG);
+    return (
+      <g key={n}>
+        <path d={d} fill={numColor(n)} />
+        <line x1={fx1} y1={fy1} x2={fx2} y2={fy2} stroke="#d1d5db" strokeWidth=".9" />
+        <text x={tx} y={ty} fill="#fff" fontSize="8.5" fontWeight="800" textAnchor="middle" dominantBaseline="middle"
+          transform={`rotate(${i * SEG} ${tx} ${ty})`}>{n}</text>
+      </g>
+    );
+  }), []);
 
   return (
-    <div className="space-y-4">
-      <div className="relative h-64 overflow-hidden rounded-3xl border border-amber-900/50 bg-[radial-gradient(ellipse_at_bottom_left,#1e293b,#020617_70%)]">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
-          <defs>
-            <linearGradient id="avLine" x1="0" x2="1" y1="1" y2="0">
-              <stop offset="0" stopColor="#22c55e" />
-              <stop offset="1" stopColor="#fbbf24" />
-            </linearGradient>
-            <linearGradient id="avArea" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0" stopColor="#f59e0b" stopOpacity=".35" />
-              <stop offset="1" stopColor="#f59e0b" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={area} fill="url(#avArea)" />
-          <path
-            d={line}
-            fill="none"
-            stroke="url(#avLine)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            style={{ filter: "drop-shadow(0 0 6px #fbbf24)" }}
-          />
-        </svg>
+    <div style={{ position: "relative", width: "min(80vw,300px)", aspectRatio: "1", margin: "0 auto",
+      transform: "perspective(900px) rotateX(18deg)", filter: "drop-shadow(0 26px 26px #000d)" }}>
+      <div style={{ position: "absolute", left: "50%", top: -8, transform: "translateX(-50%)", width: 0, height: 0,
+        borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: `16px solid ${GOLD_L}`,
+        zIndex: 3, filter: "drop-shadow(0 2px 2px #000)" }} />
+      <svg ref={wheelRef} viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block", borderRadius: "50%" }}>
+        <defs>
+          <radialGradient id="x7wood" cx="50%" cy="45%" r="70%">
+            <stop offset="0" stopColor="#7a4a22" /><stop offset=".65" stopColor="#4a2810" /><stop offset="1" stopColor="#24130a" />
+          </radialGradient>
+          <linearGradient id="x7rim" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#fbeaa0" /><stop offset=".5" stopColor="#b8860b" /><stop offset="1" stopColor="#5b3e08" />
+          </linearGradient>
+          <radialGradient id="x7hubwood" cx="50%" cy="40%" r="60%">
+            <stop offset="0" stopColor="#4b2c14" /><stop offset="1" stopColor="#1a0e06" />
+          </radialGradient>
+          <radialGradient id="x7hub" cx="40%" cy="35%" r="70%">
+            <stop offset="0" stopColor="#fff7c2" /><stop offset=".5" stopColor={GOLD_L} /><stop offset="1" stopColor="#7a5200" />
+          </radialGradient>
+        </defs>
+        <circle cx="150" cy="150" r="148" fill="url(#x7wood)" />
+        <circle cx="150" cy="150" r="141" fill="none" stroke="url(#x7rim)" strokeWidth="6" />
+        <circle cx="150" cy="150" r="146" fill="none" stroke="#000" strokeOpacity=".45" strokeWidth="3" />
+        <circle cx="150" cy="150" r="133" fill="#0a0a0a" />
+        {pockets}
+        <circle cx="150" cy="150" r="126" fill="none" stroke="#000" strokeOpacity=".55" strokeWidth="10" />
+        <circle cx="150" cy="150" r="66" fill="none" stroke="#000" strokeOpacity=".5" strokeWidth="6" />
+        <circle cx="150" cy="150" r="66" fill="url(#x7hubwood)" stroke={GOLD} strokeWidth="1.5" />
+        {[0,1,2,3,4,5,6,7].map(k => { const [a, b] = pt(58, k * 45), [c, e] = pt(16, k * 45); return <line key={k} x1={a} y1={b} x2={c} y2={e} stroke={GOLD} strokeWidth="2" />; })}
+        <circle cx="150" cy="150" r="22" fill="url(#x7hub)" />
+      </svg>
+      <svg ref={ballRef} viewBox="0 0 300 300" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+        <defs>
+          <radialGradient id="x7ball" cx="35%" cy="30%" r="70%">
+            <stop offset="0" stopColor="#ffffff" /><stop offset=".6" stopColor="#d1d5db" /><stop offset="1" stopColor="#6b7280" />
+          </radialGradient>
+        </defs>
+        <circle ref={ballCircleRef} cx="150" cy="22" r="5.5" fill="url(#x7ball)" stroke="#374151" strokeWidth=".6" style={{ filter: "drop-shadow(2px 3px 2px #000b)" }} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none",
+        background: "radial-gradient(circle at 32% 22%, #ffffff2e, transparent 42%)" }} />
+    </div>
+  );
+});
 
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <div
-            className={`text-6xl font-black tabular-nums transition-transform duration-150 ${phase === "crash" ? "text-rose-500" : "text-white"}`}
-            style={{
-              transform: `scale(${1 + Math.min(0.15, (shown - 1) * 0.015)})`,
-              textShadow: phase === "crash" ? "0 0 22px #e11d48" : "0 0 22px #fbbf2466",
-            }}
-          >
-            {shown.toFixed(2)}x
+/* ---------- one betting cell (memo) ---------- */
+const Cell = memo(function Cell({ type, value, label, bg, amount, win, onPlace, vertical, flexy, tall, fs, ghost = 0 }) {
+  return (
+    <div onClick={() => onPlace(type, value)}
+      style={{ position: "relative", background: bg, color: "#fff", border: "1px solid rgba(255,255,255,.3)", borderRadius: 4,
+        display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: fs || 12,
+        cursor: "pointer", userSelect: "none", boxSizing: "border-box", height: tall || undefined,
+        flex: flexy ? 1 : undefined, writingMode: vertical ? "vertical-rl" : undefined, letterSpacing: vertical ? 1 : 0,
+        boxShadow: win ? `0 0 0 2px ${GOLD_L}, 0 0 14px ${GOLD_L}` : "inset 0 1px 0 rgba(255,255,255,.15)",
+        animation: win ? "x7pulse 1s ease-in-out infinite" : "none", transition: "box-shadow .3s" }}>
+      {label}
+      {ghost > 0 && (
+        <span key={"g" + ghost} style={{ position: "absolute", top: -7, right: -5, background: `radial-gradient(circle at 35% 30%,#fff7c2,${GOLD})`,
+          color: "#1a1200", borderRadius: 99, fontSize: 9, fontWeight: 900, padding: "2px 5px", animation: "x7unchip .3s ease-in forwards", pointerEvents: "none" }}>{ghost}</span>
+      )}
+      {amount > 0 && <div key={amount} style={{ position: "absolute", top: -10, right: -8, animation: "x7chip .35s ease-out" }}><ChipToken value={chipFor(amount)} size={28} label={amount} /></div>}
+    </div>
+  );
+});
+
+/* ---------- racetrack (straight-number bets, same placement logic as the grid) ---------- */
+function RaceTrack({ place, amounts, winNum }) {
+  return (
+    <div style={{ position: "relative", margin: "16px auto 0", width: 320, maxWidth: "100%", height: 210, background: FELT,
+      borderRadius: 130, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
+      {ORDER.map((n, i) => {
+        const t = (i * SEG * Math.PI) / 180;
+        const x = 160 + 118 * Math.sin(t), y = 105 - 80 * Math.cos(t);
+        const a = amounts[`straight:${n}`] || 0, win = winNum !== null && n === winNum;
+        return (
+          <div key={n} onClick={() => place("straight", n)} style={{ position: "absolute", left: x - 16, top: y - 16, width: 32, height: 32,
+            borderRadius: "50%", background: numColor(n), color: "#fff", border: "1px solid #ffffff55", display: "grid", placeItems: "center",
+            fontSize: 11, fontWeight: 900, cursor: "pointer", boxSizing: "border-box",
+            boxShadow: win ? `0 0 0 2px ${GOLD_L}, 0 0 14px ${GOLD_L}` : "0 2px 4px #000a" }}>
+            {n}
+            {a > 0 && <span style={{ position: "absolute", top: -7, right: -6, background: GOLD_L, color: "#111", borderRadius: 99, fontSize: 9, padding: "1px 4px", fontWeight: 900 }}>{a}</span>}
           </div>
-        </div>
-
-        {phase === "fly" && (
-          <div
-            className="absolute"
-            style={{ left: `${(px / W) * 100}%`, top: `${(py / H) * 100}%`, transform: `translate(-50%, -50%) rotate(${heading + 45}deg)` }}
-          >
-            <Plane size={34} className="fill-amber-100/20 text-amber-200 drop-shadow-[0_0_10px_#fde68a]" />
-          </div>
-        )}
-
-        <div className={`absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1 text-[11px] font-black tracking-widest ${status.cls}`}>
-          {status.text}
-        </div>
-      </div>
-
-      <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
-        {history.map((h, i) => (
-          <span
-            key={i}
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums ${h >= 2 ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}
-          >
-            {h.toFixed(2)}x
-          </span>
-        ))}
-      </div>
-
-      <div className={PANEL}>
-        <ChipRail value={amount} onPick={setAmount} disabled={!canEdit} />
-        <div className="mt-3">
-          <AmountControl value={amount} onChange={setAmount} min={min} max={max} disabled={!canEdit} />
-        </div>
-
-        <div className="mt-3 flex items-center justify-between rounded-xl bg-black/40 px-3 py-2">
-          <label className="flex items-center gap-2 text-sm font-bold text-amber-100">
-            <input type="checkbox" className="h-4 w-4 accent-emerald-500" checked={autoOn} onChange={e => setAutoOn(e.target.checked)} />
-            Auto x
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="1.01"
-            value={autoAt}
-            disabled={!autoOn}
-            onChange={e => setAutoAt(e.target.value)}
-            onBlur={() => {
-              const v = parseFloat(autoAt);
-              setAutoAt(Number.isFinite(v) && v >= 1.01 ? v.toFixed(2) : "2.00");
-            }}
-            className="w-24 rounded-lg border border-amber-500/50 bg-black px-2 py-1 text-right font-black text-white outline-none disabled:opacity-40"
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={action.run || undefined}
-          disabled={!action.run}
-          className={`${ACTION} mt-3 ${action.tone}`}
-        >
-          {action.text}
-        </button>
-        <Notice text={msg} />
+        );
+      })}
+      <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", color: GOLD_L, fontWeight: 900, fontSize: 12, letterSpacing: 1, textAlign: "center" }}>
+        RACETRACK<div style={{ fontSize: 10, opacity: .7, fontWeight: 600 }}>tap a number</div>
       </div>
     </div>
   );
 }
 
-/* ============================================================
-   AUTO ROULETTE
-   ============================================================ */
+/* ---------- statistics modal (local history only, no DB calls) ---------- */
+const CATS = [
+  ["1st 12", x => x.n >= 1 && x.n <= 12], ["2nd 12", x => x.n >= 13 && x.n <= 24], ["3rd 12", x => x.n >= 25 && x.n <= 36],
+  ["1st col", x => x.n > 0 && (x.n - 1) % 3 === 0], ["2nd col", x => x.n > 0 && (x.n - 1) % 3 === 1], ["3rd col", x => x.n > 0 && (x.n - 1) % 3 === 2],
+  ["1-18", x => x.n >= 1 && x.n <= 18], ["Even", x => x.n > 0 && x.n % 2 === 0], ["Red", x => x.color === "red"],
+  ["Black", x => x.color === "black"], ["Odd", x => x.n % 2 === 1], ["19-36", x => x.n >= 19], ["Zero", x => x.n === 0],
+];
+function StatsModal({ hist, onClose }) {
+  const [tab, setTab] = useState("hc");
+  const [len, setLen] = useState(50);
+  const H = hist.slice(0, len);              // hist is newest first
+  const n = H.length;
+  const freq = Array(37).fill(0);
+  H.forEach(x => { freq[x.n]++; });
+  const maxF = Math.max(1, ...freq);
+  const ranked = freq.map((c, i) => ({ i, c })).sort((a, b) => b.c - a.c || a.i - b.i);
+  const hot = ranked.slice(0, 5).filter(r => r.c > 0);
+  // cold = numbers absent for the longest time (in the whole history we have)
+  const lastSeen = {};
+  hist.forEach((x, idx) => { if (lastSeen[x.n] === undefined) lastSeen[x.n] = idx; });
+  const cold = [...Array(37).keys()].map(i => ({ i, age: lastSeen[i] === undefined ? 9999 : lastSeen[i] }))
+    .sort((a, b) => b.age - a.age).slice(0, 5);
+  const hotSet = new Set(hot.map(h => h.i)), coldSet = new Set(cold.map(c => c.i));
+  const pct = pred => (n ? Math.round((H.filter(pred).length / n) * 100) : 0);
 
-function Roulette({ credit, debit, sfx }) {
-  const [min, max] = LIMITS.roulette;
-  const [phase, setPhase] = useState("bet");      // bet | spin | result
-  const [secs, setSecs] = useState(BET_SECS);
-  const [rot, setRot] = useState(0);
-  const [ball, setBall] = useState(0);
-  const [pending, setPendingState] = useState([]);
-  const [locked, setLockedState] = useState([]);
-  const [recent, setRecent] = useState([]);
-  const [amount, setAmount] = useState(10);
-  const [msg, setMsg] = useState("");
-  const pendRef = useRef([]);
-  const lockRef = useRef([]);
-  const resultRef = useRef(0);
+  const tabBtn = (k, l) => (
+    <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: 9, border: "none", background: "none", cursor: "pointer",
+      color: tab === k ? GOLD_L : "#f3efe0", fontWeight: 800, borderBottom: `2px solid ${tab === k ? GOLD_L : "transparent"}` }}>{l}</button>
+  );
 
-  const setPending = list => { pendRef.current = list; setPendingState(list); };
-  const setLocked = list => { lockRef.current = list; setLockedState(list); };
-  const canBet = phase === "bet";
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0a1f14", border: `1px solid ${GOLD}`, borderRadius: 16, width: "min(94vw,380px)",
+        maxHeight: "86vh", display: "flex", flexDirection: "column", color: "#f3efe0", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "12px 14px", borderBottom: `1px solid ${GOLD}55` }}>
+          <b style={{ flex: 1, color: GOLD_L }}>Statistics</b>
+          <button onClick={onClose} style={{ ...btn, padding: "4px 10px" }}>✕</button>
+        </div>
+        <div style={{ display: "flex", borderBottom: `1px solid ${GOLD}33` }}>
+          {tabBtn("hc", "HOT / COLD")}{tabBtn("adv", "ADVANCED")}{tabBtn("last", `LAST ${len}`)}
+        </div>
 
-  const totals = {};
-  [...locked, ...pending].forEach(b => { totals[b.key] = (totals[b.key] || 0) + b.amt; });
+        <div style={{ padding: 14, overflowY: "auto" }}>
+          {n === 0 && <p style={{ fontSize: 13, opacity: .7, textAlign: "center" }}>No spins yet on this device.</p>}
 
-  // Betting countdown
+          {n > 0 && tab === "hc" && (
+            <>
+              <svg viewBox="-110 -110 220 220" style={{ width: "100%", maxWidth: 260, display: "block", margin: "0 auto" }}>
+                <circle r="30" fill="#0d4a2a" stroke={GOLD} strokeWidth="1.5" />
+                {Array.from({ length: 37 }, (_, i) => {
+                  const f = freq[i], len2 = 18 + 70 * (f / maxF), t = (i * SEG * Math.PI) / 180;
+                  const hotS = hotSet.has(i), coldS = coldSet.has(i);
+                  const col = hotS ? "#ef4444" : coldS ? "#60a5fa" : "#6b7280";
+                  return <line key={i} x1={30 * Math.sin(t)} y1={-30 * Math.cos(t)} x2={(30 + len2) * Math.sin(t)} y2={-(30 + len2) * Math.cos(t)}
+                    stroke={col} strokeWidth={hotS || coldS ? 4 : 2} strokeLinecap="round" />;
+                })}
+              </svg>
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 800 }}>🔥 Hot</p>
+                  {hot.map(h => <div key={h.i} style={{ fontSize: 13, padding: "3px 0" }}>#{h.i} · {h.c}×</div>)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 800 }}>❄️ Cold</p>
+                  {cold.map(c => <div key={c.i} style={{ fontSize: 13, padding: "3px 0" }}>#{c.i} · {c.age === 9999 ? "never" : `${c.age} ago`}</div>)}
+                </div>
+              </div>
+              <p style={{ margin: "12px 0 6px", fontWeight: 800, fontSize: 12 }}>Last 20</p>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {hist.slice(0, 20).map((h, i) => (
+                  <span key={i} style={{ width: 14, height: 14, borderRadius: "50%", background: numColor(h.n), border: "1px solid #ffffff55" }} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {n > 0 && tab === "adv" && (
+            <>
+              {CATS.map(([label, pred]) => {
+                const v = pct(pred);
+                return (
+                  <div key={label} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span>{label}</span><b>{v}%</b></div>
+                    <div style={{ height: 8, borderRadius: 6, background: "#ffffff14", overflow: "hidden" }}>
+                      <div style={{ width: `${v}%`, height: "100%", background: `linear-gradient(90deg,${GOLD},${GOLD_L})`, transition: "width .5s" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {tab === "last" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(10,1fr)", gap: 4 }}>
+                {H.map((h, i) => (
+                  <span key={i} style={{ height: 24, borderRadius: 4, display: "grid", placeItems: "center", fontSize: 10, fontWeight: 800,
+                    background: numColor(h.n), color: "#fff" }}>{h.n}</span>
+                ))}
+              </div>
+              <div style={{ marginTop: 14, fontSize: 13, fontWeight: 800, textAlign: "center" }}>LAST {len} ROUNDS</div>
+              <input type="range" min="5" max="50" step="1" value={len} onChange={e => setLen(+e.target.value)}
+                style={{ width: "100%", accentColor: GOLD_L }} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================= AUTO ROULETTE ================= */
+function Roulette({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [hist, pushHist] = useLocalHistory();
+  const [bal, setBal, realBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [stack, setStack] = useState([]);
+  const [lastBets, setLastBets] = useState([]);
+  const [chip, setChip] = useState(10);
+  const [auto, setAuto] = useState(false);
+  const [phase, setPhase] = useState("bet");     // bet | spinning | result
+  const [count, setCount] = useState(BET_SECONDS);
+  const [target, setTarget] = useState(null);
+  const [spinId, setSpinId] = useState(0);
+  const [winNum, setWinNum] = useState(null);
+  const [last, setLast] = useState(null);
+  const [burst, setBurst] = useState(0);
+  const [showStats, setShowStats] = useState(false);
+  const [track, setTrack] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [sound, setSound] = useState(() => { try { return localStorage.getItem("x7_sound") === "on"; } catch { return false; } });
+  const [favBets, setFavBets] = useState(() => { try { return JSON.parse(localStorage.getItem("x7_fav_bets") || "[]"); } catch { return []; } });
+  const toggleSound = () => { setSound(v => { const n = !v; try { localStorage.setItem("x7_sound", n ? "on" : "off"); } catch {} return n; }); };
+  const sfx = (f, d) => { if (sound) playTone(f, d); };
+
+  const aggregate = list => {
+    const m = new Map();
+    list.forEach(s => { const c = m.get(s.key) || { key: s.key, type: s.type, value: s.value, amount: 0 }; c.amount += s.amount; m.set(s.key, c); });
+    return [...m.values()];
+  };
+  const bets = useMemo(() => aggregate(stack), [stack]);
+  const total = useMemo(() => bets.reduce((a, b) => a + b.amount, 0), [bets]);
+  const amounts = useMemo(() => { const o = {}; bets.forEach(b => { o[b.key] = b.amount; }); return o; }, [bets]);
+
+  const place = useCallback((type, value = null) => {
+    if (phase !== "bet") return;
+    if (total + chip > bal) return flash("Balance too low");
+    if (total + chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    setStack(s => [...s, { key: `${type}:${value ?? ""}`, type, value, amount: chip }]);
+  }, [phase, total, chip, bal, MAX]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [ghost, setGhost] = useState(null);
+  const undo = () => {
+    if (phase !== "bet" || !stack.length) return;
+    const last = stack[stack.length - 1];
+    setGhost({ key: last.key, amount: last.amount });
+    setTimeout(() => setGhost(null), 320);
+    setStack(s => s.slice(0, -1));
+  };
+  const clear = () => { if (phase === "bet") setStack([]); };
+  const saveFav = () => {
+    if (!stack.length) return flash("Place a bet first");
+    setFavBets(stack);
+    try { localStorage.setItem("x7_fav_bets", JSON.stringify(stack)); } catch {}
+    flash("Saved as favorite");
+  };
+  const applyFav = () => {
+    if (phase !== "bet") return;
+    if (!favBets.length) return flash("No favorite saved");
+    const sum = favBets.reduce((a, b) => a + b.amount, 0);
+    if (sum > bal) return flash("Balance too low");
+    setStack(favBets.map(b => ({ ...b })));
+  };
+  const dbl = () => {
+    if (phase !== "bet" || !bets.length) return;
+    if (total * 2 > bal) return flash("Balance too low");
+    if (total * 2 > MAX) return flash(`Max bet ${R(MAX)}`);
+    setStack(s => [...s, ...bets.map(b => ({ ...b }))]);
+  };
+
+  const spin = async () => {
+    if (phase !== "bet") return;
+    let list = bets;
+    if (!list.length && auto && lastBets.length) list = lastBets;
+    if (!list.length) { setCount(BET_SECONDS); return; }
+    const sum = list.reduce((a, b) => a + b.amount, 0);
+    if (sum < MIN) { setCount(BET_SECONDS); return flash(`Minimum bet ${R(MIN)}`); }
+    if (sum > bal) { setAuto(false); setCount(BET_SECONDS); return flash("Balance too low for AUTO"); }
+
+    const before = bal;
+    setPhase("spinning"); setWinNum(null); setBal(before - sum); sfx(220, 0.08);
+    const { data, error } = await supabase.rpc("casino_spin", {
+      p_game: "roulette", p_bet: sum,
+      p_choice: list.map(b => ({ type: b.type, value: b.value, amount: b.amount })),
+    });
+    if (error || !data?.success) {
+      setBal(before); setPhase("bet"); setCount(BET_SECONDS);
+      return say ? say(friendly(error), 1) : flash(friendly(error));
+    }
+    setTarget(data.number); setSpinId(x => x + 1);
+    setTimeout(() => {
+      const net = data.won_amount - sum;
+      setWinNum(data.number);
+      pushHist(data.number);
+      setLastBets(list);
+      setStack([]);
+      setBal(data.new_balance);
+      setLast({ n: data.number, net, stake: sum, payout: data.won_amount });
+      if (net > 0) { flash(`YOU WIN ${R(net)} · Total ${R(data.won_amount)}`); sfx(880, 0.25); }
+      if (net > 0) setBurst(b => b + 1);
+      setPhase("result");
+      reload && reload();
+      setTimeout(() => { setWinNum(null); setPhase("bet"); setCount(BET_SECONDS); }, 4500);
+    }, 4200);
+  };
+
+  const spinRef = useRef(spin);
+  spinRef.current = spin;
+
   useEffect(() => {
     if (phase !== "bet") return;
-    const id = setInterval(() => setSecs(s => s - 1), 1000);
-    return () => clearInterval(id);
-  }, [phase]);
+    const t = setTimeout(() => { if (count <= 1) spinRef.current(); else setCount(c => c - 1); }, 1000);
+    return () => clearTimeout(t);
+  }, [phase, count]);
 
-  // Close betting and lock pending bets
-  useEffect(() => {
-    if (phase === "bet" && secs <= 0) {
-      setLocked([...lockRef.current, ...pendRef.current]);
-      setPending([]);
-      setPhase("spin");
-    }
-  }, [phase, secs]);
-
-  // Pick the winning pocket and animate wheel and ball
-  useEffect(() => {
-    if (phase !== "spin") return;
-    const k = rand(37);
-    resultRef.current = ORDER[k];
-    setRot(r => r + 360 * 6 + mod(-k * SEG - r, 360));
-    setBall(b => b - 360 * 8 - mod(b, 360));
-    const id = setTimeout(() => setPhase("result"), 6200);
-    return () => clearTimeout(id);
-  }, [phase]);
-
-  // Settle the round
-  useEffect(() => {
-    if (phase !== "result") return;
-    const n = resultRef.current;
-    const bets = lockRef.current;
-    const stake = sumAmt(bets);
-    const ret = round2(bets.reduce((s, b) => s + (hitKey(b.key, n) ? b.amt * grossOf(b.key) : 0), 0));
-    if (ret > 0) { credit(ret); sfx.win(); } else if (stake > 0) { sfx.lose(); }
-    const net = round2(ret - stake);
-    setRecent(r => [n, ...r].slice(0, 12));
-    setMsg(
-      stake === 0
-        ? `Ball landed on ${n} ${colorName(n)}`
-        : `${n} ${colorName(n)} — ${net >= 0 ? `won ${fmt(net)}` : `lost ${fmt(-net)}`}`
-    );
-    setLocked([]);
-    const id = setTimeout(() => { setSecs(BET_SECS); setPhase("bet"); }, 3200);
-    return () => clearTimeout(id);
-  }, [phase]);
-
-  const place = key => {
-    if (!canBet) { setMsg("Bets are closed for this spin"); return; }
-    const current = [...lockRef.current, ...pendRef.current].reduce((s, b) => s + (b.key === key ? b.amt : 0), 0);
-    if (current + amount > max) { setMsg(`Max ${fmt(max)} per spot`); return; }
-    if (!debit(amount)) { setMsg("Insufficient balance"); return; }
-    setPending([...pendRef.current, { key, amt: amount }]);
-    setMsg("");
-    sfx.click();
-  };
-
-  const undo = () => {
-    if (!canBet || !pendRef.current.length) return;
-    const list = pendRef.current;
-    credit(list[list.length - 1].amt);
-    setPending(list.slice(0, -1));
-    sfx.click();
-  };
-
-  const double = () => {
-    if (!canBet) return;
-    const list = pendRef.current;
-    const cost = sumAmt(list);
-    if (!cost) return;
-    if (!debit(cost)) { setMsg("Insufficient balance"); return; }
-    setPending([...list, ...list.map(b => ({ ...b }))]);
-    sfx.click();
-  };
-
-  const clear = () => {
-    if (!canBet) return;
-    const cost = sumAmt(pendRef.current);
-    if (!cost) return;
-    credit(cost);
-    setPending([]);
-    sfx.click();
-  };
-
-  const apply = () => {
-    if (!canBet || !pendRef.current.length) return;
-    setLocked([...lockRef.current, ...pendRef.current]);
-    setPending([]);
-    setMsg("Bets locked in");
-    sfx.click();
-  };
-
-  const spot = (key, label, bg, gridColumn, gridRow) => (
-    <button
-      key={key}
-      type="button"
-      onClick={() => place(key)}
-      className="relative flex h-9 items-center justify-center rounded-md border border-white/15 text-[11px] font-black text-white transition active:scale-95"
-      style={{ background: bg, gridColumn, gridRow }}
-    >
-      {label}
-      {totals[key] > 0 && (
-        <span className="absolute -right-1 -top-1 rounded-full bg-amber-300 px-1 text-[9px] font-black leading-4 text-black">
-          {totals[key]}
-        </span>
-      )}
-    </button>
+  const cell = (type, value, label, bg, opts = {}) => (
+    <Cell key={`${type}:${value ?? ""}`} type={type} value={value} label={label} bg={bg}
+      amount={amounts[`${type}:${value ?? ""}`] || 0}
+      ghost={ghost && ghost.key === `${type}:${value ?? ""}` ? ghost.amount : 0}
+      win={winNum !== null && hits(type, value, winNum)} onPlace={place} {...opts} />
   );
-
-  const pendingTotal = sumAmt(pending);
-  const lockedTotal = sumAmt(locked);
+  const numRows = Array.from({ length: 12 }, (_, r) => [3, 2, 1].map(k => 3 * r + k));
+  const statusBg = phase === "result" && last ? (last.net > 0 ? "#14532d" : last.net < 0 ? "#7f1d1d" : "#374151") : "rgba(0,0,0,.35)";
 
   return (
-    <div className="space-y-4">
-      {/* Live wheel */}
-      <div className="relative mx-auto aspect-square w-72">
-        <div
-          className="absolute left-1/2 -top-1 z-20 -translate-x-1/2"
-          style={{ width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: "18px solid #fcd34d", filter: "drop-shadow(0 2px 2px #000)" }}
-        />
-        <svg
-          viewBox="0 0 300 300"
-          className="absolute inset-0 h-full w-full drop-shadow-2xl"
-          style={{ transform: `rotate(${rot}deg)`, transition: "transform 6s cubic-bezier(.15,.7,.1,1)" }}
-        >
-          <circle cx="150" cy="150" r="148" fill="#2a1507" stroke="#d4af37" strokeWidth="4" />
-          {ORDER.map((n, i) => (
-            <path key={`w${n}`} d={wedge(70, 140, i * SEG - SEG / 2, i * SEG + SEG / 2)} fill={numFill(n)} stroke="#d4af37" strokeWidth=".7" />
-          ))}
-          {ORDER.map((n, i) => {
-            const [x, y] = polar(122, i * SEG);
-            return (
-              <text key={`t${n}`} x={x} y={y} fill="#fff" fontSize="9" fontWeight="800" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${i * SEG} ${x} ${y})`}>
-                {n}
-              </text>
-            );
-          })}
-          <circle cx="150" cy="150" r="66" fill="#3b1f0c" stroke="#facc15" strokeWidth="3" />
-          <circle cx="150" cy="150" r="46" fill="#7f1d1d" opacity=".6" />
-        </svg>
+    <Shell title="Auto Roulette" onBack={onBack}
+      right={<>
+        <button onClick={() => setAuto(a => !a)} style={{ ...btn, background: auto ? GOLD : "#16291d", color: auto ? "#111" : "#f3efe0" }}>AUTO {auto ? "ON" : "OFF"}</button>
+        <button onClick={toggleSound} style={btn}>{sound ? "🔊" : "🔇"}</button>
+        <button onClick={() => setCollapsed(c => !c)} style={btn}>{collapsed ? "▲" : "▼"}</button>
+        <button onClick={() => setTrack(t => !t)} style={btn}>{track ? "Grid" : "Track"}</button>
+        <button onClick={() => setShowStats(true)} style={btn}>Stats</button>
+      </>}>
 
-        <div className="pointer-events-none absolute inset-0" style={{ transform: `rotate(${ball}deg)`, transition: "transform 6s cubic-bezier(.12,.6,.2,1)" }}>
-          <span className="absolute left-1/2 top-[14px] h-3 w-3 -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_#fff]" />
-        </div>
-
-        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
-          {phase === "bet" && (
-            <div className="text-center">
-              <div className="text-3xl font-black tabular-nums text-amber-200">{Math.max(0, secs)}</div>
-              <div className="text-[10px] tracking-widest text-amber-100/70">PLACE BETS</div>
-            </div>
-          )}
-          {phase === "spin" && <div className="text-xs font-black tracking-widest text-amber-100">NO MORE BETS</div>}
-          {phase === "result" && (
-            <div className="rounded-full px-3 py-1 text-lg font-black text-white shadow-[0_0_14px_#000]" style={{ background: numFill(resultRef.current) }}>
-              {resultRef.current}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
-        {recent.map((n, i) => (
-          <span key={i} className="grid h-7 min-w-7 shrink-0 place-items-center rounded-full px-1.5 text-[11px] font-black text-white" style={{ background: numFill(n) }}>
-            {n}
-          </span>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "2px 0 10px" }}>
+        {hist.length === 0 && <span style={{ fontSize: 12, opacity: .6 }}>No spins yet</span>}
+        {hist.slice(0, 20).map((h, i) => (
+          <span key={h.ts + "-" + i} style={{ minWidth: 28, height: 28, borderRadius: 99, display: "grid", placeItems: "center",
+            fontSize: 12, fontWeight: 800, background: numColor(h.n), color: "#fff", border: `1px solid ${GOLD}`, flex: "0 0 auto" }}>{h.n}</span>
         ))}
       </div>
 
-      {/* Full betting grid */}
-      <div className="grid gap-1" style={{ gridTemplateColumns: "34px repeat(12, minmax(0,1fr)) 40px" }}>
-        <button
-          type="button"
-          onClick={() => place("n:0")}
-          className="relative flex items-center justify-center rounded-md border border-white/15 text-[11px] font-black text-white active:scale-95"
-          style={{ background: numFill(0), gridColumn: "1", gridRow: "1 / span 3" }}
-        >
-          0
-          {totals["n:0"] > 0 && (
-            <span className="absolute -right-1 -top-1 rounded-full bg-amber-300 px-1 text-[9px] font-black leading-4 text-black">{totals["n:0"]}</span>
-          )}
-        </button>
-
-        {[0, 1, 2].map(r =>
-          Array.from({ length: 12 }, (_, c) => {
-            const n = 3 * c + (3 - r);
-            return spot(`n:${n}`, n, numFill(n), `${c + 2}`, `${r + 1}`);
-          })
-        )}
-
-        {[0, 1, 2].map(r => spot(`c:${3 - r}`, "2:1", "#1f2937", "14", `${r + 1}`))}
-
-        {spot("d:1", "1st 12", "#14532d", "2 / span 4", "4")}
-        {spot("d:2", "2nd 12", "#14532d", "6 / span 4", "4")}
-        {spot("d:3", "3rd 12", "#14532d", "10 / span 4", "4")}
-
-        {spot("low", "1-18", "#1f2937", "2 / span 2", "5")}
-        {spot("even", "EVEN", "#1f2937", "4 / span 2", "5")}
-        {spot("red", "RED", "#b91c1c", "6 / span 2", "5")}
-        {spot("black", "BLACK", "#111318", "8 / span 2", "5")}
-        {spot("odd", "ODD", "#1f2937", "10 / span 2", "5")}
-        {spot("high", "19-36", "#1f2937", "12 / span 2", "5")}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 50, borderRadius: 12,
+        background: statusBg, border: `1px solid ${GOLD}66`, marginBottom: 14, padding: "6px 10px", fontWeight: 900, fontSize: 14 }}>
+        {phase === "bet" && <><Ring left={count} total={BET_SECONDS} /><span>Place your bets</span></>}
+        {phase === "spinning" && <span>No more bets</span>}
+        {phase === "result" && last && <span>Result #{last.n}</span>}
       </div>
 
-      {/* Chip panel */}
-      <div className={PANEL}>
-        <ChipRail value={amount} onPick={setAmount} disabled={!canBet} />
-        <div className="mt-3">
-          <AmountControl value={amount} onChange={setAmount} min={min} max={max} disabled={!canBet} />
+      {last && last.net > 0 && (() => {
+        const k = "win";
+        const bg = k === "win" ? "linear-gradient(135deg,#15803d,#166534)" : k === "lose" ? "linear-gradient(135deg,#b91c1c,#7f1d1d)" : "#374151";
+        return (
+          <div style={{ borderRadius: 14, padding: "10px 12px", marginBottom: 14, background: bg, color: "#fff", border: `1px solid ${GOLD}`,
+            boxShadow: "0 6px 18px #000a", textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 1 }}>
+              {k === "win" ? "YOU WIN" : k === "lose" ? "YOU LOSE" : "RETURNED"} · #{last.n}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 900, marginTop: 4 }}>Bet {R(last.stake)} · Win {R(last.net)} · Total {R(last.payout)}</div>
+          </div>
+        );
+      })()}
+
+      {!collapsed && <Wheel target={target} spinId={spinId} spinning={phase === "spinning"} />}
+
+      {!collapsed && (track ? <RaceTrack place={place} amounts={amounts} winNum={winNum} /> : <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
+        {cell("straight", 0, "0", C_GRN, { tall: 36 })}
+        <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 48px", gap: 4, marginTop: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {cell("low", null, "1-18", C_BLK, { flexy: true })}{cell("even", null, "EVEN", C_BLK, { flexy: true })}
+            {cell("red", null, "◆", C_RED, { flexy: true, fs: 16 })}{cell("black", null, "◆", C_BLK, { flexy: true, fs: 16 })}
+            {cell("odd", null, "ODD", C_BLK, { flexy: true })}{cell("high", null, "19-36", C_BLK, { flexy: true })}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 3 }}>
+            {numRows.flat().map(n => cell("straight", n, n, numColor(n), { tall: 34 }))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {cell("dozen", 1, "1ST 12", C_BLK, { flexy: true, vertical: true })}
+            {cell("dozen", 2, "2ND 12", C_BLK, { flexy: true, vertical: true })}
+            {cell("dozen", 3, "3RD 12", C_BLK, { flexy: true, vertical: true })}
+          </div>
         </div>
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          <button type="button" onClick={undo} disabled={!canBet || !pending.length} className={TOOL}><Undo2 size={15} />Undo</button>
-          <button type="button" onClick={double} disabled={!canBet || !pending.length} className={TOOL}>2×</button>
-          <button type="button" onClick={clear} disabled={!canBet || !pending.length} className={TOOL}><X size={15} />Clear</button>
-          <button type="button" onClick={apply} disabled={!canBet || !pending.length} className={TOOL}><Check size={15} />Apply</button>
+        <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 48px", gap: 4, marginTop: 4 }}>
+          <div />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 3 }}>
+            {[3, 2, 1].map(c => cell("column", c, "2 TO 1", C_BLK, { tall: 30 }))}
+          </div>
+          <div />
         </div>
-        <div className="mt-2 flex justify-between text-[11px] text-amber-100/70">
-          <span>Pending {fmt(pendingTotal)}</span>
-          <span>Locked {fmt(lockedTotal)}</span>
-        </div>
-        <Notice text={msg} />
+      </div>)}
+
+      <Chips value={chip} onChange={setChip} />
+      <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+        <button onClick={undo} style={btn}>UNDO</button>
+        <button onClick={dbl} style={btn}>x2 DOUBLE</button>
+        <button onClick={clear} style={btn}>CLEAR</button>
+        <button onClick={saveFav} style={btn}>⭐ Save</button>
+        <button onClick={applyFav} style={btn}>⭐ Apply</button>
       </div>
+
+      <BalBar bal={bal} extra={<>Bet <b>{R(total)}</b> · {R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
+      {showStats && <StatsModal hist={hist} onClose={() => setShowStats(false)} />}
+    </Shell>
+  );
+}
+
+/* ================= DRAGON TIGER ================= */
+function PlayCard({ rank, label, color, shown, glow }) {
+  return (
+    <div style={{ width: 96, height: 136, perspective: 700, animation: "x7deal .5s ease-out both",
+      filter: glow ? `drop-shadow(0 0 12px ${GOLD_L})` : "none" }}>
+      <div style={{ position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d",
+        transition: "transform .7s cubic-bezier(.3,.7,.3,1)", transform: shown ? "rotateY(180deg)" : "none" }}>
+        <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", borderRadius: 12, border: `2px solid ${GOLD}`,
+          background: `repeating-linear-gradient(45deg,${color} 0 8px,#111 8px 16px)`, boxShadow: "0 8px 20px #000a" }} />
+        <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)", borderRadius: 12,
+          border: `2px solid ${GOLD}`, background: "#fff", color: "#111", display: "grid", placeItems: "center",
+          fontWeight: 900, fontSize: 38, boxShadow: "0 8px 20px #000a" }}>{shown && rank ? RANK[rank] : ""}</div>
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11, fontWeight: 900, marginTop: 6, letterSpacing: 1, color: GOLD_L }}>{label}</div>
     </div>
   );
 }
 
-/* ============================================================
-   DRAGON TIGER
-   ============================================================ */
+function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal, realBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [side, setSide] = useState("dragon");
+  const [chip, setChip] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [deal, setDeal] = useState(0);            // changes every deal, so the cards are dealt again
+  const [cards, setCards] = useState(null);       // {dragon, tiger} ranks from the server
+  const [shown, setShown] = useState(false);      // flips the cards face up
+  const [res, setRes] = useState(null);
+  const [burst, setBurst] = useState(0);
+  const [hist, setHist] = useState(() => { try { return JSON.parse(localStorage.getItem(DT_KEY) || "[]"); } catch { return []; } });
 
-const draw = () => ({ r: 1 + rand(13), s: rand(4) });
-
-function PlayingCard({ card, flipped }) {
-  const red = card && (card.s === 1 || card.s === 2);
-  const face = card ? RANKS[card.r] : "";
-  const suit = card ? SUITS[card.s] : "";
-  return (
-    <div className="h-28 w-20" style={{ perspective: 800 }}>
-      <div
-        className="relative h-full w-full transition-transform duration-500"
-        style={{ transformStyle: "preserve-3d", transform: flipped ? "rotateY(180deg)" : "none" }}
-      >
-        <div
-          className="absolute inset-0 rounded-xl border-2 border-amber-200 shadow-[0_6px_14px_#000a]"
-          style={{ backfaceVisibility: "hidden", background: "repeating-linear-gradient(45deg,#1e3a8a 0 6px,#1d4ed8 6px 12px)" }}
-        />
-        <div
-          className="absolute inset-0 flex flex-col justify-between rounded-xl bg-white p-1.5 shadow-[0_6px_14px_#000a]"
-          style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)", color: red ? "#b91c1c" : "#111" }}
-        >
-          <span className="text-base font-black leading-none">{face}</span>
-          <span className="text-center text-3xl leading-none">{suit}</span>
-          <span className="self-start rotate-180 text-base font-black leading-none">{face}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Side({ title, card, flipped, win }) {
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className={`rounded-full px-3 py-1 text-[11px] font-black tracking-widest ${win ? "bg-amber-300 text-black" : "bg-black/40 text-amber-100/80"}`}>
-        {title}{flipped && card ? ` · ${RANKS[card.r]}` : ""}
-      </div>
-      <PlayingCard card={card} flipped={flipped} />
-    </div>
-  );
-}
-
-function Bead({ o }) {
-  const bg = o.outcome === "dragon" ? "#dc2626" : o.outcome === "tiger" ? "#2563eb" : "#16a34a";
-  const label = o.outcome === "dragon" ? "D" : o.outcome === "tiger" ? "T" : "=";
-  return (
-    <span
-      className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-black text-white"
-      style={{ background: bg, boxShadow: o.suited ? "0 0 0 2px #fde68a" : "none" }}
-    >
-      {label}
-    </span>
-  );
-}
-
-const DT_ZONES = [
-  { key: "dragon", title: "DRAGON", odds: "1 : 1", cls: "from-rose-700 to-red-900" },
-  { key: "tie", title: "TIE", odds: "11 : 1", cls: "from-emerald-700 to-emerald-900" },
-  { key: "tiger", title: "TIGER", odds: "1 : 1", cls: "from-sky-700 to-blue-900" },
-];
-
-function DragonTiger({ credit, debit, sfx }) {
-  const later = useTimers();
-  const [min, max] = LIMITS.dragon;
-  const [amount, setAmount] = useState(100);
-  const [phase, setPhase] = useState("bet");       // bet | dealing | done
-  const [bets, setBets] = useState({});
-  const [cards, setCards] = useState({ d: null, t: null });
-  const [flip, setFlip] = useState({ d: false, t: false });
-  const [last, setLast] = useState(null);
-  const [beads, setBeads] = useState([]);
-  const [msg, setMsg] = useState("");
-
-  const total = Object.values(bets).reduce((s, v) => s + v, 0);
-  const canBet = phase === "bet";
-
-  const stake = key => {
-    if (!canBet) return;
-    const cur = bets[key] || 0;
-    if (cur + amount > max) { setMsg(`Max ${fmt(max)} per zone`); return; }
-    if (!debit(amount)) { setMsg("Insufficient balance"); return; }
-    setBets(b => ({ ...b, [key]: (b[key] || 0) + amount }));
-    setMsg("");
-    sfx.click();
+  const dealCards = async () => {
+    if (busy) return;
+    if (chip < MIN || chip > MAX) return flash(`Bet between ${R(MIN)} and ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBusy(true); setRes(null); setShown(false); setCards(null); setBal(before - chip); setDeal(d => d + 1);
+    const { data, error } = await supabase.rpc("casino_dragon_tiger", { p_bet: chip, p_side: side });
+    if (error || !data?.success) { setBal(before); setBusy(false); return say ? say(friendly(error), 1) : flash(friendly(error)); }
+    setCards({ dragon: data.dragon, tiger: data.tiger });
+    setTimeout(() => setShown(true), 600);          // flip after the deal animation
+    setTimeout(() => {
+      const net = data.won_amount - chip;
+      setRes({ winner: data.winner, net });
+      setBal(data.new_balance);
+      if (net > 0) setBurst(b => b + 1);
+      const nh = [{ w: data.winner, ts: Date.now() }, ...hist].slice(0, 50);
+      setHist(nh);
+      try { localStorage.setItem(DT_KEY, JSON.stringify(nh)); } catch {}
+      setBusy(false);
+      reload && reload();
+    }, 1500);
   };
 
-  const clearBets = () => {
-    if (!canBet || !total) return;
-    credit(total);
-    setBets({});
-    sfx.click();
-  };
-
-  const settle = (d, t, placed) => {
-    const tie = d.r === t.r;
-    const suited = tie && d.s === t.s;
-    const outcome = tie ? "tie" : d.r > t.r ? "dragon" : "tiger";
-    const ret =
-      (placed.dragon || 0) * (outcome === "dragon" ? 2 : outcome === "tie" ? 1 : 0) +
-      (placed.tiger || 0) * (outcome === "tiger" ? 2 : outcome === "tie" ? 1 : 0) +
-      (placed.tie || 0) * (tie ? 12 : 0) +
-      (placed.suited || 0) * (suited ? 51 : 0);
-    const staked = Object.values(placed).reduce((s, v) => s + v, 0);
-    const payout = round2(ret);
-    if (payout > 0) credit(payout);
-    const net = round2(payout - staked);
-    setLast({ outcome, suited, net });
-    setBeads(b => [{ outcome, suited }, ...b].slice(0, 30));
-    setMsg(net >= 0 ? `You won ${fmt(net)}` : `You lost ${fmt(-net)}`);
-    if (net > 0) sfx.win(); else sfx.lose();
-    setPhase("done");
-  };
-
-  const deal = () => {
-    if (!canBet || total === 0) return;
-    const d = draw(), t = draw();
-    const placed = { ...bets };
-    setCards({ d, t });
-    setFlip({ d: false, t: false });
-    setLast(null);
-    setMsg("");
-    setPhase("dealing");
-    sfx.deal();
-    later(() => { setFlip(f => ({ ...f, d: true })); sfx.deal(); }, 600);
-    later(() => { setFlip(f => ({ ...f, t: true })); sfx.deal(); }, 1300);
-    later(() => settle(d, t, placed), 2000);
-  };
-
-  const newRound = () => {
-    setBets({});
-    setCards({ d: null, t: null });
-    setFlip({ d: false, t: false });
-    setLast(null);
-    setMsg("");
-    setPhase("bet");
-  };
-
-  const resultText = last
-    ? last.outcome === "tie"
-      ? (last.suited ? "SUITED TIE · 50 : 1" : "TIE")
-      : last.outcome === "dragon" ? "DRAGON WINS" : "TIGER WINS"
-    : phase === "dealing" ? "Dealing…" : "Place your bets";
-
-  const zoneBtn = (z, extra = "") => (
-    <button
-      key={z.key}
-      type="button"
-      onClick={() => stake(z.key)}
-      disabled={!canBet}
-      className={`relative flex flex-col items-center rounded-2xl border border-white/15 bg-gradient-to-b p-3 text-white transition active:scale-95 disabled:opacity-80 ${z.cls} ${extra}`}
-    >
-      <span className="text-xs font-black tracking-widest">{z.title}</span>
-      <span className="mt-0.5 text-[11px] text-white/75">{z.odds}</span>
-      {bets[z.key] > 0 && (
-        <span className="mt-2 rounded-full bg-amber-300 px-2 py-0.5 text-[11px] font-black text-black">{fmt(bets[z.key])}</span>
-      )}
+  const sideBtn = (k, label, odds) => (
+    <button key={k} onClick={() => setSide(k)} style={{ flex: 1, padding: "12px 6px", borderRadius: 12, fontWeight: 900, cursor: "pointer",
+      border: `2px solid ${side === k ? GOLD_L : "#2f4a3a"}`, background: side === k ? `linear-gradient(180deg,#fde68a,${GOLD})` : "#0f2418",
+      color: side === k ? "#111" : "#f3efe0", transform: side === k ? "translateY(-2px)" : "none", transition: "transform .15s" }}>
+      {label}<div style={{ fontSize: 11, fontWeight: 700 }}>{odds}</div>
     </button>
   );
 
   return (
-    <div className="space-y-4">
-      <div className="relative overflow-hidden rounded-[28px] border-4 border-[#5b3a1e] p-4 shadow-[inset_0_0_40px_#000a,0_12px_30px_#000]" style={{ background: FELT }}>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-          <Side title="DRAGON" card={cards.d} flipped={flip.d} win={last?.outcome === "dragon"} />
-          <div className="text-center text-xs font-black tracking-widest text-amber-200/80">VS</div>
-          <Side title="TIGER" card={cards.t} flipped={flip.t} win={last?.outcome === "tiger"} />
+    <Shell title="Dragon Tiger" onBack={onBack}>
+      <div style={{ background: FELT, borderRadius: 16, padding: "18px 10px 14px", border: `2px solid ${GOLD}`, minHeight: 230 }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 22 }}>
+          {cards && <PlayCard key={`d${deal}`} rank={cards.dragon} label="DRAGON" color="#b91c1c" shown={shown} glow={res?.winner === "dragon"} />}
+          {cards && <PlayCard key={`t${deal}`} rank={cards.tiger} label="TIGER" color="#b45309" shown={shown} glow={res?.winner === "tiger"} />}
+          {!cards && <div style={{ height: 150, display: "grid", placeItems: "center", opacity: .5, fontSize: 13 }}>Place a bet and deal</div>}
         </div>
-        <div className="mt-3 h-6 text-center text-sm font-black tracking-wide text-amber-200">{resultText}</div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2">
-        {DT_ZONES.map(z => zoneBtn(z))}
-      </div>
-      <div className="grid grid-cols-1">
-        {zoneBtn({ key: "suited", title: "SUITED TIE", odds: "50 : 1", cls: "from-amber-500 to-amber-800" }, "flex-row justify-center gap-3")}
-      </div>
-
-      <div className="flex items-center gap-1.5 overflow-x-auto py-1 [scrollbar-width:none]">
-        {beads.length === 0 && <span className="text-[11px] text-amber-100/50">Bead plate will fill as rounds are played</span>}
-        {[...beads].reverse().map((o, i) => <Bead key={i} o={o} />)}
-      </div>
-
-      <div className={PANEL}>
-        <ChipRail value={amount} onPick={setAmount} disabled={!canBet} />
-        <div className="mt-3">
-          <AmountControl value={amount} onChange={setAmount} min={min} max={max} disabled={!canBet} />
-        </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-2">
-          <button type="button" onClick={clearBets} disabled={!canBet || !total} className={TOOL}><X size={15} />Clear</button>
-          {phase === "done" ? (
-            <button type="button" onClick={newRound} className={`${ACTION} ${GREEN}`}>NEW ROUND</button>
-          ) : (
-            <button type="button" onClick={deal} disabled={!canBet || total === 0} className={`${ACTION} ${ORANGE}`}>
-              {phase === "dealing" ? "DEALING…" : `DEAL · ${fmt(total)}`}
-            </button>
+        <div style={{ textAlign: "center", minHeight: 40, marginTop: 12, fontWeight: 900, fontSize: 16 }}>
+          {busy && !res && <span style={{ opacity: .8 }}>Dealing…</span>}
+          {res && (
+            <span style={{ color: res.net > 0 ? "#86efac" : res.net < 0 ? "#fca5a5" : "#e5e7eb" }}>
+              {res.winner === "tie" ? "TIE" : res.winner.toUpperCase() + " WINS"} · {res.net > 0 ? <>WON <CountUp value={res.net} /></> : res.net < 0 ? "" : "RETURNED ₹0"}
+            </span>
           )}
         </div>
-        <Notice text={msg} />
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   VORTEX
-   ============================================================ */
-
-function Vortex({ credit, debit, sfx }) {
-  const later = useTimers();
-  const [min, max] = LIMITS.vortex;
-  const [amount, setAmount] = useState(50);
-  const [stake, setStake] = useState(0);
-  const [phase, setPhase] = useState("idle");       // idle | holding | spinning | busted
-  const [note, setNote] = useState("Hold the button to spin the vortex");
-  const outerRef = useRef(null);
-  const innerRef = useRef(null);
-  const ang = useRef({ o: 0, i: 0 });
-  const vel = useRef(0);
-  const frame = useRef(0);
-  const lastT = useRef(0);
-  const stakeRef = useRef(0);
-
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-
-  const paint = (o, i, transition) => {
-    if (outerRef.current) {
-      outerRef.current.style.transition = transition;
-      outerRef.current.style.transform = `rotate(${o}deg)`;
-    }
-    if (innerRef.current) {
-      innerRef.current.style.transition = transition;
-      innerRef.current.style.transform = `rotate(${i}deg)`;
-    }
-  };
-
-  const resolve = (label, innerM) => {
-    const outer = parseFloat(label);
-    const total = round2(outer * innerM);
-    if (total <= 0) {
-      stakeRef.current = 0;
-      setStake(0);
-      setPhase("busted");
-      setNote(`${label} — busted`);
-      sfx.lose();
-      later(() => { setPhase("idle"); setNote("Hold to spin again"); }, 1600);
-      return;
-    }
-    const next = round2(stakeRef.current * total);
-    stakeRef.current = next;
-    setStake(next);
-    setPhase("idle");
-    setNote(`${label} × bonus ${innerM}x = ${total}x`);
-    sfx.win();
-  };
-
-  const startHold = () => {
-    if (phase !== "idle") return;
-    if (stakeRef.current === 0) {
-      if (!debit(amount)) { setNote("Insufficient balance"); return; }
-      stakeRef.current = amount;
-      setStake(amount);
-    }
-    sfx.click();
-    setPhase("holding");
-    setNote("Release to stop the vortex");
-    vel.current = 240;
-    lastT.current = performance.now();
-    const loop = now => {
-      const dt = Math.min(0.05, (now - lastT.current) / 1000);
-      lastT.current = now;
-      vel.current = Math.min(1500, vel.current + 900 * dt);
-      ang.current = {
-        o: mod(ang.current.o + vel.current * dt, 360),
-        i: mod(ang.current.i - vel.current * 1.7 * dt, 360),
-      };
-      paint(ang.current.o, ang.current.i, "none");
-      frame.current = requestAnimationFrame(loop);
-    };
-    frame.current = requestAnimationFrame(loop);
-  };
-
-  const endHold = () => {
-    if (phase !== "holding") return;
-    cancelAnimationFrame(frame.current);
-
-    let pick = VORTEX_TABLE[VORTEX_TABLE.length - 1];
-    const roll = Math.random();
-    let acc = 0;
-    for (const e of VORTEX_TABLE) {
-      acc += e.p;
-      if (roll < acc) { pick = e; break; }
-    }
-    const slots = VORTEX_RING.map((l, idx) => (l === pick.label ? idx : -1)).filter(idx => idx >= 0);
-    const j = slots[rand(slots.length)];
-    const k = rand(INNER_MULTS.length);
-
-    const curO = ang.current.o, curI = ang.current.i;
-    const tO = curO + 1440 + mod(-(j * 30 + 15) - curO, 360);
-    const tI = curI - 1080 - mod(curI + (k * 60 + 30), 360);
-    ang.current = { o: tO, i: tI };
-    if (outerRef.current) outerRef.current.getBoundingClientRect(); // flush before transitioning
-    paint(tO, tI, "transform 2.8s cubic-bezier(.12,.7,.08,1)");
-
-    setPhase("spinning");
-    setNote("Spinning…");
-    later(() => resolve(pick.label, INNER_MULTS[k]), 2900);
-  };
-
-  const partPayout = () => {
-    if (phase !== "idle" || stakeRef.current <= 0) return;
-    const half = round2(stakeRef.current / 2);
-    const rest = round2(stakeRef.current - half);
-    credit(half);
-    stakeRef.current = rest;
-    setStake(rest);
-    sfx.click();
-    setNote(`Paid out ${fmt(half)} · ${fmt(rest)} still in play`);
-  };
-
-  const cashOut = () => {
-    if (phase !== "idle" || stakeRef.current <= 0) return;
-    const out = stakeRef.current;
-    credit(out);
-    stakeRef.current = 0;
-    setStake(0);
-    sfx.win();
-    setNote(`Cashed out ${fmt(out)}`);
-  };
-
-  const locked = stake > 0 || phase !== "idle";
-  const holdText =
-    phase === "holding" ? "RELEASE TO STOP"
-      : phase === "spinning" ? "SPINNING…"
-        : phase === "busted" ? "BUSTED"
-          : stake > 0 ? "HOLD TO SPIN"
-            : `HOLD TO SPIN · ${fmt(amount)}`;
-
-  return (
-    <div className="space-y-4">
-      <div className="relative mx-auto aspect-square w-72 select-none">
-        <div
-          className="absolute left-1/2 -top-1 z-20 -translate-x-1/2"
-          style={{ width: 0, height: 0, borderLeft: "10px solid transparent", borderRight: "10px solid transparent", borderTop: "20px solid #fcd34d", filter: "drop-shadow(0 2px 3px #000)" }}
-        />
-        <svg ref={outerRef} viewBox="0 0 300 300" className="absolute inset-0 h-full w-full" style={{ transformOrigin: "50% 50%" }}>
-          <circle cx="150" cy="150" r="148" fill="#14081f" stroke="#d4af37" strokeWidth="4" />
-          {VORTEX_RING.map((label, j) => {
-            const a1 = j * 30, a2 = a1 + 30;
-            const [x, y] = polar(120, a1 + 15);
-            return (
-              <g key={`o${j}`}>
-                <path d={wedge(96, 140, a1, a2)} fill={VORTEX_COLORS[label]} stroke="#d4af37" strokeWidth=".8" />
-                <text x={x} y={y} fill="#fff" fontSize="11" fontWeight="900" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${a1 + 15} ${x} ${y})`}>
-                  {label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        <svg ref={innerRef} viewBox="0 0 300 300" className="absolute inset-0 h-full w-full" style={{ transformOrigin: "50% 50%" }}>
-          {INNER_MULTS.map((m, k) => {
-            const a1 = k * 60, a2 = a1 + 60;
-            const [x, y] = polar(72, a1 + 30);
-            return (
-              <g key={`i${k}`}>
-                <path d={wedge(50, 92, a1, a2)} fill={k % 2 ? "#7c2d12" : "#831843"} stroke="#fde68a" strokeWidth="1" />
-                <text x={x} y={y} fill="#fde68a" fontSize="12" fontWeight="900" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${a1 + 30} ${x} ${y})`}>
-                  {`×${m}`}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        <div className="absolute inset-[32%] grid place-items-center rounded-full border-2 border-amber-300 bg-black/80 text-center shadow-[0_0_24px_#fbbf2488]">
-          <div>
-            <div className="text-[10px] tracking-widest text-amber-200/80">LIVE STAKE</div>
-            <div className="text-sm font-black tabular-nums text-white">{fmt(stake)}</div>
-          </div>
-        </div>
       </div>
 
-      <div className={PANEL}>
-        <ChipRail value={amount} onPick={setAmount} disabled={locked} />
-        <div className="mt-3">
-          <AmountControl value={amount} onChange={setAmount} min={min} max={max} disabled={locked} />
-        </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        {sideBtn("dragon", "DRAGON", "1 : 1")}
+        {sideBtn("tie", "TIE", "11 : 1")}
+        {sideBtn("tiger", "TIGER", "1 : 1")}
+      </div>
 
-        <button
-          type="button"
-          onPointerDown={startHold}
-          onPointerUp={endHold}
-          onPointerLeave={endHold}
-          onPointerCancel={endHold}
-          onContextMenu={e => e.preventDefault()}
-          disabled={phase === "spinning" || phase === "busted"}
-          className={`${ACTION} mt-3 touch-none ${phase === "holding" ? ORANGE : GREEN}`}
-        >
-          <span className="inline-flex items-center justify-center gap-2"><Hand size={18} />{holdText}</span>
+      <Chips value={chip} onChange={setChip} />
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <button onClick={dealCards} disabled={busy} style={{ ...btn, background: `linear-gradient(180deg,#fde68a,${GOLD})`, color: "#111", padding: "12px 34px", fontSize: 15, opacity: busy ? .5 : 1 }}>
+          DEAL {R(chip)}
         </button>
-
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button type="button" onClick={partPayout} disabled={phase !== "idle" || stake <= 0} className={TOOL}>PART PAYOUT</button>
-          <button type="button" onClick={cashOut} disabled={phase !== "idle" || stake <= 0} className={TOOL}>CASH OUT</button>
-        </div>
-        <Notice text={note} />
       </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(10,1fr)", gap: 5, marginTop: 14 }}>
+        {Array.from({ length: 30 }, (_, i) => hist[i]).map((h, i) => (
+          <span key={i} title={h ? h.w : ""} style={{ width: 14, height: 14, borderRadius: "50%", margin: "0 auto",
+            background: !h ? "#1e293b" : h.w === "dragon" ? "#ef4444" : h.w === "tiger" ? "#facc15" : "#22c55e" }} />
+        ))}
+      </div>
+
+      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
+    </Shell>
+  );
+}
+
+/* ================= AVIATOR =================
+   Presentation + round control. The server decides the crash point and settles every cash out.
+   Client only: starts a round, polls the round status, sends the cash out, and draws what the server reports. */
+const AV_K = 0.07;                 // server curve: multiplier(t) = e^(K * t)
+const AV_W = 300, AV_H = 180;
+const AV_QUICK = [10, 25, 100, 500];
+
+function Aviator({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+
+  const [phase, setPhase] = useState("idle");          // idle | flying | done
+  const [busy, setBusy] = useState(false);             // start request in progress
+  const [chip, setChip] = useState(10);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoAt, setAutoAt] = useState("2.00");
+  const [m, setM] = useState(1);
+  const [pts, setPts] = useState([1]);
+  const [res, setRes] = useState(null);                // { won, crash, net }
+  const [boom, setBoom] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [burst, setBurst] = useState(0);
+
+  const roundRef = useRef(null), timer = useRef(null), poll = useRef(null), finRef = useRef(null);
+  const doneRef = useRef(false), stakeRef = useRef(0), mRef = useRef(1);
+  const startRef = useRef(0), offRef = useRef(0);      // server start time (ms) and clock offset
+  const autoRef = useRef(0);
+  autoRef.current = autoOn ? (parseFloat(autoAt) || 0) : 0;
+
+  useEffect(() => () => { clearInterval(timer.current); clearInterval(poll.current); clearInterval(finRef.current); }, []);
+
+  // multiplier on the same curve as the server, measured from the server's start time
+  const curM = () => Math.max(1, Math.exp(AV_K * ((Date.now() + offRef.current - startRef.current) / 1000)));
+
+  function explode() {
+    setBoom(true); setShake(true);
+    setTimeout(() => setShake(false), 500);
+  }
+
+  // round is over. A win keeps the plane flying to the real crash point; a loss stops it there.
+  function finish(rawCrash, won) {
+    const crash = Math.max(1, num(rawCrash, Math.max(1, mRef.current)));
+    clearInterval(timer.current);
+    clearInterval(poll.current);
+    if (won) {
+      finRef.current = setInterval(() => {
+        const v = mRef.current * 1.05;
+        if (v >= crash) {
+          clearInterval(finRef.current);
+          mRef.current = crash; setM(crash); setPts(p => [...p, crash]);
+          explode();
+          return;
+        }
+        mRef.current = v; setM(v); setPts(p => [...p, v]);
+      }, 60);
+    } else {
+      setPts(p => [...p.filter(x => x <= crash), crash]);
+      mRef.current = crash; setM(crash);
+      explode();
+    }
+  }
+
+  function tick() {
+    const v = curM();
+    mRef.current = v;
+    setM(v);
+    setPts(p => (p.length > 500 ? [...p.slice(-499), v] : [...p, v]));
+    if (autoRef.current && v >= autoRef.current) cashOut();
+    if (v >= 100) cashOut();
+  }
+
+  // asks the server if the round has crashed. The crash point is only sent after it happened.
+  async function pollStatus() {
+    if (!roundRef.current || doneRef.current) return;
+    let data = null;
+    try { ({ data } = await supabase.rpc("casino_aviator_status", { p_round: roundRef.current })); }
+    catch { return; }
+    if (!data?.success || data.status === "open") return;
+    doneRef.current = true;
+    roundRef.current = null;
+    setPhase("done");
+    const won = data.status === "cashed";
+    const crash = num(data.crash, mRef.current);
+    setRes({ won, crash, net: num(data.won_amount, 0) - stakeRef.current });
+    if (data.new_balance !== undefined && data.new_balance !== null) setBal(num(data.new_balance, 0));
+    if (won) setBurst(b => b + 1);
+    reload && reload();
+    finish(crash, won);
+  }
+
+  async function cashOut() {
+    if (!roundRef.current || doneRef.current) return;
+    doneRef.current = true;
+    clearInterval(timer.current);
+    clearInterval(poll.current);
+    const id = roundRef.current;
+    const mult = Math.min(100, Math.round(mRef.current * 100) / 100);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_aviator_cashout", { p_round: id, p_mult: mult })); }
+    catch (e) { error = e; }
+    roundRef.current = null;
+    setPhase("done");
+    if (error || !data?.success) { say ? say(friendly(error), 1) : flash(friendly(error)); return; }
+    const won = !!data.won, crash = num(data.crash, mult);
+    setRes({ won, crash, net: num(data.won_amount, 0) - stakeRef.current });
+    if (data.new_balance !== undefined && data.new_balance !== null) setBal(num(data.new_balance, 0));
+    if (won) setBurst(b => b + 1);
+    reload && reload();
+    finish(crash, won);
+  }
+
+  const start = async () => {
+    if (phase === "flying" || busy) return;
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBal(before - chip);
+    setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_aviator_start", { p_bet: chip })); }
+    catch (e) { error = e; }
+    setBusy(false);
+    if (error || !data?.success) { setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
+
+    roundRef.current = data.round_id;
+    stakeRef.current = chip; doneRef.current = false;
+    startRef.current = num(data.start_ms, Date.now());
+    offRef.current = num(data.server_ms, Date.now()) - Date.now();
+    clearInterval(finRef.current);
+    mRef.current = 1;
+    setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying");
+    clearInterval(timer.current); clearInterval(poll.current);
+    timer.current = setInterval(tick, 100);
+    poll.current = setInterval(pollStatus, 2000);        // one light status call every 2 seconds while flying
+  };
+
+  // ---- custom amount ("Other ₹") ----
+  const commitCustom = () => {
+    let n = Math.floor(Number(customVal));
+    if (!Number.isFinite(n) || n < MIN) n = MIN;
+    if (n > MAX) n = MAX;
+    setChip(n);
+    setCustomVal(String(n));
+  };
+  const pickQuick = v => { setChip(v); setCustomOpen(false); };
+
+  // ---- chart geometry (log scale on the y axis) ----
+  const maxV = Math.max(2, ...pts);
+  const xy = (i, v) => [
+    (i / Math.max(pts.length - 1, 1)) * AV_W * 0.94,
+    AV_H - 16 - (Math.log(v) / Math.log(maxV)) * (AV_H - 40),
+  ];
+  const line = pts.map((v, i) => { const [x, y] = xy(i, v); return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ");
+  const [lx] = xy(pts.length - 1, pts[pts.length - 1]);
+  const area = `${line} L${lx.toFixed(1)} ${AV_H} L0 ${AV_H} Z`;
+  const [px, py] = xy(pts.length - 1, pts[pts.length - 1]);
+  const planeAng = (() => {
+    if (pts.length < 2) return 0;
+    const [x1, y1] = xy(pts.length - 2, pts[pts.length - 2]);
+    return Math.atan2(py - y1, px - x1) * 180 / Math.PI;
+  })();
+  const crashed = !!res && !res.won;
+
+  const label = phase === "idle" ? "WAITING"
+    : phase === "flying" ? "FLYING"
+    : res ? (res.won ? "CASHED OUT" : `FLEW AWAY AT ${fx(res.crash)}`)
+    : "WAITING";
+  const labelCls = phase === "flying" ? "text-amber-300" : crashed ? "text-red-400" : "text-slate-400";
+  const multText = phase === "idle" ? "1.00x"
+    : crashed && boom && res ? fx(res.crash)
+    : fx(m);
+  const multSize = 60 + Math.min(26, (m - 1) * 6);
+
+  const actionText = phase === "flying" ? `CASH OUT ${R(stakeRef.current * m)}`
+    : busy ? "WAITING" : "BET";
+  const actionCls = phase === "flying" ? "bg-orange-500 text-white animate-pulse"
+    : busy ? "bg-slate-700 text-slate-300"
+    : "bg-emerald-500 text-slate-950 hover:bg-emerald-400";
+  const actionDisabled = busy;
+
+  const onAction = () => (phase === "flying" ? cashOut() : start());
+
+  // ---- styles: inline, so the screen looks right even when Tailwind is not loaded ----
+  const ST = {
+    page: { minHeight: "100vh", background: "#0b1120", color: "#f1f5f9", display: "flex", justifyContent: "center", fontFamily: "system-ui,sans-serif", boxSizing: "border-box" },
+    wrap: { width: "100%", maxWidth: 448, display: "flex", flexDirection: "column", padding: "12px 12px 120px", boxSizing: "border-box" },
+    lobby: { alignSelf: "flex-start", padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer" },
+    stage: { position: "relative", marginTop: 12, aspectRatio: "5 / 3", borderRadius: 16, overflow: "hidden", background: "#070d1c", border: "1px solid #1e293b",
+      backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)",
+      backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" },
+    label: { position: "absolute", top: 12, left: 0, right: 0, textAlign: "center", fontSize: 12, fontWeight: 900, letterSpacing: 3,
+      color: phase === "flying" ? "#fcd34d" : crashed ? "#f87171" : "#94a3b8" },
+    multWrap: { position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" },
+    mult: { fontSize: multSize, fontWeight: 900, color: crashed ? "#f87171" : "#f8fafc", textShadow: "0 3px 12px #000", transition: "font-size .2s ease-out" },
+    result: { minHeight: 24, marginTop: 8, textAlign: "center", fontSize: 14, fontWeight: 700 },
+    panel: { marginTop: 8, background: "#0f172a", border: "1px solid #1e293b", borderRadius: 16, padding: 12, display: "grid", gap: 12, boxSizing: "border-box" },
+    betBox: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#020617", border: "1px solid #334155", borderRadius: 12, padding: "8px 16px" },
+    betLabel: { color: "#64748b", fontSize: 13, fontWeight: 800 },
+    betAmt: { color: "#ffffff", fontSize: 24, fontWeight: 900 },
+    chips: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 },
+    row: { display: "flex", alignItems: "center", gap: 8 },
+    rupee: { color: "#cbd5e1", fontSize: 14, fontWeight: 800 },
+    input: { flex: 1, minWidth: 0, padding: "10px 14px", borderRadius: 12, background: "#1e293b", border: "1px solid #475569", color: "#ffffff", fontSize: 18, fontWeight: 800, textAlign: "right", outline: "none", boxSizing: "border-box" },
+    autoRow: { display: "flex", alignItems: "center", gap: 12 },
+    autoLabel: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, color: "#e2e8f0", cursor: "pointer" },
+    autoInput: { marginLeft: "auto", width: 112, padding: "8px 10px", borderRadius: 10, border: "1px solid #475569", background: "#1e293b", color: "#ffffff", fontSize: 16, fontWeight: 800, textAlign: "right", boxSizing: "border-box" },
+    action: { width: "100%", padding: "16px", borderRadius: 14, border: "none", fontSize: 18, fontWeight: 900, letterSpacing: 1,
+      cursor: busy ? "default" : "pointer", opacity: busy ? .75 : 1,
+      background: phase === "flying" ? "#f97316" : busy ? "#334155" : "#10b981",
+      color: phase === "flying" ? "#ffffff" : busy ? "#cbd5e1" : "#022c22",
+      animation: phase === "flying" ? "x7pulse 1.2s infinite" : "none" },
+    footer: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(15,23,42,.97)", borderTop: "1px solid #1e293b",
+      padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, boxSizing: "border-box" },
+  };
+  const tokenStyle = active => ({
+    height: 48, borderRadius: 999, color: "#ffffff", fontWeight: 800, fontSize: 14, cursor: "pointer", boxSizing: "border-box",
+    border: `2px dashed ${active ? "#34d399" : "rgba(226,232,240,.45)"}`,
+    background: "radial-gradient(circle at 35% 30%, #475569, #0f172a 70%)",
+    boxShadow: active ? "0 0 0 2px #34d399, 0 6px 14px rgba(0,0,0,.5)" : "0 4px 10px rgba(0,0,0,.45)",
+    transform: active ? "translateY(-2px)" : "none",
+  });
+  const focusOn = e => { e.target.style.borderColor = "#34d399"; e.target.style.boxShadow = "0 0 0 2px rgba(52,211,153,.35)"; };
+  const focusOff = e => { e.target.style.borderColor = "#475569"; e.target.style.boxShadow = "none"; };
+
+  return (
+    <div style={ST.page}>
+      <style>{CSS}</style>
+      <div style={ST.wrap}>
+
+        <div><button onClick={onBack} style={ST.lobby}>« Lobby</button></div>
+
+        {/* main graph */}
+        <div style={ST.stage}>
+          <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+            <defs>
+              <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#ef4444" stopOpacity=".5" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
+              </linearGradient>
+              <filter id="avGlow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
+            {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
+            {pts.length > 1 && !boom && (
+              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)})`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
+                <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
+                <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
+              </g>
+            )}
+            {boom && (
+              <g transform={`translate(${px} ${py})`}>
+                <circle r="14" fill="#fb923c" style={{ transformOrigin: "0 0", animation: "x7boom .8s ease-out forwards" }} />
+                <circle r="9" fill="#fde68a" style={{ transformOrigin: "0 0", animation: "x7boom .6s ease-out forwards" }} />
+              </g>
+            )}
+          </svg>
+
+          <div style={ST.label}>{label}</div>
+          <div style={ST.multWrap}><div style={ST.mult}>{multText}</div></div>
+        </div>
+
+        {/* result */}
+        <div style={ST.result}>
+          {res?.won && <span style={{ color: "#34d399" }}>Won {R(res.net)}</span>}
+          {res && !res.won && <span style={{ color: "#f87171" }}>Lost {R(-res.net)}</span>}
+        </div>
+
+        {/* betting panel */}
+        <div style={ST.panel}>
+          <div style={ST.betBox}>
+            <span style={ST.betLabel}>BET</span>
+            <span style={ST.betAmt}>{R(chip)}</span>
+          </div>
+
+          <div style={ST.chips}>
+            {AV_QUICK.map(v => (
+              <button key={v} onClick={() => pickQuick(v)} style={tokenStyle(chip === v && !customOpen)}>{v}</button>
+            ))}
+            <button onClick={() => { setCustomOpen(o => !o); setCustomVal(""); }} style={{ ...tokenStyle(customOpen), fontSize: 12 }}>Other ₹</button>
+          </div>
+
+          {customOpen && (
+            <div style={ST.row}>
+              <span style={ST.rupee}>₹</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN}
+                max={MAX}
+                autoFocus
+                value={customVal}
+                placeholder={`${MIN} - ${MAX}`}
+                onFocus={e => { focusOn(e); (e => setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 300))(e); }}
+                onBlur={e => { focusOff(e); commitCustom(); }}
+                onChange={e => { setCustomVal(e.target.value); const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= MIN && n <= MAX) setChip(n); }}
+                onKeyDown={e => { if (e.key === "Enter") { commitCustom(); e.currentTarget.blur(); } }}
+                style={ST.input}
+              />
+            </div>
+          )}
+
+          <div style={ST.autoRow}>
+            <label style={ST.autoLabel}>
+              <input type="checkbox" checked={autoOn} onChange={e => setAutoOn(e.target.checked)} style={{ accentColor: "#10b981", width: 16, height: 16 }} />
+              Auto x
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="1.01"
+              value={autoAt}
+              disabled={!autoOn}
+              onFocus={e => { focusOn(e); (e => setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 300))(e); }}
+              onChange={e => setAutoAt(e.target.value)}
+              onBlur={e => { focusOff(e); const v = parseFloat(autoAt); if (!Number.isFinite(v) || v < 1.01) setAutoAt("2.00"); }}
+              style={{ ...ST.autoInput, opacity: autoOn ? 1 : .4 }}
+            />
+          </div>
+
+          <button onClick={onAction} disabled={actionDisabled} style={ST.action}>{actionText}</button>
+        </div>
+      </div>
+
+      <div style={ST.footer}>
+        <div>Balance <b style={{ color: "#34d399" }}>{R(bal)}</b></div>
+        <div style={{ color: "#94a3b8" }}>{R(MIN)} - {R(MAX)}</div>
+      </div>
+
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
     </div>
   );
 }
 
-/* ============================================================
-   MINES
-   ============================================================ */
+/* ================= SOUND (one switch for the whole casino) ================= */
+const soundOn = () => { try { return localStorage.getItem("x7_sound") === "on"; } catch { return false; } };
+const playSfx = (f, d) => { if (soundOn()) playTone(f, d); };
+function SoundBtn() {
+  const [on, setOn] = useState(soundOn);
+  const toggle = () => {
+    const n = !on;
+    setOn(n);
+    try { localStorage.setItem("x7_sound", n ? "on" : "off"); } catch {}
+    if (n) playTone(660, 0.08);
+  };
+  return <button onClick={toggle} style={btn} aria-label="Sound on or off">{on ? "🔊" : "🔇"}</button>;
+}
+const actionBtn = { width: "100%", padding: "14px", borderRadius: 14, border: "none", fontSize: 17, fontWeight: 900, letterSpacing: 1,
+  background: "linear-gradient(180deg,#fde68a,#d4af37)", color: "#111", cursor: "pointer", marginTop: 12 };
 
-function Mines({ credit, debit, sfx }) {
-  const [min, max] = LIMITS.mines;
-  const [amount, setAmount] = useState(50);
+/* ================= MINES (server decides mine positions) ================= */
+const MINE_OPTIONS = [3, 5, 10, 15];
+function Mines({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [chip, setChip] = useState(10);
   const [mineCount, setMineCount] = useState(3);
-  const [phase, setPhase] = useState("idle");       // idle | live | lost | cashed
-  const [mines, setMines] = useState(() => new Set());
-  const [opened, setOpened] = useState(() => new Set());
-  const [stakeLive, setStakeLive] = useState(0);
-  const [msg, setMsg] = useState("");
+  const [roundId, setRoundId] = useState(null);
+  const [bet, setBet] = useState(0);
+  const [cells, setCells] = useState([]);            // safe cells the player opened
+  const [mines, setMines] = useState([]);            // filled in only when the round ends
+  const [hitCell, setHitCell] = useState(null);
+  const [mult, setMult] = useState(1);
+  const [status, setStatus] = useState("idle");      // idle | playing | busted | cashed
+  const [busy, setBusy] = useState(false);
+  const [burst, setBurst] = useState(0);
 
-  const k = opened.size;
-  const mult = k ? multFor(k, mineCount) : 1;
-  const nextMult = multFor(k + 1, mineCount);
-  const live = phase === "live";
-  const ended = phase === "lost" || phase === "cashed";
-
-  const reset = () => {
-    setPhase("idle");
-    setOpened(new Set());
-    setMines(new Set());
-    setMsg("");
+  const start = async () => {
+    if (busy || status === "playing") return;
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBal(before - chip); setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_mines_start", { p_bet: chip, p_mines: mineCount })); } catch (e) { error = e; }
+    setBusy(false);
+    if (error || !data?.success) { setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
+    setRoundId(data.round_id); setBet(chip); setCells([]); setMines([]); setHitCell(null); setMult(1); setStatus("playing");
+    if (data.new_balance != null) setBal(num(data.new_balance, 0));
+    playSfx(440, 0.05);
   };
 
-  const start = () => {
-    if (!debit(amount)) { setMsg("Insufficient balance"); return; }
-    const order = Array.from({ length: 25 }, (_, i) => i);
-    for (let i = 24; i > 0; i--) {
-      const j = rand(i + 1);
-      [order[i], order[j]] = [order[j], order[i]];
-    }
-    setMines(new Set(order.slice(0, mineCount)));
-    setOpened(new Set());
-    setStakeLive(amount);
-    setPhase("live");
-    setMsg("Find the gems and avoid the bombs");
-    sfx.click();
-  };
-
-  const reveal = idx => {
-    if (!live || opened.has(idx)) return;
-    if (mines.has(idx)) {
-      setPhase("lost");
-      sfx.lose();
-      setMsg(`Boom! Lost ${fmt(stakeLive)}`);
-      return;
-    }
-    const next = new Set(opened);
-    next.add(idx);
-    setOpened(next);
-    sfx.click();
-    if (next.size === 25 - mineCount) {
-      const payout = round2(stakeLive * multFor(next.size, mineCount));
-      credit(payout);
-      setPhase("cashed");
-      sfx.win();
-      setMsg(`Board cleared! Paid ${fmt(payout)}`);
+  const open = async cell => {
+    if (status !== "playing" || busy || cells.includes(cell)) return;
+    setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_mines_reveal", { p_round: roundId, p_cell: cell })); } catch (e) { error = e; }
+    setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : flash(friendly(error));
+    if (data.hit) {
+      setHitCell(cell); setCells(c => [...c, cell]); setMines(data.mines || []); setStatus("busted");
+      if (data.new_balance != null) setBal(num(data.new_balance, 0));
+      reload && reload();
+      playSfx(140, 0.3);
+    } else {
+      setCells(c => [...c, cell]); setMult(num(data.multiplier, 1));
+      playSfx(880, 0.06);
     }
   };
 
-  const cashOut = () => {
-    if (!live || k === 0) return;
-    const payout = round2(stakeLive * mult);
-    credit(payout);
-    setPhase("cashed");
-    sfx.win();
-    setMsg(`Cashed out ${fmt(payout)} at ${mult.toFixed(2)}x`);
+  const cashOut = async () => {
+    if (status !== "playing" || busy || cells.length < 1) return;
+    setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_mines_cashout", { p_round: roundId })); } catch (e) { error = e; }
+    setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : flash(friendly(error));
+    setMines(data.mines || []); setStatus("cashed");
+    if (data.new_balance != null) setBal(num(data.new_balance, 0));
+    setBurst(b => b + 1); playSfx(1040, 0.25); reload && reload();
   };
 
-  const primary = live
-    ? k > 0
-      ? { text: `CASH OUT ${fmt(stakeLive * mult)}`, run: cashOut, tone: ORANGE }
-      : { text: "REVEAL A TILE", run: null, tone: ORANGE }
-    : ended
-      ? { text: "NEW GAME", run: reset, tone: GREEN }
-      : { text: `START · BET ${fmt(amount)}`, run: start, tone: GREEN };
+  const cellView = i => {
+    const isMine = mines.includes(i), opened = cells.includes(i);
+    let content = "", bg = "#1e293b", border = "#334155", color = "#94a3b8";
+    if (opened) { bg = "#064e3b"; border = "#10b981"; color = "#d1fae5"; content = "◆"; }
+    if (isMine) { bg = i === hitCell ? "#7f1d1d" : "#3f1d1d"; border = "#ef4444"; color = "#fecaca"; content = "✹"; }
+    return (
+      <button key={i} onClick={() => open(i)} disabled={status !== "playing" || opened || busy}
+        style={{ aspectRatio: "1", borderRadius: 10, border: `1px solid ${border}`, background: bg, color, fontSize: 22, fontWeight: 900,
+          cursor: status === "playing" && !opened ? "pointer" : "default" }}>{content}</button>
+    );
+  };
+
+  const payout = Math.round(bet * mult);
+  return (
+    <Shell title="Mines" onBack={onBack} right={<SoundBtn />}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, opacity: .8 }}>Mines {mineCount}</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: "#facc15" }}>{fx(mult)}x</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
+        {Array.from({ length: 25 }, (_, i) => cellView(i))}
+      </div>
+      {status === "busted" && <div style={{ marginTop: 12, textAlign: "center", color: "#fca5a5", fontWeight: 900 }}>Mine! Lost {R(bet)}</div>}
+      {status === "cashed" && <div style={{ marginTop: 12, textAlign: "center", color: "#86efac", fontWeight: 900 }}>Cashed out {R(payout)}</div>}
+      <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+        {MINE_OPTIONS.map(n => (
+          <button key={n} disabled={status === "playing"} onClick={() => setMineCount(n)}
+            style={{ ...btn, background: mineCount === n ? "#facc15" : btn.background, color: mineCount === n ? "#111" : btn.color }}>{n} mines</button>
+        ))}
+      </div>
+      <Chips value={chip} onChange={setChip} />
+      {status === "playing" ? (
+        <button onClick={cashOut} disabled={busy || cells.length < 1} style={{ ...actionBtn, background: "#f97316", color: "#fff" }}>
+          CASH OUT {R(payout)}
+        </button>
+      ) : (
+        <button onClick={start} disabled={busy} style={actionBtn}>{busy ? "..." : `BET ${R(chip)}`}</button>
+      )}
+      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
+    </Shell>
+  );
+}
+
+/* ================= VORTEX (server decides the slot) ================= */
+const VORTEX = [
+  { m: 0, t: "0x" }, { m: 0.5, t: "0.5x" }, { m: 1.5, t: "1.5x" }, { m: 2, t: "2x" },
+  { m: 5, t: "5x" }, { m: 10, t: "10x" }, { m: 50, t: "50x" },
+];
+const VSEG = 360 / VORTEX.length;
+const VCOL = ["#374151", "#7c2d12", "#1e40af", "#0f766e", "#7e22ce", "#b45309", "#be123c"];
+function Vortex({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [chip, setChip] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [rot, setRot] = useState(0);
+  const [anim, setAnim] = useState(false);
+  const [res, setRes] = useState(null);             // { slot, mult, net }
+  const [burst, setBurst] = useState(0);
+  const [recent, setRecent] = useState([]);
+
+  const spin = async () => {
+    if (busy) return;
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBal(before - chip); setBusy(true); setRes(null);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_vortex_spin", { p_bet: chip })); } catch (e) { error = e; }
+    if (error || !data?.success) { setBusy(false); setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
+
+    const idx = Math.min(VORTEX.length - 1, Math.max(0, Math.round(num(data.slot, 0))));
+    const center = idx * VSEG + VSEG / 2;
+    setAnim(true);
+    setRot(r => r + 1800 + mod(-center - r, 360));       // turns, then stops on the server's slot
+    setTimeout(() => {
+      const mult = VORTEX[idx].m;
+      const net = num(data.won_amount, 0) - chip;
+      setRes({ slot: idx, mult, net });
+      setRecent(h => [idx, ...h].slice(0, 12));
+      if (data.new_balance != null) setBal(num(data.new_balance, 0));
+      setBusy(false);
+      if (net > 0) setBurst(b => b + 1);
+      playSfx(net > 0 ? 880 : 220, net > 0 ? 0.25 : 0.12);
+      reload && reload();
+    }, 3600);
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-2xl border border-amber-800/40 bg-black/40 p-2">
-          <div className="text-[10px] tracking-widest text-amber-100/60">MULTIPLIER</div>
-          <div className="text-xl font-black tabular-nums text-emerald-300">{mult.toFixed(2)}x</div>
-        </div>
-        <div className="rounded-2xl border border-amber-800/40 bg-black/40 p-2">
-          <div className="text-[10px] tracking-widest text-amber-100/60">NEXT</div>
-          <div className="text-xl font-black tabular-nums text-amber-200">{live && k < 25 - mineCount ? `${nextMult.toFixed(2)}x` : "—"}</div>
-        </div>
-        <div className="rounded-2xl border border-amber-800/40 bg-black/40 p-2">
-          <div className="text-[10px] tracking-widest text-amber-100/60">GEMS LEFT</div>
-          <div className="text-xl font-black tabular-nums text-white">{25 - mineCount - k}</div>
-        </div>
+    <Shell title="Vortex" onBack={onBack} right={<SoundBtn />}>
+      <div style={{ position: "relative", width: "min(78vw,300px)", aspectRatio: "1", margin: "10px auto 0" }}>
+        <div style={{ position: "absolute", left: "50%", top: -8, transform: "translateX(-50%)", width: 0, height: 0,
+          borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: `16px solid ${GOLD_L}`, zIndex: 3 }} />
+        <svg viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block", transform: `rotate(${rot}deg)`,
+          transition: anim ? "transform 3.5s cubic-bezier(.17,.67,.2,1)" : "none", filter: "drop-shadow(0 18px 24px #000c)" }}>
+          <circle cx="150" cy="150" r="148" fill="#1f1305" />
+          {VORTEX.map((v, i) => {
+            const a1 = i * VSEG, a2 = (i + 1) * VSEG;
+            const [x1, y1] = pt(140, a1), [x2, y2] = pt(140, a2);
+            const [tx, ty] = pt(92, a1 + VSEG / 2);
+            return (
+              <g key={i}>
+                <path d={`M150 150 L${x1} ${y1} A140 140 0 0 1 ${x2} ${y2} Z`} fill={VCOL[i]} stroke={GOLD_L} strokeWidth="1" />
+                <text x={tx} y={ty} fill="#fff" fontSize="13" fontWeight="900" textAnchor="middle" dominantBaseline="middle"
+                  transform={`rotate(${a1 + VSEG / 2} ${tx} ${ty})`}>{v.t}</text>
+              </g>
+            );
+          })}
+          <circle cx="150" cy="150" r="26" fill={GOLD_L} />
+        </svg>
       </div>
 
-      <div className="grid grid-cols-5 gap-2">
-        {Array.from({ length: 25 }, (_, idx) => {
-          const isOpen = opened.has(idx);
-          const isMine = mines.has(idx);
-          let cls = "border border-emerald-900/70 bg-gradient-to-br from-[#1f3b2c] to-[#0a1a11] hover:brightness-125";
-          let content = null;
-          if (isOpen) {
-            cls = "bg-gradient-to-br from-emerald-300 to-emerald-600 shadow-[0_0_14px_#34d39988]";
-            content = <Gem size={22} className="text-white" />;
-          } else if (ended && isMine) {
-            cls = "bg-gradient-to-br from-rose-500 to-red-800";
-            content = <Bomb size={20} className="text-white" />;
-          }
+      <div style={{ minHeight: 26, marginTop: 10, textAlign: "center", fontWeight: 900 }}>
+        {res && (res.net > 0 ? <span style={{ color: "#86efac" }}>{VORTEX[res.slot].t} · WON {R(res.net)}</span>
+          : res.net < 0 ? <span style={{ color: "#fca5a5" }}>{VORTEX[res.slot].t} · LOST {R(-res.net)}</span>
+          : <span>{VORTEX[res.slot].t} · RETURNED</span>)}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 8 }}>
+        {recent.map((idx, i) => (
+          <span key={i} style={{ flex: "0 0 auto", padding: "3px 9px", borderRadius: 99, fontSize: 12, fontWeight: 800, background: VCOL[idx], color: "#fff" }}>{VORTEX[idx].t}</span>
+        ))}
+      </div>
+
+      <Chips value={chip} onChange={setChip} />
+      <button onClick={spin} disabled={busy} style={{ ...actionBtn, opacity: busy ? .6 : 1 }}>{busy ? "SPINNING..." : `SPIN ${R(chip)}`}</button>
+
+      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
+    </Shell>
+  );
+}
+
+/* ================= LOBBY ================= */
+const CardArt = memo(function CardArt({ kind }) {
+  if (kind === "mines") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -10, top: -10, width: 180, height: 180, opacity: .9 }}>
+        {Array.from({ length: 25 }, (_, i) => (
+          <rect key={i} x={20 + (i % 5) * 32} y={20 + Math.floor(i / 5) * 32} width="26" height="26" rx="6"
+            fill={i % 4 === 1 ? "#f97316" : "#166534"} opacity={i % 4 === 1 ? .9 : .6} />
+        ))}
+      </svg>
+    );
+  }
+  if (kind === "vortex") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -30, top: -30, width: 200, height: 200 }}>
+        <circle cx="100" cy="100" r="90" fill="#2e1065" stroke="#facc15" strokeWidth="4" />
+        <circle cx="100" cy="100" r="50" fill="#7e22ce" />
+        <circle cx="100" cy="100" r="14" fill="#facc15" />
+      </svg>
+    );
+  }
+  if (kind === "roulette") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -40, top: -36, width: 200, height: 200 }}>
+        <defs>
+          <radialGradient id="lbWood" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor="#7a4a22" /><stop offset="1" stopColor="#1f1008" />
+          </radialGradient>
+        </defs>
+        <circle cx="100" cy="100" r="96" fill="url(#lbWood)" stroke="#d4af37" strokeWidth="3" />
+        {Array.from({ length: 12 }, (_, i) => (
+          <path key={i} d={wedge(100, 100, 44, 86, i * 30, i * 30 + 30)} fill={i % 2 ? "#111318" : "#b91c1c"} stroke="#d4af37" strokeWidth=".6" />
+        ))}
+        <circle cx="100" cy="100" r="34" fill="#1f2937" stroke="#facc15" strokeWidth="2" />
+        <circle cx="100" cy="100" r="12" fill="#facc15" />
+        <circle cx="100" cy="18" r="5" fill="#fff" />
+      </svg>
+    );
+  }
+  if (kind === "dragon") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -20, top: -14, width: 190, height: 190 }}>
+        <g transform="rotate(-12 70 100)">
+          <rect x="22" y="40" width="82" height="120" rx="10" fill="#b91c1c" stroke="#facc15" strokeWidth="2.5" />
+          <text x="63" y="112" textAnchor="middle" fill="#facc15" fontSize="40" fontWeight="900">D</text>
+        </g>
+        <g transform="rotate(12 130 100)">
+          <rect x="96" y="40" width="82" height="120" rx="10" fill="#b45309" stroke="#facc15" strokeWidth="2.5" />
+          <text x="137" y="112" textAnchor="middle" fill="#fff7c2" fontSize="40" fontWeight="900">T</text>
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 200 200" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+      <defs>
+        <linearGradient id="lbTrail" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#fde68a" stopOpacity="0" /><stop offset="1" stopColor="#fde68a" stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      {[30, 70, 110, 150].map(y => <line key={y} x1="0" x2="200" y1={y} y2={y} stroke="#ffffff10" />)}
+      <path d="M-10 185 Q 80 170 130 100 T 215 25" fill="none" stroke="url(#lbTrail)" strokeWidth="5" strokeLinecap="round" />
+      <g transform="translate(160 40) rotate(-32)">
+        <path d="M-16 0 L16 -4 L24 0 L16 4 Z" fill="#fff" />
+        <path d="M-6 0 L-22 -10 L-18 0 L-22 10 Z" fill="#fde68a" />
+      </g>
+    </svg>
+  );
+});
+
+export default function CasinoHub({ supabase, me, reload, say, cfg }) {
+  const C = cfg || {};
+  const games = C.games || {};
+  const images = C.images || {};
+  const [view, setView] = useState("lobby");
+  const common = { supabase, me, reload, say, cfg: C, onBack: () => setView("lobby") };
+
+  if (view === "roulette") return <Roulette {...common} />;
+  if (view === "dragon") return <DragonTiger {...common} />;
+  if (view === "aviator") return <Aviator {...common} />;
+  if (view === "mines") return <Mines {...common} />;
+  if (view === "vortex") return <Vortex {...common} />;
+
+  const cards = [
+    ["roulette", "roulette", "Auto Roulette", "The wheel turns by itself. Place your bets while the timer runs.", "linear-gradient(135deg,#3f0a0f,#b91c1c)"],
+    ["dragon", "dragon_tiger", "Dragon Tiger", "Higher card wins. Tie pays 11 : 1.", "linear-gradient(135deg,#0b1d3a,#1e40af)"],
+    ["aviator", "aviator", "Aviator", "Cash out before the plane flies away.", "linear-gradient(135deg,#4a1d06,#ea580c)"],
+    ["mines", "mines", "Mines", "Pick safe cells. Cash out before you hit a mine.", "linear-gradient(135deg,#052e16,#166534)"],
+    ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on 50x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
+  ].filter(([, key]) => games[key]);
+
+  return (
+    <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
+      padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
+      <style>{CSS}</style>
+      <div style={{ textAlign: "center", margin: "6px 0 16px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 0 4px" }}><SoundBtn /></div>
+        <h2 style={{ color: GOLD_L, margin: 0, letterSpacing: 1 }}>Casino</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 12, opacity: .7 }}>Pick a table to play</p>
+      </div>
+      {cards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games are open right now.</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {cards.map(([v, , name, desc, bg]) => {
+          const img = images[v];
           return (
-            <button
-              key={idx}
-              type="button"
-              disabled={!live || isOpen}
-              onClick={() => reveal(idx)}
-              className={`grid aspect-square place-items-center rounded-xl transition active:scale-95 disabled:cursor-default ${cls}`}
-            >
-              {content}
-            </button>
+            <div key={v} onClick={() => setView(v)} style={{ position: "relative", overflow: "hidden", background: bg, borderRadius: 18,
+              padding: 14, minHeight: 176, cursor: "pointer", border: `1px solid ${GOLD}`, boxShadow: "0 10px 26px #000c",
+              gridColumn: cards.length === 1 || (v === "aviator" && cards.length === 3) ? "1 / -1" : undefined }}>
+              {img
+                ? <img src={img} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: .5 }} />
+                : <CardArt kind={v} />}
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,transparent 25%,#000d 100%)" }} />
+              <div style={{ position: "relative", maxWidth: "70%" }}>
+                <div style={{ fontWeight: 900, fontSize: 18, textShadow: "0 2px 8px #000" }}>{name}</div>
+                <div style={{ fontSize: 12, opacity: .92, marginTop: 6, textShadow: "0 1px 4px #000" }}>{desc}</div>
+                <div style={{ marginTop: 16, fontSize: 12, fontWeight: 900, color: GOLD_L }}>PLAY ›</div>
+              </div>
+            </div>
           );
         })}
       </div>
-
-      <div className={PANEL}>
-        <div className="grid grid-cols-4 gap-2">
-          {MINE_OPTIONS.map(m => (
-            <button
-              key={m}
-              type="button"
-              disabled={live}
-              onClick={() => setMineCount(m)}
-              className={`rounded-xl py-2 text-xs font-black transition disabled:opacity-50 ${mineCount === m ? "bg-amber-300 text-black" : "border border-amber-700/50 bg-[#16291d] text-amber-100"}`}
-            >
-              {m} 💣
-            </button>
-          ))}
-        </div>
-        <div className="mt-3">
-          <ChipRail value={amount} onPick={setAmount} disabled={live} />
-        </div>
-        <div className="mt-3">
-          <AmountControl value={amount} onChange={setAmount} min={min} max={max} disabled={live} />
-        </div>
-        <button type="button" onClick={primary.run || undefined} disabled={!primary.run} className={`${ACTION} mt-3 ${primary.tone}`}>
-          {primary.text}
-        </button>
-        <Notice text={msg} />
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   ROOT: navigation, sound toggle, shared balance, footer
-   ============================================================ */
-
-export default function Casino({ onLobby }) {
-  const [game, setGame] = useState("aviator");
-  const [soundOn, setSoundOn] = useState(true);
-  const [balance, setBalance] = useState(START_BALANCE);
-  const balRef = useRef(START_BALANCE);
-  const sfx = useSound(soundOn);
-
-  const credit = useCallback(a => {
-    balRef.current = round2(balRef.current + a);
-    setBalance(balRef.current);
-  }, []);
-
-  const debit = useCallback(a => {
-    if (!(a > 0) || a > balRef.current + 1e-6) return false;
-    credit(-a);
-    return true;
-  }, [credit]);
-
-  const shared = { credit, debit, sfx };
-  const [minBet, maxBet] = LIMITS[game];
-
-  return (
-    <div className="min-h-screen select-none bg-[radial-gradient(ellipse_at_top,#14532d_0%,#052e16_35%,#020c07_100%)] font-sans text-amber-50">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col pb-32">
-        <div className="flex items-center justify-between px-4 pt-4">
-          <button
-            type="button"
-            onClick={() => (onLobby ? onLobby() : window.history.back())}
-            className="rounded-full border border-amber-400/60 bg-black/40 px-4 py-2 text-sm font-black tracking-wide text-amber-200 active:scale-95"
-          >
-            « Lobby
-          </button>
-          <button
-            type="button"
-            onClick={() => setSoundOn(s => !s)}
-            aria-label={soundOn ? "Mute sound" : "Unmute sound"}
-            className="grid h-10 w-10 place-items-center rounded-full border border-amber-400/60 bg-black/40 text-lg active:scale-95"
-          >
-            {soundOn ? "🔊" : "🔇"}
-          </button>
-        </div>
-
-        <nav className="mt-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {GAMES.map(g => {
-            const Icon = g.icon;
-            const on = g.id === game;
-            return (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => setGame(g.id)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-xs font-black tracking-wide transition ${
-                  on
-                    ? "bg-gradient-to-r from-amber-300 to-amber-500 text-black shadow-[0_0_18px_#fbbf2466]"
-                    : "border border-white/10 bg-white/5 text-amber-100/80"
-                }`}
-              >
-                <Icon size={15} />
-                {g.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Games stay mounted so bets and rounds are never orphaned when switching tabs */}
-        <main className="flex-1 px-4 pt-4">
-          <div hidden={game !== "aviator"}><Aviator {...shared} /></div>
-          <div hidden={game !== "roulette"}><Roulette {...shared} /></div>
-          <div hidden={game !== "dragon"}><DragonTiger {...shared} /></div>
-          <div hidden={game !== "vortex"}><Vortex {...shared} /></div>
-          <div hidden={game !== "mines"}><Mines {...shared} /></div>
-        </main>
-      </div>
-
-      <footer className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-amber-500/30 bg-[#04100a]/95 px-4 py-3 backdrop-blur">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-amber-100/70">Balance</span>
-          <span className="text-lg font-black tabular-nums text-emerald-300">{fmt(balance)}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-amber-100/60">
-          <span>Table limits</span>
-          <span className="tabular-nums">{fmt(minBet)} – {fmt(maxBet)}</span>
-        </div>
-      </footer>
     </div>
   );
 }
