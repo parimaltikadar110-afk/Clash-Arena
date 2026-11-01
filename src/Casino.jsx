@@ -833,6 +833,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(0);
   const [roundId, setRoundId] = useState(null);
+  const [overlay, setOverlay] = useState(false);
   const [crashes, setCrashes] = useState(() => {
     try { const a = JSON.parse(localStorage.getItem(AV_HIST_KEY) || "[]"); return Array.isArray(a) ? a.slice(0, 10) : []; }
     catch { return []; }
@@ -878,6 +879,8 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         mRef.current = v; setM(v); setPts(p => [...p, v]);
       }, 60);
     } else {
+      setOverlay(true);
+      setTimeout(() => setOverlay(false), 2200);
       setPts(p => [...p.filter(x => x <= crash), crash]);
       mRef.current = crash; setM(crash);
       explode();
@@ -984,14 +987,17 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ width: "100%", height: "100%", display: "block" }}>
           <defs>
             <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#facc15" stopOpacity=".35" /><stop offset="1" stopColor="#facc15" stopOpacity="0" />
+              <stop offset="0" stopColor="#ef4444" stopOpacity=".38" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
             </linearGradient>
+            <filter id="avGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
           </defs>
           {[40, 80, 120, 160].map(y => <line key={y} x1="0" x2={AV_W} y1={y} y2={y} stroke="#ffffff0d" />)}
           {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
-          {pts.length > 1 && <path d={line} fill="none" stroke={GOLD_L} strokeWidth="3" strokeLinejoin="round" />}
+          {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
           {pts.length > 1 && !boom && (
-            <g transform={`translate(${px} ${py}) rotate(-28)`}>
+            <g transform={`translate(${px} ${py}) rotate(-28)`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
               <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#f3efe0" />
               <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill={GOLD_L} />
             </g>
@@ -1005,10 +1011,15 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
           )}
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 46, fontWeight: 900, color: crashed ? "#fca5a5" : "#f3efe0", textShadow: "0 3px 10px #000" }}>
+          <div style={{ fontSize: 46 + Math.min(22, (m - 1) * 5), transition: "font-size .25s ease-out", fontWeight: 900, color: crashed ? "#fca5a5" : "#f3efe0", textShadow: "0 3px 10px #000" }}>
             {phase === "idle" ? "Ready" : crashed && boom ? `${fx(res.crash)}x` : `${m.toFixed(2)}x`}
           </div>
         </div>
+        {overlay && (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+            <div style={{ marginTop: 96, fontSize: 26, fontWeight: 900, color: "#fca5a5", letterSpacing: 2, textShadow: "0 2px 12px #000", animation: "x7pulse 1s infinite" }}>FLEW AWAY!</div>
+          </div>
+        )}
         {roundId && <div style={{ position: "absolute", left: 8, top: 6, fontSize: 10, opacity: .6 }}>Round #{roundId}</div>}
       </div>
 
