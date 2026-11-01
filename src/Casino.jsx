@@ -1013,9 +1013,9 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         </div>
 
         {/* main graph */}
-        <div className="relative mt-3 h-64 rounded-2xl overflow-hidden bg-[#070d1c] border border-slate-800"
+        <div className="relative mt-3 aspect-[5/3] rounded-2xl overflow-hidden bg-[#070d1c] border border-slate-800"
           style={{ backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)", backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" }}>
-          <svg viewBox={`0 0 ${AV_W} ${AV_H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+          <svg viewBox={`0 0 ${AV_W} ${AV_H}`} className="absolute inset-0 w-full h-full">
             <defs>
               <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stopColor="#ef4444" stopOpacity=".5" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
@@ -1095,7 +1095,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
                 autoFocus
                 value={customVal}
                 placeholder={`${MIN} - ${MAX}`}
-                onChange={e => setCustomVal(e.target.value)}
+                onChange={e => { setCustomVal(e.target.value); const n = Math.floor(Number(e.target.value)); if (Number.isFinite(n) && n >= MIN && n <= MAX) setChip(n); }}
                 onBlur={commitCustom}
                 onKeyDown={e => { if (e.key === "Enter") { commitCustom(); e.currentTarget.blur(); } }}
                 className="flex-1 min-w-0 rounded-xl bg-slate-950 border border-slate-600 px-4 py-2.5 text-lg font-bold text-white placeholder:text-slate-500 text-right focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40"
