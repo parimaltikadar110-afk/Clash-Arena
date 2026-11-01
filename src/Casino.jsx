@@ -26,9 +26,20 @@ const CSS = `
 @keyframes x7deal{0%{transform:translateY(-70px) scale(.8);opacity:0}100%{transform:none;opacity:1}}
 @keyframes x7boom{0%{transform:scale(.2);opacity:1}100%{transform:scale(2.8);opacity:0}}
 @keyframes x7shake{0%,100%{transform:translate(0)}20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-2px)}60%{transform:translate(-4px,1px)}80%{transform:translate(4px,-1px)}}
+@keyframes x7chip{0%{transform:translateY(-34px) scale(1.7);opacity:0}70%{transform:translateY(2px) scale(.94);opacity:1}100%{transform:none}}
+@keyframes x7unchip{to{transform:scale(.2);opacity:0}}
 @keyframes x7pulse{0%,100%{box-shadow:0 0 0 0 #facc1566}50%{box-shadow:0 0 0 10px #facc1500}}
 `;
 
+let _ac = null;
+const playTone = (freq, dur) => {
+  try {
+    _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+    const o = _ac.createOscillator(), g = _ac.createGain();
+    o.frequency.value = freq; o.type = "sine"; g.gain.value = 0.06;
+    o.connect(g); g.connect(_ac.destination); o.start(); o.stop(_ac.currentTime + dur);
+  } catch {}
+};
 const colorName = n => (n === 0 ? "green" : RED.includes(n) ? "red" : "black");
 const numColor = n => (n === 0 ? C_GRN : RED.includes(n) ? C_RED : C_BLK);
 const R = n => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
@@ -177,46 +188,79 @@ function useLocalHistory() {
 
 /* ---------- wheel ----------
    Idle: slow turn while bets are open (DOM refs, no React re-render).
-   Spin: wheel turns and the ball runs the other way, then drops from the track into the server's pocket with bounces. */
-const Wheel = memo(function Wheel({ target, spinId, spinning }) {
-  const wheelRef = useRef(null), ballRef = useRef(null), dropRef = useRef(null);
-  const rotRef = useRef(0), ballRotRef = useRef(0);
+   Spin: the wheel turns to the server's pocket. The ball is driven by its own physics loop:
+   it runs fast in the other direction, slows down, drops from the track, bounces with decaying
+   height and wobble, and comes to rest exactly in the winning pocket at the top. */
+const TRACK_R = 128, POCKET_R = 96, SPIN_MS = 4400, DROP_AT = 0.62;
+const easeOutBounce = t => {
+  const n1 = 7.5625, d1 = 2.75;
+  if (t < 1 / d1) return n1 * t * t;
+  if (t < 2 / d1) { t -= 1.5 / d1; return n1 * t * t + 0.75; }
+  if (t < 2.5 / d1) { t -= 2.25 / d1; return n1 * t * t + 0.9375; }
+  t -= 2.625 / d1; return n1 * t * t + 0.984375;
+};
 
-  const setDom = (el, deg, dur) => {
+const Wheel = memo(function Wheel({ target, spinId, spinning }) {
+  const wheelRef = useRef(null), ballRef = useRef(null), ballCircleRef = useRef(null);
+  const rotRef = useRef(0), ballRotRef = useRef(0), rafRef = useRef(null), idleRef = useRef(null);
+
+  const setWheel = (deg, dur) => {
+    const el = wheelRef.current;
     if (!el) return;
     el.style.transition = dur ? `transform ${dur} cubic-bezier(.17,.67,.2,1)` : "none";
     el.style.transform = `rotate(${deg}deg)`;
   };
+  const setBall = (deg, r) => {
+    if (ballRef.current) ballRef.current.style.transform = `rotate(${deg}deg)`;
+    if (ballCircleRef.current) ballCircleRef.current.setAttribute("cy", String(150 - r));
+  };
 
+  // idle: slow turn while bets are open
   useEffect(() => {
     if (spinning) return;
-    if (dropRef.current) { dropRef.current.style.animation = "none"; dropRef.current.style.transform = "none"; }
-    const id = setInterval(() => {
+    idleRef.current = setInterval(() => {
       rotRef.current += 0.4;
       ballRotRef.current -= 0.9;
-      setDom(wheelRef.current, rotRef.current, null);
-      setDom(ballRef.current, ballRotRef.current, null);
+      setWheel(rotRef.current, null);
+      setBall(ballRotRef.current, TRACK_R);
     }, 50);
-    return () => clearInterval(id);
+    return () => clearInterval(idleRef.current);
   }, [spinning]);
 
+  // spin
   useEffect(() => {
     if (spinId === 0 || target == null) return;
+    clearInterval(idleRef.current);
     const idx = ORDER.indexOf(target);
-    const cur = rotRef.current;
-    const next = cur + 1800 + mod(-(idx * SEG) - cur, 360);
-    rotRef.current = next;
-    setDom(wheelRef.current, next, "3.6s");
-    const bcur = ballRotRef.current;
-    const bnext = bcur - 2160 - mod(bcur, 360);     // ball ends at the top pocket
-    ballRotRef.current = bnext;
-    setDom(ballRef.current, bnext, "3.8s");
-    const d = dropRef.current;
-    if (d) {
-      d.style.animation = "none";
-      void d.getBoundingClientRect();
-      d.style.animation = "x7drop 1.6s 2.2s forwards";   // drop from track into the pocket at the end of the turn
-    }
+    const wStart = rotRef.current;
+    const wEnd = wStart + 1800 + mod(-(idx * SEG) - wStart, 360);
+    rotRef.current = wEnd;
+    setWheel(wEnd, "3.6s");
+
+    const b0 = ballRotRef.current;
+    const bEnd = b0 - 2160 - mod(b0, 360);     // a whole number of turns: the ball ends at the top pocket
+    const K = b0 - bEnd;
+    const t0 = performance.now();
+    const step = now => {
+      const t = Math.min(1, (now - t0) / SPIN_MS);
+      if (t >= 1) {
+        ballRotRef.current = bEnd;
+        setBall(bEnd, POCKET_R);
+        return;
+      }
+      let theta = b0 - K * (1 - Math.pow(1 - t, 3));   // fast at first, slows down
+      let r = TRACK_R;
+      if (t > DROP_AT) {
+        const q = (t - DROP_AT) / (1 - DROP_AT);
+        r = TRACK_R - (TRACK_R - POCKET_R) * easeOutBounce(q);   // drops and bounces
+        theta += (1 - q) * 9 * Math.sin(q * 26);                   // wobble that dies out on landing
+      }
+      setBall(theta, r);
+      rafRef.current = requestAnimationFrame(step);
+    };
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
   }, [spinId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pockets = useMemo(() => ORDER.map((n, i) => {
@@ -258,8 +302,11 @@ const Wheel = memo(function Wheel({ target, spinId, spinning }) {
         </defs>
         <circle cx="150" cy="150" r="148" fill="url(#x7wood)" />
         <circle cx="150" cy="150" r="141" fill="none" stroke="url(#x7rim)" strokeWidth="6" />
+        <circle cx="150" cy="150" r="146" fill="none" stroke="#000" strokeOpacity=".45" strokeWidth="3" />
         <circle cx="150" cy="150" r="133" fill="#0a0a0a" />
         {pockets}
+        <circle cx="150" cy="150" r="126" fill="none" stroke="#000" strokeOpacity=".55" strokeWidth="10" />
+        <circle cx="150" cy="150" r="66" fill="none" stroke="#000" strokeOpacity=".5" strokeWidth="6" />
         <circle cx="150" cy="150" r="66" fill="url(#x7hubwood)" stroke={GOLD} strokeWidth="1.5" />
         {[0,1,2,3,4,5,6,7].map(k => { const [a, b] = pt(58, k * 45), [c, e] = pt(16, k * 45); return <line key={k} x1={a} y1={b} x2={c} y2={e} stroke={GOLD} strokeWidth="2" />; })}
         <circle cx="150" cy="150" r="22" fill="url(#x7hub)" />
@@ -270,9 +317,7 @@ const Wheel = memo(function Wheel({ target, spinId, spinning }) {
             <stop offset="0" stopColor="#ffffff" /><stop offset=".6" stopColor="#d1d5db" /><stop offset="1" stopColor="#6b7280" />
           </radialGradient>
         </defs>
-        <g ref={dropRef}>
-          <circle cx="150" cy="22" r="5.5" fill="url(#x7ball)" stroke="#374151" strokeWidth=".6" />
-        </g>
+        <circle ref={ballCircleRef} cx="150" cy="22" r="5.5" fill="url(#x7ball)" stroke="#374151" strokeWidth=".6" style={{ filter: "drop-shadow(2px 3px 2px #000b)" }} />
       </svg>
       <div style={{ position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none",
         background: "radial-gradient(circle at 32% 22%, #ffffff2e, transparent 42%)" }} />
@@ -281,7 +326,7 @@ const Wheel = memo(function Wheel({ target, spinId, spinning }) {
 });
 
 /* ---------- one betting cell (memo) ---------- */
-const Cell = memo(function Cell({ type, value, label, bg, amount, win, onPlace, vertical, flexy, tall, fs }) {
+const Cell = memo(function Cell({ type, value, label, bg, amount, win, onPlace, vertical, flexy, tall, fs, ghost = 0 }) {
   return (
     <div onClick={() => onPlace(type, value)}
       style={{ position: "relative", background: bg, color: "#fff", border: "1px solid rgba(255,255,255,.3)", borderRadius: 4,
@@ -291,8 +336,12 @@ const Cell = memo(function Cell({ type, value, label, bg, amount, win, onPlace, 
         boxShadow: win ? `0 0 0 2px ${GOLD_L}, 0 0 14px ${GOLD_L}` : "inset 0 1px 0 rgba(255,255,255,.15)",
         animation: win ? "x7pulse 1s ease-in-out infinite" : "none", transition: "box-shadow .3s" }}>
       {label}
+      {ghost > 0 && (
+        <span key={"g" + ghost} style={{ position: "absolute", top: -7, right: -5, background: `radial-gradient(circle at 35% 30%,#fff7c2,${GOLD})`,
+          color: "#1a1200", borderRadius: 99, fontSize: 9, fontWeight: 900, padding: "2px 5px", animation: "x7unchip .3s ease-in forwards", pointerEvents: "none" }}>{ghost}</span>
+      )}
       {amount > 0 && (
-        <span style={{ position: "absolute", top: -7, right: -5, background: `radial-gradient(circle at 35% 30%,#fff7c2,${GOLD})`,
+        <span key={amount} style={{ animation: "x7chip .35s ease-out", position: "absolute", top: -7, right: -5, background: `radial-gradient(circle at 35% 30%,#fff7c2,${GOLD})`,
           color: "#1a1200", borderRadius: 99, fontSize: 9, fontWeight: 900, padding: "2px 5px", boxShadow: "0 2px 4px #000" }}>{amount}</span>
       )}
     </div>
@@ -455,6 +504,11 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
   const [burst, setBurst] = useState(0);
   const [showStats, setShowStats] = useState(false);
   const [track, setTrack] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [sound, setSound] = useState(() => { try { return localStorage.getItem("x7_sound") === "on"; } catch { return false; } });
+  const [favBets, setFavBets] = useState(() => { try { return JSON.parse(localStorage.getItem("x7_fav_bets") || "[]"); } catch { return []; } });
+  const toggleSound = () => { setSound(v => { const n = !v; try { localStorage.setItem("x7_sound", n ? "on" : "off"); } catch {} return n; }); };
+  const sfx = (f, d) => { if (sound) playTone(f, d); };
 
   const aggregate = list => {
     const m = new Map();
@@ -472,8 +526,28 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
     setStack(s => [...s, { key: `${type}:${value ?? ""}`, type, value, amount: chip }]);
   }, [phase, total, chip, bal, MAX]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const undo = () => { if (phase === "bet") setStack(s => s.slice(0, -1)); };
+  const [ghost, setGhost] = useState(null);
+  const undo = () => {
+    if (phase !== "bet" || !stack.length) return;
+    const last = stack[stack.length - 1];
+    setGhost({ key: last.key, amount: last.amount });
+    setTimeout(() => setGhost(null), 320);
+    setStack(s => s.slice(0, -1));
+  };
   const clear = () => { if (phase === "bet") setStack([]); };
+  const saveFav = () => {
+    if (!stack.length) return flash("Place a bet first");
+    setFavBets(stack);
+    try { localStorage.setItem("x7_fav_bets", JSON.stringify(stack)); } catch {}
+    flash("Saved as favorite");
+  };
+  const applyFav = () => {
+    if (phase !== "bet") return;
+    if (!favBets.length) return flash("No favorite saved");
+    const sum = favBets.reduce((a, b) => a + b.amount, 0);
+    if (sum > bal) return flash("Balance too low");
+    setStack(favBets.map(b => ({ ...b })));
+  };
   const dbl = () => {
     if (phase !== "bet" || !bets.length) return;
     if (total * 2 > bal) return flash("Balance too low");
@@ -491,7 +565,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
     if (sum > bal) { setAuto(false); setCount(BET_SECONDS); return flash("Balance too low for AUTO"); }
 
     const before = bal;
-    setPhase("spinning"); setWinNum(null); setBal(before - sum);
+    setPhase("spinning"); setWinNum(null); setBal(before - sum); sfx(220, 0.08);
     const { data, error } = await supabase.rpc("casino_spin", {
       p_game: "roulette", p_bet: sum,
       p_choice: list.map(b => ({ type: b.type, value: b.value, amount: b.amount })),
@@ -509,7 +583,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
       setStack([]);
       setBal(data.new_balance);
       setLast({ n: data.number, net, stake: sum, payout: data.won_amount });
-      if (net > 0) flash(`YOU WIN ${R(net)} · Total ${R(data.won_amount)}`);
+      if (net > 0) { flash(`YOU WIN ${R(net)} · Total ${R(data.won_amount)}`); sfx(880, 0.25); }
       if (net > 0) setBurst(b => b + 1);
       setPhase("result");
       reload && reload();
@@ -529,6 +603,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
   const cell = (type, value, label, bg, opts = {}) => (
     <Cell key={`${type}:${value ?? ""}`} type={type} value={value} label={label} bg={bg}
       amount={amounts[`${type}:${value ?? ""}`] || 0}
+      ghost={ghost && ghost.key === `${type}:${value ?? ""}` ? ghost.amount : 0}
       win={winNum !== null && hits(type, value, winNum)} onPlace={place} {...opts} />
   );
   const numRows = Array.from({ length: 12 }, (_, r) => [3, 2, 1].map(k => 3 * r + k));
@@ -538,6 +613,8 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
     <Shell title="Auto Roulette" onBack={onBack}
       right={<>
         <button onClick={() => setAuto(a => !a)} style={{ ...btn, background: auto ? GOLD : "#16291d", color: auto ? "#111" : "#f3efe0" }}>AUTO {auto ? "ON" : "OFF"}</button>
+        <button onClick={toggleSound} style={btn}>{sound ? "🔊" : "🔇"}</button>
+        <button onClick={() => setCollapsed(c => !c)} style={btn}>{collapsed ? "▲" : "▼"}</button>
         <button onClick={() => setTrack(t => !t)} style={btn}>{track ? "Grid" : "Track"}</button>
         <button onClick={() => setShowStats(true)} style={btn}>Stats</button>
       </>}>
@@ -571,9 +648,9 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
         );
       })()}
 
-      <Wheel target={target} spinId={spinId} spinning={phase === "spinning"} />
+      {!collapsed && <Wheel target={target} spinId={spinId} spinning={phase === "spinning"} />}
 
-      {track ? <RaceTrack place={place} amounts={amounts} winNum={winNum} /> : <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
+      {!collapsed && (track ? <RaceTrack place={place} amounts={amounts} winNum={winNum} /> : <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
         {cell("straight", 0, "0", C_GRN, { tall: 36 })}
         <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 48px", gap: 4, marginTop: 4 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -597,14 +674,15 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
           </div>
           <div />
         </div>
-      </div>}
+      </div>)}
 
       <Chips value={chip} onChange={setChip} />
       <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
         <button onClick={undo} style={btn}>UNDO</button>
         <button onClick={dbl} style={btn}>x2 DOUBLE</button>
         <button onClick={clear} style={btn}>CLEAR</button>
-        <button onClick={spin} disabled={phase !== "bet"} style={{ ...btn, background: `linear-gradient(180deg,#fde68a,${GOLD})`, color: "#111", padding: "10px 22px", opacity: phase !== "bet" ? .5 : 1 }}>SPIN NOW</button>
+        <button onClick={saveFav} style={btn}>⭐ Save</button>
+        <button onClick={applyFav} style={btn}>⭐ Apply</button>
       </div>
 
       <BalBar bal={bal} extra={<>Bet <b>{R(total)}</b> · {R(MIN)} - {R(MAX)}</>} />
