@@ -834,6 +834,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const [burst, setBurst] = useState(0);
   const [roundId, setRoundId] = useState(null);
   const [overlay, setOverlay] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [crashes, setCrashes] = useState(() => {
     try { const a = JSON.parse(localStorage.getItem(AV_HIST_KEY) || "[]"); return Array.isArray(a) ? a.slice(0, 10) : []; }
     catch { return []; }
@@ -942,7 +943,9 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     if (chip > bal) return flash("Balance too low");
     const before = bal;
     setBal(before - chip);
+    setBusy(true);
     const { data, error } = await supabase.rpc("casino_aviator_start", { p_bet: chip });
+    setBusy(false);
     if (error || !data?.success) { setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
     roundRef.current = data.round_id; setRoundId(data.round_id);
     stakeRef.current = chip; doneRef.current = false;
@@ -971,20 +974,37 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const [px, py] = xy(pts.length - 1, pts[pts.length - 1]);
   const crashed = res && !res.won;
 
+  const pillTone = c => (c >= 10 ? { bg: "#3b0764", fg: "#f0abfc", bd: "#a21caf" }
+    : c >= 2 ? { bg: "#042f2e", fg: "#5eead4", bd: "#0f766e" }
+    : { bg: "#1e293b", fg: "#cbd5e1", bd: "#334155" });
+  const label = phase === "idle" ? "WAITING"
+    : phase === "flying" ? "FLYING"
+    : res && res.won ? "CASHED OUT"
+    : res ? `FLEW AWAY AT ${fx(res.crash)}x` : "FLEW AWAY!";
+  const actionLabel = phase === "flying" ? "CASH OUT" : busy ? "WAITING" : "BET";
+  const actionBg = phase === "flying" ? "#f97316" : busy ? "#334155" : "#10b981";
+  const chipBtn = { width: 40, height: 40, borderRadius: 12, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 18, fontWeight: 900, cursor: "pointer" };
+
   return (
-    <Shell title="Aviator" onBack={onBack}>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 0 8px" }}>
-        {crashes.length === 0 && <span style={{ fontSize: 12, opacity: .6 }}>No rounds yet</span>}
-        {crashes.filter(c => Number.isFinite(Number(c))).map((c, i) => (
-          <span key={i} style={{ flex: "0 0 auto", padding: "3px 9px", borderRadius: 99, fontSize: 12, fontWeight: 900,
-            color: crashTone(c), border: `1px solid ${crashTone(c)}66`, background: "#0a1f14" }}>{fx(c)}x</span>
-        ))}
+    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#f1f5f9", display: "flex", flexDirection: "column",
+      padding: "10px 10px 14px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
+      <style>{CSS}</style>
+
+      {/* history */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+        {crashes.filter(c => Number.isFinite(Number(c))).map((c, i) => {
+          const t = pillTone(c);
+          return <span key={i} style={{ flex: "0 0 auto", borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 800,
+            background: t.bg, color: t.fg, border: `1px solid ${t.bd}` }}>{fx(c)}x</span>;
+        })}
       </div>
 
-      <div style={{ position: "relative", height: AV_H + 10, borderRadius: 16, overflow: "hidden",
-        background: "radial-gradient(ellipse at 50% 110%,#143a2a,#050d09 70%)", border: `1px solid ${GOLD}`,
-        animation: shake ? "x7shake .5s linear" : "none" }}>
-        <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ width: "100%", height: "100%", display: "block" }}>
+      {/* main screen */}
+      <div style={{ position: "relative", height: 210, borderRadius: 16, overflow: "hidden", background: "#070d1c",
+        border: "1px solid #1e293b",
+        backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)",
+        backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" }}>
+        <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
           <defs>
             <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stopColor="#ef4444" stopOpacity=".38" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
@@ -998,8 +1018,8 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
           {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
           {pts.length > 1 && !boom && (
             <g transform={`translate(${px} ${py}) rotate(-28)`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
-              <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#f3efe0" />
-              <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill={GOLD_L} />
+              <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
+              <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
             </g>
           )}
           {boom && (
@@ -1010,44 +1030,52 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             </g>
           )}
         </svg>
+
+        <div style={{ position: "absolute", top: 12, width: "100%", textAlign: "center", fontSize: 12, fontWeight: 900, letterSpacing: 2,
+          color: crashed ? "#f87171" : phase === "flying" ? "#fca5a5" : "#94a3b8" }}>{label}</div>
+
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 46 + Math.min(22, (m - 1) * 5), transition: "font-size .25s ease-out", fontWeight: 900, color: crashed ? "#fca5a5" : "#f3efe0", textShadow: "0 3px 10px #000" }}>
-            {phase === "idle" ? "Ready" : crashed && boom ? `${fx(res.crash)}x` : `${m.toFixed(2)}x`}
+          <div style={{ fontSize: 52 + Math.min(22, (m - 1) * 5), transition: "font-size .25s ease-out", fontWeight: 900,
+            color: crashed ? "#f87171" : "#f8fafc", textShadow: "0 3px 12px #000" }}>
+            {phase === "idle" ? "1.00x" : crashed && boom && res ? `${fx(res.crash)}x` : `${m.toFixed(2)}x`}
           </div>
         </div>
-        {overlay && (
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
-            <div style={{ marginTop: 96, fontSize: 26, fontWeight: 900, color: "#fca5a5", letterSpacing: 2, textShadow: "0 2px 12px #000", animation: "x7pulse 1s infinite" }}>FLEW AWAY!</div>
-          </div>
-        )}
-        {roundId && <div style={{ position: "absolute", left: 8, top: 6, fontSize: 10, opacity: .6 }}>Round #{roundId}</div>}
+        {roundId && <div style={{ position: "absolute", left: 8, bottom: 6, fontSize: 10, opacity: .5 }}>Round #{roundId}</div>}
       </div>
 
-      <div style={{ minHeight: 40, textAlign: "center", marginTop: 10, fontWeight: 900, fontSize: 15 }}>
-        {phase === "flying" && <span>Cash out before it flies away</span>}
-        {res && res.won && <span style={{ color: "#86efac" }}>CASHED OUT · WON <CountUp value={res.net} /></span>}
-        {res && !res.won && <span style={{ color: "#fca5a5" }}>FLEW AWAY at {fx(res.crash)}x</span>}
+      {/* control & betting panel */}
+      <div style={{ marginTop: 12, background: "#0b1220", border: "1px solid #1e293b", borderRadius: 16, padding: 12, display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <button onClick={() => stepStake(-10)} style={chipBtn}>−</button>
+          <b style={{ minWidth: 110, textAlign: "center", fontSize: 20, color: "#f1f5f9" }}>{R(chip)}</b>
+          <button onClick={() => stepStake(10)} style={chipBtn}>+</button>
+        </div>
+        <Chips value={chip} onChange={setChip} />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}>
+          <input type="checkbox" checked={!!autoAt} onChange={e => setAutoAt(e.target.checked ? "2.00" : "")} style={{ accentColor: "#10b981", width: 16, height: 16 }} />
+          Auto x
+          <input type="number" step="0.01" min="1.01" disabled={!autoAt} value={autoAt} onChange={e => setAutoAt(e.target.value)} placeholder="2.00"
+            style={{ marginLeft: "auto", width: 96, padding: 8, borderRadius: 10, border: "1px solid #334155", background: "#020617", color: "#f1f5f9", textAlign: "right" }} />
+        </label>
+        <button onClick={phase === "flying" ? cashOut : start} disabled={busy}
+          style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", fontSize: 17, fontWeight: 900, letterSpacing: 1,
+            color: phase === "flying" ? "#fff" : "#022c22", background: actionBg, opacity: busy ? .7 : 1, cursor: busy ? "default" : "pointer",
+            animation: phase === "flying" ? "x7pulse 1.2s infinite" : "none" }}>
+          {actionLabel}{phase === "flying" ? ` ${R(stakeRef.current * m)}` : ""}
+        </button>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, marginTop: 6 }}>
-        <button onClick={() => stepStake(-10)} style={{ ...btn, width: 40, height: 40, padding: 0, fontSize: 18 }}>−</button>
-        <b style={{ minWidth: 90, textAlign: "center", fontSize: 18, color: GOLD_L }}>{R(chip)}</b>
-        <button onClick={() => stepStake(10)} style={{ ...btn, width: 40, height: 40, padding: 0, fontSize: 18 }}>+</button>
-      </div>
-      <Chips value={chip} onChange={setChip} />
-
-      <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
-        <input type="number" min="1.1" step="0.1" placeholder="Auto x" value={autoAt} onChange={e => setAutoAt(e.target.value)}
-          style={{ width: 90, padding: 10, borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0a1f14", color: "#f3efe0" }} />
-        {phase === "flying"
-          ? <button onClick={cashOut} style={{ ...btn, background: "#16a34a", color: "#fff", padding: "12px 30px", fontSize: 15, animation: "x7pulse 1.2s infinite" }}>CASH OUT {R(stakeRef.current * m)}</button>
-          : <button onClick={start} style={{ ...btn, background: `linear-gradient(180deg,#fde68a,${GOLD})`, color: "#111", padding: "12px 30px", fontSize: 15 }}>BET {R(chip)}</button>}
+      {/* footer */}
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13,
+        background: "#0b1220", border: "1px solid #1e293b", borderRadius: 14, padding: "10px 12px" }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "#94a3b8", fontWeight: 800, cursor: "pointer" }}>← Lobby</button>
+        <div>Balance <b style={{ color: "#34d399" }}>{R(bal)}</b></div>
+        <div style={{ color: "#64748b" }}>{R(MIN)} – {R(MAX)}</div>
       </div>
 
-      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
       <Tip t={tip} />
       {burst > 0 && <Confetti key={burst} />}
-    </Shell>
+    </div>
   );
 }
 
