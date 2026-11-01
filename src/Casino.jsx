@@ -973,6 +973,11 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const [lx] = xy(pts.length - 1, pts[pts.length - 1]);
   const area = `${line} L${lx.toFixed(1)} ${AV_H} L0 ${AV_H} Z`;
   const [px, py] = xy(pts.length - 1, pts[pts.length - 1]);
+  const planeAng = (() => {
+    if (pts.length < 2) return 0;
+    const [x1, y1] = xy(pts.length - 2, pts[pts.length - 2]);
+    return Math.atan2(py - y1, px - x1) * 180 / Math.PI;
+  })();
   const crashed = !!res && !res.won;
 
   const label = phase === "idle" ? "WAITING"
@@ -1013,7 +1018,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
           <svg viewBox={`0 0 ${AV_W} ${AV_H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
             <defs>
               <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#ef4444" stopOpacity=".35" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
+                <stop offset="0" stopColor="#ef4444" stopOpacity=".5" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
               </linearGradient>
               <filter id="avGlow" x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -1023,7 +1028,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
             {pts.length > 1 && !boom && (
               <g transform={`translate(${px} ${py})`}>
-                <g transform="rotate(-20)" style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
+                <g transform={`rotate(${planeAng.toFixed(1)})`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
                   <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
                   <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
                 </g>
