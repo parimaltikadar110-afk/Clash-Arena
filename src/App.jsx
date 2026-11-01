@@ -185,8 +185,9 @@ export default function App() {
   const [gifts,setGifts] = useState([]);
   const [appModeRaw,setAppMode] = useState(()=>{ try{ return localStorage.getItem("x7mode")==="casino"?"casino":"ff" }catch{ return "ff" } });
   // casino_config from app_settings (S is filled by load()); defaults used until the row exists
-  const casinoCfg = { min_bet:10, max_bet:50000, ...(S.casino_config||{}), enabled: S.casino_config?.enabled===true, games:{ roulette:true, ...(S.casino_config?.games||{}) } };   // OFF unless the saved config explicitly says true (no flash of casino on startup)
+  const casinoCfg = { min_bet:10, max_bet:50000, ...(S.casino_config||{}), enabled: S.casino_config ? S.casino_config.enabled===true : (()=>{ try{ return localStorage.getItem("x7casino_on")==="1" }catch{ return false } })(), games:{ roulette:true, ...(S.casino_config?.games||{}) } };   // OFF unless the saved config explicitly says true (no flash of casino on startup)
   const casinoOn = !!casinoCfg.enabled;
+  useEffect(()=>{ if(S.casino_config){ try{ localStorage.setItem("x7casino_on", S.casino_config.enabled===true?"1":"0") }catch{} } },[S.casino_config]);
   const appMode = casinoOn ? appModeRaw : "ff";   // master OFF forces Free Fire; casino UI unmounts
   const switchMode = m => { setAppMode(m); try{ localStorage.setItem("x7mode",m) }catch{} setPage(null); setNav("home") };
   const [casinoStats,setCasinoStats] = useState(null);
