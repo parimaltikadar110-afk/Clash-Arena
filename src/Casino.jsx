@@ -813,48 +813,41 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
-/* ================= AVIATOR (live: server clock + status polling) ================= */
-const AV_HIST_KEY = "x7_av_hist";
-const AV_W = 300, AV_H = 170;
-const AV_K = 0.07;                       // must match the server: m(t) = e^(K t)
-const crashTone = c => (c >= 10 ? GOLD_L : c >= 2 ? "#5eead4" : "#94a3b8");
+/* ================= AVIATOR =================
+   Presentation + round control. The server decides the crash point and settles every cash out.
+   Client only: starts a round, polls the round status, sends the cash out, and draws what the server reports. */
+const AV_K = 0.07;                 // server curve: multiplier(t) = e^(K * t)
+const AV_W = 300, AV_H = 180;
+const AV_QUICK = [10, 25, 100, 500];
 
 function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
   const [bal, setBal] = useBal(me);
   const [tip, flash] = useFlash();
-  const [phase, setPhase] = useState("idle");     // idle | flying | done
+
+  const [phase, setPhase] = useState("idle");          // idle | flying | done
+  const [busy, setBusy] = useState(false);             // start request in progress
   const [chip, setChip] = useState(10);
-  const [autoAt, setAutoAt] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoAt, setAutoAt] = useState("2.00");
   const [m, setM] = useState(1);
   const [pts, setPts] = useState([1]);
-  const [res, setRes] = useState(null);
+  const [res, setRes] = useState(null);                // { won, crash, net }
   const [boom, setBoom] = useState(false);
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(0);
-  const [roundId, setRoundId] = useState(null);
-  const [overlay, setOverlay] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [crashes, setCrashes] = useState(() => {
-    try { const a = JSON.parse(localStorage.getItem(AV_HIST_KEY) || "[]"); return Array.isArray(a) ? a.slice(0, 10) : []; }
-    catch { return []; }
-  });
 
   const roundRef = useRef(null), timer = useRef(null), poll = useRef(null), finRef = useRef(null);
-  const doneRef = useRef(false), stakeRef = useRef(0), autoRef = useRef(0), mRef = useRef(1);
-  const startRef = useRef(0), offRef = useRef(0);      // server start time (ms) and clock offset (server - device)
-  autoRef.current = parseFloat(autoAt) || 0;
+  const doneRef = useRef(false), stakeRef = useRef(0), mRef = useRef(1);
+  const startRef = useRef(0), offRef = useRef(0);      // server start time (ms) and clock offset
+  const autoRef = useRef(0);
+  autoRef.current = autoOn ? (parseFloat(autoAt) || 0) : 0;
 
   useEffect(() => () => { clearInterval(timer.current); clearInterval(poll.current); clearInterval(finRef.current); }, []);
 
-  const pushCrash = c => setCrashes(h => {
-    if (!Number.isFinite(Number(c))) return h;
-    const n = [Number(c), ...h].slice(0, 10);
-    try { localStorage.setItem(AV_HIST_KEY, JSON.stringify(n)); } catch {}
-    return n;
-  });
-
-  // the multiplier shown is computed from the server's start time, so it matches the server's curve
+  // multiplier on the same curve as the server, measured from the server's start time
   const curM = () => Math.max(1, Math.exp(AV_K * ((Date.now() + offRef.current - startRef.current) / 1000)));
 
   function explode() {
@@ -862,12 +855,11 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     setTimeout(() => setShake(false), 500);
   }
 
-  // the round is over: the plane stops at the real crash point (or keeps going to it after a win)
+  // round is over. A win keeps the plane flying to the real crash point; a loss stops it there.
   function finish(rawCrash, won) {
     const crash = Math.max(1, num(rawCrash, Math.max(1, mRef.current)));
     clearInterval(timer.current);
     clearInterval(poll.current);
-    pushCrash(crash);
     if (won) {
       finRef.current = setInterval(() => {
         const v = mRef.current * 1.05;
@@ -880,8 +872,6 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
         mRef.current = v; setM(v); setPts(p => [...p, v]);
       }, 60);
     } else {
-      setOverlay(true);
-      setTimeout(() => setOverlay(false), 2200);
       setPts(p => [...p.filter(x => x <= crash), crash]);
       mRef.current = crash; setM(crash);
       explode();
@@ -897,17 +887,19 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     if (v >= 100) cashOut();
   }
 
-  // asks the server whether the round has crashed; the crash point is only revealed after it happened
+  // asks the server if the round has crashed. The crash point is only sent after it happened.
   async function pollStatus() {
     if (!roundRef.current || doneRef.current) return;
-    const { data, error } = await supabase.rpc("casino_aviator_status", { p_round: roundRef.current });
-    if (error || !data?.success || data.status === "open") return;
+    let data = null;
+    try { ({ data } = await supabase.rpc("casino_aviator_status", { p_round: roundRef.current })); }
+    catch { return; }
+    if (!data?.success || data.status === "open") return;
     doneRef.current = true;
     roundRef.current = null;
     setPhase("done");
-    const won = data.status === "cashed", crash = num(data.crash, mRef.current);
-    const net = num(data.won_amount, 0) - stakeRef.current;
-    setRes({ won, crash, mult: null, net });
+    const won = data.status === "cashed";
+    const crash = num(data.crash, mRef.current);
+    setRes({ won, crash, net: num(data.won_amount, 0) - stakeRef.current });
     if (data.new_balance !== undefined && data.new_balance !== null) setBal(num(data.new_balance, 0));
     if (won) setBurst(b => b + 1);
     reload && reload();
@@ -928,8 +920,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     setPhase("done");
     if (error || !data?.success) { say ? say(friendly(error), 1) : flash(friendly(error)); return; }
     const won = !!data.won, crash = num(data.crash, mult);
-    const net = num(data.won_amount, 0) - stakeRef.current;
-    setRes({ won, crash, mult, net });
+    setRes({ won, crash, net: num(data.won_amount, 0) - stakeRef.current });
     if (data.new_balance !== undefined && data.new_balance !== null) setBal(num(data.new_balance, 0));
     if (won) setBurst(b => b + 1);
     reload && reload();
@@ -937,146 +928,209 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
   }
 
   const start = async () => {
-    if (phase === "flying") return;
+    if (phase === "flying" || busy) return;
     if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
     if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
     if (chip > bal) return flash("Balance too low");
     const before = bal;
     setBal(before - chip);
     setBusy(true);
-    const { data, error } = await supabase.rpc("casino_aviator_start", { p_bet: chip });
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_aviator_start", { p_bet: chip })); }
+    catch (e) { error = e; }
     setBusy(false);
     if (error || !data?.success) { setBal(before); return say ? say(friendly(error), 1) : flash(friendly(error)); }
-    roundRef.current = data.round_id; setRoundId(data.round_id);
+
+    roundRef.current = data.round_id;
     stakeRef.current = chip; doneRef.current = false;
-    startRef.current = data.start_ms;
-    offRef.current = data.server_ms - Date.now();
+    startRef.current = num(data.start_ms, Date.now());
+    offRef.current = num(data.server_ms, Date.now()) - Date.now();
     clearInterval(finRef.current);
     mRef.current = 1;
     setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying");
     clearInterval(timer.current); clearInterval(poll.current);
     timer.current = setInterval(tick, 100);
-    poll.current = setInterval(pollStatus, 2000);       // one light call every 2 seconds while flying
+    poll.current = setInterval(pollStatus, 2000);        // one light status call every 2 seconds while flying
   };
 
-  const stepStake = d => setChip(c => Math.max(MIN, Math.min(MAX, c + d)));
+  // ---- custom amount ("Other ₹") ----
+  const commitCustom = () => {
+    let n = Math.floor(Number(customVal));
+    if (!Number.isFinite(n) || n < MIN) n = MIN;
+    if (n > MAX) n = MAX;
+    setChip(n);
+    setCustomVal(String(n));
+  };
+  const pickQuick = v => { setChip(v); setCustomOpen(false); };
 
-  // chart geometry (log scale on the y axis)
+  // ---- chart geometry (log scale on the y axis) ----
   const maxV = Math.max(2, ...pts);
-  const xy = (i, v) => {
-    const x = (i / Math.max(pts.length - 1, 1)) * AV_W;
-    const y = AV_H - 12 - ((Math.log(v) / Math.log(maxV)) * (AV_H - 24));
-    return [x, y];
-  };
+  const xy = (i, v) => [
+    (i / Math.max(pts.length - 1, 1)) * AV_W * 0.94,
+    AV_H - 16 - (Math.log(v) / Math.log(maxV)) * (AV_H - 40),
+  ];
   const line = pts.map((v, i) => { const [x, y] = xy(i, v); return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ");
   const [lx] = xy(pts.length - 1, pts[pts.length - 1]);
   const area = `${line} L${lx.toFixed(1)} ${AV_H} L0 ${AV_H} Z`;
   const [px, py] = xy(pts.length - 1, pts[pts.length - 1]);
-  const crashed = res && !res.won;
+  const crashed = !!res && !res.won;
 
-  const pillTone = c => (c >= 10 ? { bg: "#3b0764", fg: "#f0abfc", bd: "#a21caf" }
-    : c >= 2 ? { bg: "#042f2e", fg: "#5eead4", bd: "#0f766e" }
-    : { bg: "#1e293b", fg: "#cbd5e1", bd: "#334155" });
   const label = phase === "idle" ? "WAITING"
     : phase === "flying" ? "FLYING"
-    : res && res.won ? "CASHED OUT"
-    : res ? `FLEW AWAY AT ${fx(res.crash)}x` : "FLEW AWAY!";
-  const actionLabel = phase === "flying" ? "CASH OUT" : busy ? "WAITING" : "BET";
-  const actionBg = phase === "flying" ? "#f97316" : busy ? "#334155" : "#10b981";
-  const chipBtn = { width: 40, height: 40, borderRadius: 12, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 18, fontWeight: 900, cursor: "pointer" };
+    : res ? (res.won ? "CASHED OUT" : `FLEW AWAY AT ${fx(res.crash)}`)
+    : "WAITING";
+  const labelCls = phase === "flying" ? "text-amber-300" : crashed ? "text-red-400" : "text-slate-400";
+  const multText = phase === "idle" ? "1.00x"
+    : crashed && boom && res ? fx(res.crash)
+    : fx(m);
+  const multSize = 60 + Math.min(26, (m - 1) * 6);
+
+  const actionText = phase === "flying" ? `CASH OUT ${R(stakeRef.current * m)}`
+    : busy ? "WAITING" : "BET";
+  const actionCls = phase === "flying" ? "bg-orange-500 text-white animate-pulse"
+    : busy ? "bg-slate-700 text-slate-300"
+    : "bg-emerald-500 text-slate-950 hover:bg-emerald-400";
+  const actionDisabled = busy;
+
+  const onAction = () => (phase === "flying" ? cashOut() : start());
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#f1f5f9", display: "flex", flexDirection: "column",
-      padding: "10px 10px 14px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
+    <div className="min-h-screen bg-[#0b1120] text-slate-100 flex justify-center">
       <style>{CSS}</style>
+      <div className="w-full max-w-md flex flex-col px-3 pt-3 pb-28">
 
-      {/* top: lobby + round */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <button onClick={onBack} style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>« Lobby</button>
-        <span style={{ fontSize: 12, fontWeight: 800, color: "#94a3b8", letterSpacing: 1 }}>Round #{roundId ?? "--"}</span>
-      </div>
+        {/* top: lobby */}
+        <div className="flex items-center">
+          <button onClick={onBack}
+            className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold hover:bg-slate-700 active:scale-95 transition">
+            « Lobby
+          </button>
+        </div>
 
-      {/* history */}
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
-        {crashes.filter(c => Number.isFinite(Number(c))).map((c, i) => {
-          const t = pillTone(c);
-          return <span key={i} style={{ flex: "0 0 auto", borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 800,
-            background: t.bg, color: t.fg, border: `1px solid ${t.bd}` }}>{fx(c)}x</span>;
-        })}
-      </div>
+        {/* main graph */}
+        <div className="relative mt-3 h-64 rounded-2xl overflow-hidden bg-[#070d1c] border border-slate-800"
+          style={{ backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)", backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" }}>
+          <svg viewBox={`0 0 ${AV_W} ${AV_H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+            <defs>
+              <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#ef4444" stopOpacity=".35" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
+              </linearGradient>
+              <filter id="avGlow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
+            {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
+            {pts.length > 1 && !boom && (
+              <g transform={`translate(${px} ${py})`}>
+                <g transform="rotate(-20)" style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
+                  <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
+                  <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
+                </g>
+              </g>
+            )}
+            {boom && (
+              <g transform={`translate(${px} ${py})`}>
+                <circle r="14" fill="#fb923c" style={{ transformOrigin: "0 0", animation: "x7boom .8s ease-out forwards" }} />
+                <circle r="9" fill="#fde68a" style={{ transformOrigin: "0 0", animation: "x7boom .6s ease-out forwards" }} />
+              </g>
+            )}
+          </svg>
 
-      {/* main screen */}
-      <div style={{ position: "relative", height: 210, borderRadius: 16, overflow: "hidden", background: "#070d1c",
-        border: "1px solid #1e293b",
-        backgroundImage: "linear-gradient(rgba(148,163,184,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.07) 1px, transparent 1px)",
-        backgroundSize: "32px 32px", animation: shake ? "x7shake .5s linear" : "none" }}>
-        <svg viewBox={`0 0 ${AV_W} ${AV_H}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
-          <defs>
-            <linearGradient id="avArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#ef4444" stopOpacity=".38" /><stop offset="1" stopColor="#ef4444" stopOpacity="0" />
-            </linearGradient>
-            <filter id="avGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-          </defs>
-          {[40, 80, 120, 160].map(y => <line key={y} x1="0" x2={AV_W} y1={y} y2={y} stroke="#ffffff0d" />)}
-          {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
-          {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
-          {pts.length > 1 && !boom && (
-            <g transform={`translate(${px} ${py}) rotate(-28)`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
-              <path d="M-14 0 L14 -4 L22 0 L14 4 Z" fill="#fecaca" />
-              <path d="M-5 0 L-20 -9 L-16 0 L-20 9 Z" fill="#ef4444" />
-            </g>
-          )}
-          {boom && (
-            <g transform={`translate(${px} ${py})`}>
-              <circle r="14" fill="#fb923c" style={{ transformOrigin: "0 0", animation: "x7boom .8s ease-out forwards" }} />
-              <circle r="9" fill="#fde68a" style={{ transformOrigin: "0 0", animation: "x7boom .6s ease-out forwards" }} />
-              <circle r="22" fill="none" stroke="#fca5a5" strokeWidth="3" style={{ transformOrigin: "0 0", animation: "x7boom 1s ease-out forwards" }} />
-            </g>
-          )}
-        </svg>
+          <div className={`absolute top-3 w-full text-center text-xs font-black tracking-[.25em] ${labelCls}`}>{label}</div>
 
-        <div style={{ position: "absolute", top: 12, width: "100%", textAlign: "center", fontSize: 12, fontWeight: 900, letterSpacing: 2,
-          color: crashed ? "#f87171" : phase === "flying" ? "#fca5a5" : "#94a3b8" }}>{label}</div>
-
-        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 52 + Math.min(22, (m - 1) * 5), transition: "font-size .25s ease-out", fontWeight: 900,
-            color: crashed ? "#f87171" : "#f8fafc", textShadow: "0 3px 12px #000" }}>
-            {phase === "idle" ? "1.00x" : crashed && boom && res ? `${fx(res.crash)}x` : `${m.toFixed(2)}x`}
+          <div className="absolute inset-0 grid place-items-center pointer-events-none">
+            <div className={`font-black drop-shadow-lg transition-[font-size] duration-200 ${crashed ? "text-red-400" : "text-slate-50"}`}
+              style={{ fontSize: multSize }}>{multText}</div>
           </div>
         </div>
-        {roundId && <div style={{ position: "absolute", left: 8, bottom: 6, fontSize: 10, opacity: .5 }}>Round #{roundId}</div>}
-      </div>
 
-      {/* control & betting panel */}
-      <div style={{ marginTop: 12, background: "#0b1220", border: "1px solid #1e293b", borderRadius: 16, padding: 12, display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
-          <button onClick={() => stepStake(-10)} style={chipBtn}>−</button>
-          <b style={{ minWidth: 110, textAlign: "center", fontSize: 20, color: "#f1f5f9" }}>{R(chip)}</b>
-          <button onClick={() => stepStake(10)} style={chipBtn}>+</button>
+        {/* result line */}
+        <div className="min-h-[24px] mt-2 text-center text-sm font-bold">
+          {res?.won && <span className="text-emerald-400">Won {R(res.net)}</span>}
+          {res && !res.won && <span className="text-red-400">Lost {R(-res.net)}</span>}
         </div>
-        <Chips value={chip} onChange={setChip} />
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}>
-          <input type="checkbox" checked={!!autoAt} onChange={e => setAutoAt(e.target.checked ? "2.00" : "")} style={{ accentColor: "#10b981", width: 16, height: 16 }} />
-          Auto x
-          <input type="number" step="0.01" min="1.01" disabled={!autoAt} value={autoAt} onChange={e => setAutoAt(e.target.value)} placeholder="2.00"
-            style={{ marginLeft: "auto", width: 96, padding: 8, borderRadius: 10, border: "1px solid #334155", background: "#020617", color: "#f1f5f9", textAlign: "right" }} />
-        </label>
-        <button onClick={phase === "flying" ? cashOut : start} disabled={busy}
-          style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", fontSize: 17, fontWeight: 900, letterSpacing: 1,
-            color: phase === "flying" ? "#fff" : "#022c22", background: actionBg, opacity: busy ? .7 : 1, cursor: busy ? "default" : "pointer",
-            animation: phase === "flying" ? "x7pulse 1.2s infinite" : "none" }}>
-          {actionLabel}{phase === "flying" ? ` ${R(stakeRef.current * m)}` : ""}
-        </button>
+
+        {/* betting panel */}
+        <div className="mt-2 rounded-2xl bg-slate-900 border border-slate-800 p-3 space-y-3">
+
+          {/* amount display */}
+          <div className="flex items-center justify-between rounded-xl bg-slate-950 border border-slate-700 px-4 py-2">
+            <span className="text-slate-500 text-sm font-bold">BET</span>
+            <span className="text-2xl font-black text-white">{R(chip)}</span>
+          </div>
+
+          {/* chip tokens */}
+          <div className="grid grid-cols-5 gap-2">
+            {AV_QUICK.map(v => (
+              <button key={v} onClick={() => pickQuick(v)}
+                className={`h-12 rounded-full text-sm font-extrabold text-white border-2 border-dashed transition
+                  ${chip === v && !customOpen ? "border-emerald-400 ring-2 ring-emerald-400 -translate-y-0.5" : "border-slate-200/40"}
+                  bg-[radial-gradient(circle_at_35%_30%,#475569,#0f172a_70%)] shadow-md`}>
+                {v}
+              </button>
+            ))}
+            <button onClick={() => { setCustomOpen(o => !o); setCustomVal(""); }}
+              className={`h-12 rounded-full text-xs font-extrabold text-white border-2 border-dashed transition
+                ${customOpen ? "border-emerald-400 ring-2 ring-emerald-400 -translate-y-0.5" : "border-slate-200/40"}
+                bg-[radial-gradient(circle_at_35%_30%,#475569,#0f172a_70%)] shadow-md`}>
+              Other ₹
+            </button>
+          </div>
+
+          {/* custom amount: clear white text, its own row, never pushes the chips */}
+          {customOpen && (
+            <div className="flex items-center gap-2">
+              <span className="text-slate-300 text-sm font-bold">₹</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN}
+                max={MAX}
+                autoFocus
+                value={customVal}
+                placeholder={`${MIN} - ${MAX}`}
+                onChange={e => setCustomVal(e.target.value)}
+                onBlur={commitCustom}
+                onKeyDown={e => { if (e.key === "Enter") { commitCustom(); e.currentTarget.blur(); } }}
+                className="flex-1 min-w-0 rounded-xl bg-slate-950 border border-slate-600 px-4 py-2.5 text-lg font-bold text-white placeholder:text-slate-500 text-right focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40"
+              />
+            </div>
+          )}
+
+          {/* auto x */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-200 select-none cursor-pointer">
+              <input type="checkbox" checked={autoOn} onChange={e => setAutoOn(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500" />
+              Auto x
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="1.01"
+              value={autoAt}
+              disabled={!autoOn}
+              onChange={e => setAutoAt(e.target.value)}
+              onBlur={() => { const v = parseFloat(autoAt); if (!Number.isFinite(v) || v < 1.01) setAutoAt("2.00"); }}
+              className="ml-auto w-28 rounded-lg bg-slate-950 border border-slate-600 px-3 py-1.5 text-right text-base font-bold text-white disabled:opacity-40 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/40"
+            />
+          </div>
+
+          {/* primary action */}
+          <button onClick={onAction} disabled={actionDisabled}
+            className={`w-full py-4 rounded-xl text-lg font-black tracking-wide transition active:scale-[.99] disabled:cursor-default ${actionCls}`}>
+            {actionText}
+          </button>
+        </div>
       </div>
 
-      {/* footer */}
-      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13,
-        background: "#0b1220", border: "1px solid #1e293b", borderRadius: 14, padding: "10px 12px" }}>
-        <span />
-        <div>Balance <b style={{ color: "#34d399" }}>{R(bal)}</b></div>
-        <div style={{ color: "#64748b" }}>{R(MIN)} – {R(MAX)}</div>
+      {/* footer: balance and limits only */}
+      <div className="fixed bottom-0 inset-x-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom,0px))]">
+        <div className="max-w-md mx-auto flex items-center justify-between text-sm">
+          <div>Balance <b className="text-emerald-400">{R(bal)}</b></div>
+          <div className="text-slate-400">{R(MIN)} - {R(MAX)}</div>
+        </div>
       </div>
 
       <Tip t={tip} />
