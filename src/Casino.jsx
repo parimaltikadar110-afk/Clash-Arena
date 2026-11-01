@@ -33,16 +33,32 @@ const CSS = `
 @keyframes x7pulse{0%,100%{box-shadow:0 0 0 0 #facc1566}50%{box-shadow:0 0 0 10px #facc1500}}
 `;
 
+// Web Audio: the browser only lets sound play after a user tap, so the context is unlocked on the first tap.
 let _ac = null;
-const playTone = (freq, dur) => {
+const getAC = () => {
   try {
     _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
     if (_ac.state === "suspended") _ac.resume();
-    const o = _ac.createOscillator(), g = _ac.createGain();
-    o.frequency.value = freq; o.type = "sine"; g.gain.value = 0.06;
-    o.connect(g); g.connect(_ac.destination); o.start(); o.stop(_ac.currentTime + dur);
+    return _ac;
+  } catch { return null; }
+};
+const unlockAudio = () => { getAC(); };
+const playTone = (freq, dur) => {
+  const ac = getAC();
+  if (!ac) return;
+  try {
+    const t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.18, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + dur + 0.03);
   } catch {}
 };
+
 const colorName = n => (n === 0 ? "green" : RED.includes(n) ? "red" : "black");
 const numColor = n => (n === 0 ? C_GRN : RED.includes(n) ? C_RED : C_BLK);
 const R = n => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
@@ -1698,6 +1714,13 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const games = C.games || {};
   const images = C.images || {};
   const [view, setView] = useState("lobby");
+  useEffect(() => {
+    // native WebViews do not always send pointer events, so listen for every kind of tap
+    const evs = ["pointerdown", "touchstart", "touchend", "click", "keydown"];
+    const u = () => { unlockAudio(); evs.forEach(e => window.removeEventListener(e, u, true)); };
+    evs.forEach(e => window.addEventListener(e, u, true));
+    return () => evs.forEach(e => window.removeEventListener(e, u, true));
+  }, []);
   const common = { supabase, me, reload, say, cfg: C, onBack: () => setView("lobby") };
 
   if (view === "roulette") return <Roulette {...common} />;
