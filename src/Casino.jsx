@@ -28,6 +28,7 @@ const CSS = `
 @keyframes x7shake{0%,100%{transform:translate(0)}20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-2px)}60%{transform:translate(-4px,1px)}80%{transform:translate(4px,-1px)}}
 @keyframes x7chip{0%{transform:translateY(-34px) scale(1.7);opacity:0}70%{transform:translateY(2px) scale(.94);opacity:1}100%{transform:none}}
 @keyframes x7unchip{to{transform:scale(.2);opacity:0}}
+@keyframes x7roll{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 @keyframes x7pulse{0%,100%{box-shadow:0 0 0 0 #facc1566}50%{box-shadow:0 0 0 10px #facc1500}}
 `;
 
@@ -1402,8 +1403,127 @@ function Vortex({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ================= DICE (server rolls the dice) ================= */
+const DICE_MODES = [
+  { k: "under", label: "UNDER 7", odds: "2.3x" },
+  { k: "seven", label: "SEVEN", odds: "5.8x" },
+  { k: "over", label: "OVER 7", odds: "2.3x" },
+];
+const PIPS = {
+  1: [[.5, .5]],
+  2: [[.28, .28], [.72, .72]],
+  3: [[.28, .28], [.5, .5], [.72, .72]],
+  4: [[.28, .28], [.72, .28], [.28, .72], [.72, .72]],
+  5: [[.28, .28], [.72, .28], [.5, .5], [.28, .72], [.72, .72]],
+  6: [[.28, .25], [.72, .25], [.28, .5], [.72, .5], [.28, .75], [.72, .75]],
+};
+function Die({ v, rolling }) {
+  const pips = PIPS[v] || PIPS[1];
+  return (
+    <div style={{ position: "relative", width: 84, height: 84, borderRadius: 16, boxSizing: "border-box",
+      background: "linear-gradient(145deg,#ffffff,#dbe2ea)", boxShadow: "0 10px 24px #000a, inset 0 -4px 0 #94a3b8",
+      animation: rolling ? "x7roll .5s linear infinite" : "none" }}>
+      {pips.map(([x, y], i) => (
+        <span key={i} style={{ position: "absolute", left: `${x * 100}%`, top: `${y * 100}%`, width: 14, height: 14,
+          marginLeft: -7, marginTop: -7, borderRadius: "50%", background: "#0f172a" }} />
+      ))}
+    </div>
+  );
+}
+function Dice({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [chip, setChip] = useState(10);
+  const [mode, setMode] = useState("under");
+  const [busy, setBusy] = useState(false);
+  const [rolling, setRolling] = useState(false);
+  const [dice, setDice] = useState([1, 1]);
+  const [res, setRes] = useState(null);             // { total, net }
+  const [burst, setBurst] = useState(0);
+
+  const roll = async () => {
+    if (busy) return;
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBal(before - chip); setBusy(true); setRes(null); setRolling(true);
+    playSfx(260, 0.05);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_dice_roll", { p_bet: chip, p_mode: mode })); } catch (e) { error = e; }
+    if (error || !data?.success) {
+      setBusy(false); setRolling(false); setBal(before);
+      return say ? say(friendly(error), 1) : flash(friendly(error));
+    }
+    setTimeout(() => {
+      setDice([num(data.d1, 1), num(data.d2, 1)]);
+      setRolling(false);
+      const net = num(data.won_amount, 0) - chip;
+      setRes({ total: num(data.total, 0), net });
+      if (data.new_balance != null) setBal(num(data.new_balance, 0));
+      setBusy(false);
+      if (net > 0) setBurst(b => b + 1);
+      playSfx(net > 0 ? 880 : 180, net > 0 ? 0.25 : 0.15);
+      reload && reload();
+    }, 900);
+  };
+
+  return (
+    <Shell title="Dice" onBack={onBack} right={<SoundBtn />}>
+      <div style={{ background: "#0f2418", border: "1px solid #2f4a3a", borderRadius: 18, padding: "26px 10px 18px", marginTop: 6 }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 22 }}>
+          <Die v={dice[0]} rolling={rolling} />
+          <Die v={dice[1]} rolling={rolling} />
+        </div>
+        <div style={{ textAlign: "center", minHeight: 44, marginTop: 16, fontSize: 22, fontWeight: 900, color: "#f8fafc" }}>
+          {rolling ? "Rolling…" : res ? `Total ${res.total}` : "Pick a side"}
+        </div>
+        <div style={{ textAlign: "center", minHeight: 24, fontWeight: 900 }}>
+          {res && res.net > 0 && <span style={{ color: "#86efac" }}>WON {R(res.net)}</span>}
+          {res && res.net < 0 && <span style={{ color: "#fca5a5" }}>LOST {R(-res.net)}</span>}
+          {res && res.net === 0 && <span>RETURNED</span>}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 14 }}>
+        {DICE_MODES.map(m => {
+          const on = mode === m.k;
+          return (
+            <button key={m.k} onClick={() => { playSfx(520, 0.03); setMode(m.k); }} disabled={busy}
+              style={{ padding: "12px 6px", borderRadius: 12, cursor: "pointer", fontWeight: 900,
+                border: `2px solid ${on ? "#facc15" : "#2f4a3a"}`,
+                background: on ? "linear-gradient(180deg,#fde68a,#d4af37)" : "#0f2418", color: on ? "#111" : "#f3efe0" }}>
+              {m.label}<div style={{ fontSize: 11, fontWeight: 700 }}>{m.odds}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <Chips value={chip} onChange={setChip} />
+      <button onClick={roll} disabled={busy} style={{ ...actionBtn, opacity: busy ? .6 : 1 }}>
+        {busy ? "ROLLING…" : `ROLL ${R(chip)}`}
+      </button>
+
+      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
+    </Shell>
+  );
+}
+
 /* ================= LOBBY ================= */
 const CardArt = memo(function CardArt({ kind }) {
+  if (kind === "dice") {
+    return (
+      <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -16, top: -10, width: 190, height: 190 }}>
+        <rect x="20" y="40" width="80" height="80" rx="14" fill="#f8fafc" transform="rotate(-10 60 80)" />
+        <rect x="100" y="60" width="80" height="80" rx="14" fill="#e2e8f0" transform="rotate(12 140 100)" />
+        <circle cx="45" cy="65" r="7" fill="#0f172a" /><circle cx="75" cy="95" r="7" fill="#0f172a" /><circle cx="105" cy="125" r="7" fill="#0f172a" />
+        <circle cx="125" cy="85" r="7" fill="#0f172a" /><circle cx="155" cy="115" r="7" fill="#0f172a" />
+      </svg>
+    );
+  }
   if (kind === "mines") {
     return (
       <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -10, top: -10, width: 180, height: 180, opacity: .9 }}>
@@ -1484,6 +1604,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "aviator") return <Aviator {...common} />;
   if (view === "mines") return <Mines {...common} />;
   if (view === "vortex") return <Vortex {...common} />;
+  if (view === "dice") return <Dice {...common} />;
 
   const cards = [
     ["roulette", "roulette", "Auto Roulette", "The wheel turns by itself. Place your bets while the timer runs.", "linear-gradient(135deg,#3f0a0f,#b91c1c)"],
@@ -1491,6 +1612,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["aviator", "aviator", "Aviator", "Cash out before the plane flies away.", "linear-gradient(135deg,#4a1d06,#ea580c)"],
     ["mines", "mines", "Mines", "Pick safe cells. Cash out before you hit a mine.", "linear-gradient(135deg,#052e16,#166534)"],
     ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on 50x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
+    ["dice", "dice", "Dice", "Roll two dice. Under 7, seven, or over 7.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
   ].filter(([, key]) => games[key]);
 
   return (
