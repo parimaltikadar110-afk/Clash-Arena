@@ -29,6 +29,7 @@ const CSS = `
 @keyframes x7chip{0%{transform:translateY(-34px) scale(1.7);opacity:0}70%{transform:translateY(2px) scale(.94);opacity:1}100%{transform:none}}
 @keyframes x7unchip{to{transform:scale(.2);opacity:0}}
 @keyframes x7roll{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+@keyframes x7tumble{0%{transform:rotateX(0deg) rotateY(0deg)}100%{transform:rotateX(720deg) rotateY(720deg)}}
 @keyframes x7pulse{0%,100%{box-shadow:0 0 0 0 #facc1566}50%{box-shadow:0 0 0 10px #facc1500}}
 `;
 
@@ -1403,12 +1404,10 @@ function Vortex({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
-/* ================= DICE (server rolls the dice) ================= */
-const DICE_MODES = [
-  { k: "under", label: "UNDER 7", odds: "2.3x" },
-  { k: "seven", label: "SEVEN", odds: "5.8x" },
-  { k: "over", label: "OVER 7", odds: "2.3x" },
-];
+/* ================= DICE (3 dice, server rolls them) ================= */
+const DICE_BG = "radial-gradient(ellipse at 50% -12%, #1e3a5f 0%, #0b1a2e 46%, #050b14 100%)";
+const DICE_PATTERN = "repeating-linear-gradient(45deg, rgba(255,255,255,.025) 0 2px, transparent 2px 14px)";
+const DICE_SUM_PAY = { 4: 61, 17: 61, 5: 31, 16: 31, 6: 18, 15: 18, 7: 13, 14: 13, 8: 9, 13: 9, 9: 7, 10: 7, 11: 7, 12: 7 };
 const PIPS = {
   1: [[.5, .5]],
   2: [[.28, .28], [.72, .72]],
@@ -1417,98 +1416,194 @@ const PIPS = {
   5: [[.28, .28], [.72, .28], [.5, .5], [.28, .72], [.72, .72]],
   6: [[.28, .25], [.72, .25], [.28, .5], [.72, .5], [.28, .75], [.72, .75]],
 };
-function Die({ v, rolling }) {
-  const pips = PIPS[v] || PIPS[1];
+// the cube angle that brings each face to the front
+const FACE_ROT = { 1: [0, 0], 6: [0, 180], 3: [0, -90], 4: [0, 90], 2: [-90, 0], 5: [90, 0] };
+const settleRot = (prev, v) => {
+  const [bx, by] = FACE_ROT[v] || [0, 0];
+  return { x: prev.x + 1080 + mod(bx - prev.x, 360), y: prev.y + 1080 + mod(by - prev.y, 360) };
+};
+const CUBE = 78;
+const FACES = [
+  { v: 1, t: `translateZ(${CUBE / 2}px)` },
+  { v: 6, t: `rotateY(180deg) translateZ(${CUBE / 2}px)` },
+  { v: 3, t: `rotateY(90deg) translateZ(${CUBE / 2}px)` },
+  { v: 4, t: `rotateY(-90deg) translateZ(${CUBE / 2}px)` },
+  { v: 2, t: `rotateX(90deg) translateZ(${CUBE / 2}px)` },
+  { v: 5, t: `rotateX(-90deg) translateZ(${CUBE / 2}px)` },
+];
+function Cube({ rot, rolling }) {
   return (
-    <div style={{ position: "relative", width: 84, height: 84, borderRadius: 16, boxSizing: "border-box",
-      background: "linear-gradient(145deg,#ffffff,#dbe2ea)", boxShadow: "0 10px 24px #000a, inset 0 -4px 0 #94a3b8",
-      animation: rolling ? "x7roll .5s linear infinite" : "none" }}>
-      {pips.map(([x, y], i) => (
-        <span key={i} style={{ position: "absolute", left: `${x * 100}%`, top: `${y * 100}%`, width: 14, height: 14,
-          marginLeft: -7, marginTop: -7, borderRadius: "50%", background: "#0f172a" }} />
+    <div style={{ width: CUBE, height: CUBE, position: "relative", transformStyle: "preserve-3d",
+      transform: `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`,
+      transition: rolling ? "none" : "transform 1.2s cubic-bezier(.2,1.5,.4,1)",
+      animation: rolling ? "x7tumble .9s linear infinite" : "none" }}>
+      {FACES.map(f => (
+        <div key={f.v} style={{ position: "absolute", inset: 0, transform: f.t, borderRadius: 14, boxSizing: "border-box",
+          background: "linear-gradient(145deg,#ffffff,#d5dde7)", boxShadow: "inset 0 0 0 1px #b8c4d2" }}>
+          {(PIPS[f.v] || []).map(([x, y], i) => (
+            <span key={i} style={{ position: "absolute", left: `${x * 100}%`, top: `${y * 100}%`, width: 14, height: 14,
+              marginLeft: -7, marginTop: -7, borderRadius: "50%", background: "#0f172a", boxShadow: "inset 0 -2px 2px #0006" }} />
+          ))}
+        </div>
       ))}
     </div>
   );
 }
+const tileStyle = on => ({
+  position: "relative", padding: "10px 4px", borderRadius: 12, cursor: "pointer", fontWeight: 900, fontSize: 13, color: "#f8fafc",
+  textAlign: "center", boxSizing: "border-box", border: `2px solid ${on ? "#facc15" : "rgba(148,163,184,.22)"}`,
+  background: "linear-gradient(180deg,#1e293b,#0f172a)", boxShadow: "0 4px 10px #0008",
+});
 function Dice({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
   const [bal, setBal] = useBal(me);
   const [tip, flash] = useFlash();
   const [chip, setChip] = useState(10);
-  const [mode, setMode] = useState("under");
+  const [stack, setStack] = useState([]);           // placed bets, in order (undo removes the last)
   const [busy, setBusy] = useState(false);
   const [rolling, setRolling] = useState(false);
-  const [dice, setDice] = useState([1, 1]);
-  const [res, setRes] = useState(null);             // { total, net }
+  const [rot, setRot] = useState([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }]);
+  const [res, setRes] = useState(null);             // { dice, total, net }
   const [burst, setBurst] = useState(0);
 
+  const bets = useMemo(() => {
+    const m = new Map();
+    stack.forEach(b => {
+      const k = `${b.type}:${b.value ?? ""}`;
+      const c = m.get(k) || { type: b.type, value: b.value, amount: 0 };
+      c.amount += b.amount;
+      m.set(k, c);
+    });
+    return [...m.values()];
+  }, [stack]);
+  const total = bets.reduce((a, b) => a + b.amount, 0);
+  const onAmt = (type, value) => bets.find(b => b.type === type && b.value === value)?.amount || 0;
+
+  const place = (type, value = null) => {
+    if (busy || rolling) return;
+    if (total + chip > bal) return flash("Balance too low");
+    if (total + chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    setStack(s => [...s, { type, value, amount: chip }]);
+    playSfx(520, 0.03);
+  };
+  const undo = () => { if (!busy && !rolling) setStack(s => s.slice(0, -1)); };
+  const clear = () => { if (!busy && !rolling) setStack([]); };
+
   const roll = async () => {
-    if (busy) return;
-    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
-    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
-    if (chip > bal) return flash("Balance too low");
-    const before = bal;
-    setBal(before - chip); setBusy(true); setRes(null); setRolling(true);
+    if (busy || rolling) return;
+    if (!stack.length) return flash("Place a bet first");
+    if (total < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (total > bal) return flash("Balance too low");
+    const before = bal, list = bets;
+    setBal(before - total); setBusy(true); setRes(null); setRolling(true);
     playSfx(260, 0.05);
     let data = null, error = null;
-    try { ({ data, error } = await supabase.rpc("casino_dice_roll", { p_bet: chip, p_mode: mode })); } catch (e) { error = e; }
+    try {
+      ({ data, error } = await supabase.rpc("casino_dice_roll", {
+        p_bets: list.map(b => ({ type: b.type, value: b.value, amount: b.amount })),
+      }));
+    } catch (e) { error = e; }
     if (error || !data?.success) {
-      setBusy(false); setRolling(false); setBal(before);
+      setRolling(false); setBusy(false); setBal(before);
       return say ? say(friendly(error), 1) : flash(friendly(error));
     }
+    const d = [num(data.d1, 1), num(data.d2, 1), num(data.d3, 1)];
     setTimeout(() => {
-      setDice([num(data.d1, 1), num(data.d2, 1)]);
       setRolling(false);
-      const net = num(data.won_amount, 0) - chip;
-      setRes({ total: num(data.total, 0), net });
+      setRot(prev => prev.map((r, i) => settleRot(r, d[i])));
+      const net = num(data.won_amount, 0) - total;
+      setRes({ dice: d, total: num(data.total, 0), net });
+      setStack([]);
       if (data.new_balance != null) setBal(num(data.new_balance, 0));
       setBusy(false);
       if (net > 0) setBurst(b => b + 1);
       playSfx(net > 0 ? 880 : 180, net > 0 ? 0.25 : 0.15);
       reload && reload();
-    }, 900);
+    }, 950);
+  };
+
+  const tile = (type, value, label, sub) => {
+    const amt = onAmt(type, value);
+    return (
+      <div key={`${type}:${value ?? ""}`} onClick={() => place(type, value)} style={tileStyle(amt > 0)}>
+        <div>{label}</div>
+        {sub && <div style={{ fontSize: 10, fontWeight: 700, opacity: .75, marginTop: 2 }}>{sub}</div>}
+        {amt > 0 && (
+          <span style={{ position: "absolute", top: -8, right: -6, background: "radial-gradient(circle at 35% 30%,#fff7c2,#d4af37)",
+            color: "#1a1200", borderRadius: 99, fontSize: 10, fontWeight: 900, padding: "2px 6px", boxShadow: "0 2px 4px #000" }}>{amt}</span>
+        )}
+      </div>
+    );
   };
 
   return (
-    <Shell title="Dice" onBack={onBack} right={<SoundBtn />}>
-      <div style={{ background: "#0f2418", border: "1px solid #2f4a3a", borderRadius: 18, padding: "26px 10px 18px", marginTop: 6 }}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 22 }}>
-          <Die v={dice[0]} rolling={rolling} />
-          <Die v={dice[1]} rolling={rolling} />
+    <div style={{ minHeight: "100vh", background: `${DICE_PATTERN}, ${DICE_BG}`, color: "#f3efe0", fontFamily: "system-ui,sans-serif",
+      padding: "8px 10px 120px", boxSizing: "border-box" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <button onClick={onBack} style={btn}>← Lobby</button>
+        <b style={{ flex: 1, color: GOLD_L, letterSpacing: .5 }}>Dice</b>
+        <SoundBtn />
+      </div>
+
+      {/* table */}
+      <div style={{ position: "relative", borderRadius: 22, padding: "26px 10px 18px", boxSizing: "border-box",
+        background: "radial-gradient(ellipse at 50% 30%,#1b5e3b,#0c3a24 65%,#072316)", border: "2px solid #d4af37",
+        boxShadow: "inset 0 0 40px #000a, 0 14px 30px #000b" }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: 18, perspective: 600, minHeight: CUBE + 20 }}>
+          {rot.map((r, i) => (
+            <div key={i} style={{ width: CUBE, height: CUBE, margin: "10px 0" }}>
+              <Cube rot={r} rolling={rolling} />
+            </div>
+          ))}
         </div>
-        <div style={{ textAlign: "center", minHeight: 44, marginTop: 16, fontSize: 22, fontWeight: 900, color: "#f8fafc" }}>
-          {rolling ? "Rolling…" : res ? `Total ${res.total}` : "Pick a side"}
-        </div>
-        <div style={{ textAlign: "center", minHeight: 24, fontWeight: 900 }}>
-          {res && res.net > 0 && <span style={{ color: "#86efac" }}>WON {R(res.net)}</span>}
-          {res && res.net < 0 && <span style={{ color: "#fca5a5" }}>LOST {R(-res.net)}</span>}
-          {res && res.net === 0 && <span>RETURNED</span>}
+        <div style={{ textAlign: "center", minHeight: 50, marginTop: 10 }}>
+          {rolling && <span style={{ fontWeight: 900, opacity: .85 }}>Rolling…</span>}
+          {!rolling && res && (
+            <>
+              <div style={{ fontSize: 20, fontWeight: 900 }}>Total {res.total}</div>
+              <div style={{ fontWeight: 900, color: res.net > 0 ? "#86efac" : res.net < 0 ? "#fca5a5" : "#e5e7eb" }}>
+                {res.net > 0 ? `WON ${R(res.net)}` : res.net < 0 ? `LOST ${R(-res.net)}` : "RETURNED"}
+              </div>
+            </>
+          )}
+          {!rolling && !res && <span style={{ opacity: .7 }}>Place your bets</span>}
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 14 }}>
-        {DICE_MODES.map(m => {
-          const on = mode === m.k;
-          return (
-            <button key={m.k} onClick={() => { playSfx(520, 0.03); setMode(m.k); }} disabled={busy}
-              style={{ padding: "12px 6px", borderRadius: 12, cursor: "pointer", fontWeight: 900,
-                border: `2px solid ${on ? "#facc15" : "#2f4a3a"}`,
-                background: on ? "linear-gradient(180deg,#fde68a,#d4af37)" : "#0f2418", color: on ? "#111" : "#f3efe0" }}>
-              {m.label}<div style={{ fontSize: 11, fontWeight: 700 }}>{m.odds}</div>
-            </button>
-          );
-        })}
+      {/* bet board */}
+      <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+          {tile("small", null, "SMALL", "4-10 · 2x")}
+          {tile("big", null, "BIG", "11-17 · 2x")}
+          {tile("odd", null, "ODD", "2x")}
+          {tile("even", null, "EVEN", "2x")}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 800, opacity: .7 }}>TOTAL</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>
+          {Array.from({ length: 14 }, (_, i) => i + 4).map(n => tile("sum", n, String(n), `${DICE_SUM_PAY[n]}x`))}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 800, opacity: .7 }}>SINGLE FACE (1 · 2 · 3 dice)</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6 }}>
+          {[1, 2, 3, 4, 5, 6].map(n => tile("single", n, String(n), "2x·3x·4x"))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+          {tile("triple", null, "ANY TRIPLE", "31x")}
+        </div>
       </div>
 
       <Chips value={chip} onChange={setChip} />
-      <button onClick={roll} disabled={busy} style={{ ...actionBtn, opacity: busy ? .6 : 1 }}>
-        {busy ? "ROLLING…" : `ROLL ${R(chip)}`}
+      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+        <button onClick={undo} disabled={busy || rolling} style={btn}>UNDO</button>
+        <button onClick={clear} disabled={busy || rolling} style={btn}>CLEAR</button>
+      </div>
+      <button onClick={roll} disabled={busy || rolling} style={{ ...actionBtn, opacity: busy || rolling ? .6 : 1 }}>
+        {rolling ? "ROLLING…" : `ROLL ${R(total)}`}
       </button>
 
       <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
       <Tip t={tip} />
       {burst > 0 && <Confetti key={burst} />}
-    </Shell>
+    </div>
   );
 }
 
