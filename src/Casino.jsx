@@ -990,6 +990,12 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
       padding: "10px 10px 14px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
       <style>{CSS}</style>
 
+      {/* top: lobby + round */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <button onClick={onBack} style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>« Lobby</button>
+        <span style={{ fontSize: 12, fontWeight: 800, color: "#94a3b8", letterSpacing: 1 }}>Round #{roundId ?? "--"}</span>
+      </div>
+
       {/* history */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
         {crashes.filter(c => Number.isFinite(Number(c))).map((c, i) => {
@@ -1068,7 +1074,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
       {/* footer */}
       <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13,
         background: "#0b1220", border: "1px solid #1e293b", borderRadius: 14, padding: "10px 12px" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "#94a3b8", fontWeight: 800, cursor: "pointer" }}>← Lobby</button>
+        <span />
         <div>Balance <b style={{ color: "#34d399" }}>{R(bal)}</b></div>
         <div style={{ color: "#64748b" }}>{R(MIN)} – {R(MAX)}</div>
       </div>
