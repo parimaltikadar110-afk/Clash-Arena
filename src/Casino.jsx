@@ -1088,12 +1088,14 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
             {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
             {pts.length > 1 && !boom && (
-              <path d={trailD} fill="none" stroke="#fb923c" strokeWidth="5" strokeLinecap="round" opacity=".55" filter="url(#avGlow)" />
-              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)}) scale(2.1)`} style={{ filter: "drop-shadow(0 0 8px #ef4444)" }}>
+                <>
+                <path d={trailD} fill="none" stroke="#fb923c" strokeWidth="5" strokeLinecap="round" opacity=".55" filter="url(#avGlow)" />
+                <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)}) scale(2.1)`} style={{ filter: "drop-shadow(0 0 8px #ef4444)" }}>
                 <path d="M-44 0 L-22 -3 L-22 3 Z" fill="#fb923c" opacity=".65" />
                 <path d="M-18 -3 L-6 -3 L-8 -14 L-2 -14 L6 -3 L14 -3 L22 0 L14 3 L6 3 L-2 14 L-8 14 L-6 3 L-18 3 L-22 7 L-24 7 L-22 0 L-24 -7 L-22 -7 Z"
                   fill="#f8fafc" stroke="#ef4444" strokeWidth=".8" strokeLinejoin="round" />
               </g>
+                </>
             )}
             {boom && (
               <g transform={`translate(${px} ${py})`}>
