@@ -37,6 +37,7 @@ let _ac = null;
 const playTone = (freq, dur) => {
   try {
     _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (_ac.state === "suspended") _ac.resume();
     const o = _ac.createOscillator(), g = _ac.createGain();
     o.frequency.value = freq; o.type = "sine"; g.gain.value = 0.06;
     o.connect(g); g.connect(_ac.destination); o.start(); o.stop(_ac.currentTime + dur);
@@ -47,6 +48,7 @@ const numColor = n => (n === 0 ? C_GRN : RED.includes(n) ? C_RED : C_BLK);
 const R = n => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
 const num = (v, d = 1) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
 const fx = v => num(v, 0).toFixed(2);
+const RM = v => "₹" + (Math.floor(num(v, 0) * 100) / 100).toFixed(2);
 const mod = (x, m) => ((x % m) + m) % m;
 const pt = (r, deg) => { const a = (deg * Math.PI) / 180; return [150 + r * Math.sin(a), 150 - r * Math.cos(a)]; };
 const btn = { background: "#16291d", color: "#f3efe0", border: `1px solid ${GOLD}`, borderRadius: 10, padding: "9px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" };
@@ -523,7 +525,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
   const [showStats, setShowStats] = useState(false);
   const [track, setTrack] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [sound, setSound] = useState(() => { try { return localStorage.getItem("x7_sound") === "on"; } catch { return false; } });
+  const [sound, setSound] = useState(soundOn);
   const [favBets, setFavBets] = useState(() => { try { return JSON.parse(localStorage.getItem("x7_fav_bets") || "[]"); } catch { return []; } });
   const toggleSound = () => { setSound(v => { const n = !v; try { localStorage.setItem("x7_sound", n ? "on" : "off"); } catch {} return n; }); };
   const sfx = (f, d) => { if (sound) playTone(f, d); };
@@ -601,7 +603,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
       setStack([]);
       setBal(data.new_balance);
       setLast({ n: data.number, net, stake: sum, payout: data.won_amount });
-      if (net > 0) { flash(`YOU WIN ${R(net)} · Total ${R(data.won_amount)}`); sfx(880, 0.25); }
+      if (net > 0) { flash(`WON ${R(data.won_amount)}`); playSfx(880, 0.25); }
       if (net > 0) setBurst(b => b + 1);
       setPhase("result");
       reload && reload();
@@ -659,7 +661,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
           <div style={{ borderRadius: 14, padding: "10px 12px", marginBottom: 14, background: bg, color: "#fff", border: `1px solid ${GOLD}`,
             boxShadow: "0 6px 18px #000a", textAlign: "center" }}>
             <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: 1 }}>
-              {k === "win" ? "YOU WIN" : k === "lose" ? "YOU LOSE" : "RETURNED"} · #{last.n}
+              WON {R(last.payout)}
             </div>
             <div style={{ fontSize: 16, fontWeight: 900, marginTop: 4 }}>Bet {R(last.stake)} · Win {R(last.net)} · Total {R(last.payout)}</div>
           </div>
@@ -995,6 +997,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     const [x1, y1] = xy(pts.length - 2, pts[pts.length - 2]);
     return Math.atan2(py - y1, px - x1) * 180 / Math.PI;
   })();
+  const trailD = pts.slice(-16).map((v, i, arr) => { const [x, y] = xy(pts.length - arr.length + i, v); return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`; }).join(" ");
   const crashed = !!res && !res.won;
 
   const label = phase === "idle" ? "WAITING"
@@ -1007,7 +1010,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     : fx(m);
   const multSize = 60 + Math.min(26, (m - 1) * 6);
 
-  const actionText = phase === "flying" ? `CASH OUT ${R(stakeRef.current * m)}`
+  const actionText = phase === "flying" ? `CASH OUT ${RM(stakeRef.current * m)}`
     : busy ? "WAITING" : "BET";
   const actionCls = phase === "flying" ? "bg-orange-500 text-white animate-pulse"
     : busy ? "bg-slate-700 text-slate-300"
@@ -1085,7 +1088,8 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
             {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
             {pts.length > 1 && !boom && (
-              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)}) scale(1.7)`} style={{ filter: "drop-shadow(0 0 6px #ef4444)" }}>
+              <path d={trailD} fill="none" stroke="#fb923c" strokeWidth="5" strokeLinecap="round" opacity=".55" filter="url(#avGlow)" />
+              <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)}) scale(2.1)`} style={{ filter: "drop-shadow(0 0 8px #ef4444)" }}>
                 <path d="M-44 0 L-22 -3 L-22 3 Z" fill="#fb923c" opacity=".65" />
                 <path d="M-18 -3 L-6 -3 L-8 -14 L-2 -14 L6 -3 L14 -3 L22 0 L14 3 L6 3 L-2 14 L-8 14 L-6 3 L-18 3 L-22 7 L-24 7 L-22 0 L-24 -7 L-22 -7 Z"
                   fill="#f8fafc" stroke="#ef4444" strokeWidth=".8" strokeLinejoin="round" />
@@ -1105,7 +1109,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
         {/* result */}
         <div style={ST.result}>
-          {res?.won && <span style={{ color: "#34d399" }}>Won {R(res.net)}</span>}
+          {res?.won && <span style={{ color: "#34d399" }}>Won {RM(res.net)}</span>}
           {res && !res.won && <span style={{ color: "#f87171" }}>Lost {R(-res.net)}</span>}
         </div>
 
@@ -1177,7 +1181,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 }
 
 /* ================= SOUND (one switch for the whole casino) ================= */
-const soundOn = () => { try { return localStorage.getItem("x7_sound") === "on"; } catch { return false; } };
+const soundOn = () => { try { return localStorage.getItem("x7_sound") !== "off"; } catch { return true; } };
 const playSfx = (f, d) => { if (soundOn()) playTone(f, d); };
 function SoundBtn() {
   const [on, setOn] = useState(soundOn);
@@ -1259,8 +1263,8 @@ function Mines({ supabase, me, reload, say, cfg, onBack }) {
   const cellView = i => {
     const isMine = mines.includes(i), opened = cells.includes(i);
     let content = "", bg = "#1e293b", border = "#334155", color = "#94a3b8";
-    if (opened) { bg = "#064e3b"; border = "#10b981"; color = "#d1fae5"; content = "◆"; }
-    if (isMine) { bg = i === hitCell ? "#7f1d1d" : "#3f1d1d"; border = "#ef4444"; color = "#fecaca"; content = "✹"; }
+    if (opened) { bg = "#064e3b"; border = "#10b981"; color = "#d1fae5"; content = "💎"; }
+    if (isMine) { bg = i === hitCell ? "#7f1d1d" : "#3f1d1d"; border = "#ef4444"; color = "#fecaca"; content = "💣"; }
     return (
       <button key={i} onClick={() => open(i)} disabled={status !== "playing" || opened || busy}
         style={{ aspectRatio: "1", borderRadius: 10, border: `1px solid ${border}`, background: bg, color, fontSize: 22, fontWeight: 900,
