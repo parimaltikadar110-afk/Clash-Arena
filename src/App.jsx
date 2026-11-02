@@ -1400,7 +1400,7 @@ export default function App() {
     }
     if(cur==="Casino Settings"){
       const cc = ccDraft || casinoCfg, S2 = casinoStats||{};
-      const GL = [["roulette","Roulette"],["dragon_tiger","Dragon Tiger"],["aviator","Aviator"],["mines","Mines"],["vortex","Vortex"],["dice","Dice"],["chicken","Chicken Road"]];
+      const GL = [["roulette","Roulette"],["dragon_tiger","Dragon Tiger"],["aviator","Aviator"],["mines","Mines"],["vortex","Vortex"],["dice","Dice"],["chicken","Chicken Road"],["elements","Elements"]];
       const setG = (k,v) => setCcDraft({...cc, games:{...cc.games, [k]:v}});
       const card=(l,v)=><div className="ucard" style={{flex:1,minWidth:130}}><span className="hint">{l}</span><b style={{fontSize:18}}>{v}</b></div>;
       b=<div className="pnl"><h3>🎰 Casino settings</h3>
