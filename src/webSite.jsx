@@ -112,7 +112,7 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
           <button type="button" className="wsBtn" onClick={() => open("up")}>Create free account</button>
           <button type="button" className="wsGhost" onClick={() => open("in")}>Login</button>
           {showDl && (
-            <a href="/ClashX7.apk" download="ClashX7.apk" className="wsGhost">
+            <a href="https://qsozgiwbxafahieuvjgu.supabase.co/storage/v1/object/public/public-assets/ClashX7%20(6).apk" download="ClashX7.apk" className="wsGhost">
               ⬇ Download Android app
             </a>
           )}
@@ -196,7 +196,7 @@ export function WebAuth({ mode, setMode, f, onChange, onSubmit, onBack, logo, do
           {field("pw", "Password", "password")}
           <button type="button" className="wsBtn" onClick={onSubmit}>{up ? "Create account" : "Login"}</button>
           {showDl && (
-            <a href="/ClashX7.apk" download="ClashX7.apk" className="wsGhost">
+            <a href="https://qsozgiwbxafahieuvjgu.supabase.co/storage/v1/object/public/public-assets/ClashX7%20(6).apk" download="ClashX7.apk" className="wsGhost">
               ⬇ Download Android app
             </a>
           )}
