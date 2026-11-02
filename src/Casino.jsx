@@ -998,7 +998,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying"); playSfx(330, 0.12);
     clearInterval(timer.current); clearInterval(poll.current);
     timer.current = setInterval(tick, 100);
-    poll.current = setInterval(pollStatus, 2000);        // one light status call every 2 seconds while flying
+    poll.current = setInterval(pollStatus, 500);     // check the server twice a second so the crash shows right away        // one light status call every 2 seconds while flying
   };
 
   // ---- custom amount ("Other ₹") ----
