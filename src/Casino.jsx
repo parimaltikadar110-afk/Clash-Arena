@@ -1832,7 +1832,7 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
   const payout = Math.floor(bet * mult * 100) / 100;
 
   const clampBet = v => Math.min(MAX, Math.max(MIN, Math.round(v)));
-  const setBetSafe = v => { if (!active && !busy) setBet(clampBet(v)); };
+  const setBetSafe = v => { if (!active && !busy) { setBet(clampBet(v)); if (round) setRound(null); } };
 
   const toggleSound = () => {
     const n = !sound; setSound(n);
@@ -1896,7 +1896,7 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
 
   // chicken position: 0 = bottom (start), CR_LANES = top (finish)
   const chickenPos = Math.round(((CR_LANES - stepNow + 1) / (CR_LANES + 1)) * 100);
-  const idle = !round;
+  const idle = !active;
 
   return (
     <div style={CS.page}>
@@ -1961,7 +1961,7 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
 
         <div style={{ ...CS.row, marginTop: 10 }}>
           {Object.entries(CR_DIFF).map(([k, d]) => (
-            <button key={k} disabled={!idle} onClick={() => setDiff(k)}
+            <button key={k} disabled={!idle} onClick={() => { if (!active && !busy) { setDiff(k); if (round) setRound(null); } }}
               style={{ ...CS.diffBtn, color: diff === k ? "#0a0f18" : d.color,
                 background: diff === k ? d.color : "#111827", borderColor: diff === k ? d.color : "#374151" }}>
               {d.label}
@@ -1972,16 +1972,13 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
         {idle && (
           <button style={CS.primary} onClick={play} disabled={busy}>PLAY {R(bet)}</button>
         )}
-        {!idle && active && (
+        {active && (
           <>
             <button style={CS.primary} onClick={cross} disabled={busy}>CROSS</button>
             <button style={{ ...CS.cash, opacity: stepNow < 1 ? 0.5 : 1 }} onClick={cashOut} disabled={busy || stepNow < 1}>
               CASH OUT {RM(payout)}
             </button>
           </>
-        )}
-        {!idle && !active && (
-          <button style={CS.primary} onClick={newRound} disabled={busy}>PLAY AGAIN</button>
         )}
         <div style={CS.msg}>{msg}</div>
       </div>
