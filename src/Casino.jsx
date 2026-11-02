@@ -71,7 +71,6 @@ const playTone = (freq, dur) => {
     o.start(t); o.stop(t + dur + 0.03);
   } catch {}
 };
-
 const colorName = n => (n === 0 ? "green" : RED.includes(n) ? "red" : "black");
 const numColor = n => (n === 0 ? C_GRN : RED.includes(n) ? C_RED : C_BLK);
 const R = n => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
@@ -667,7 +666,7 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
         <button onClick={() => setTrack(t => !t)} style={btn}>{track ? "Grid" : "Track"}</button>
         <button onClick={() => setShowStats(true)} style={btn}>Stats</button>
       </>}>
-
+ 
       <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "2px 0 10px" }}>
         {hist.length === 0 && <span style={{ fontSize: 12, opacity: .6 }}>No spins yet</span>}
         {hist.slice(0, 20).map((h, i) => (
@@ -699,8 +698,11 @@ function Roulette({ supabase, me, reload, say, cfg, onBack }) {
 
       {!collapsed && <Wheel target={target} spinId={spinId} spinning={phase === "spinning"} />}
 
-      {!collapsed && (track ? <RaceTrack place={place} amounts={amounts} winNum={winNum} /> : <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 30px #0008" }}>
-        {cell("straight", 0, "0", C_GRN, { tall: 36 })}
+      {!collapsed && (track ? <RaceTrack place={place} amounts={amounts} winNum={winNum} /> : <div style={{ marginTop: 16, background: FELT, borderRadius: 14, padding: 10, border: `2px solid ${GOLD}`, boxShadow: "inset 0 0 40px #0009" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+          {cell("straight", 0, "0", C_GRN, { tall: 36 })}
+          <div />
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 48px", gap: 4, marginTop: 4 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {cell("low", null, "1-18", C_BLK, { flexy: true })}{cell("even", null, "EVEN", C_BLK, { flexy: true })}
@@ -1068,10 +1070,10 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     chips: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 },
     row: { display: "flex", alignItems: "center", gap: 8 },
     rupee: { color: "#cbd5e1", fontSize: 14, fontWeight: 800 },
-    input: { flex: 1, minWidth: 0, padding: "10px 14px", borderRadius: 12, background: "#1e293b", border: "1px solid #475569", color: "#ffffff", fontSize: 18, fontWeight: 800, textAlign: "right", outline: "none", boxSizing: "border-box" },
+    input: { flex: 1, minWidth: 0, padding: "10px 14px", borderRadius: 12, background: "#1e293b", border: "1px solid #475569", color: "#ffffff", fontSize: 18, fontWeight: 800, textAlign: "right", boxSizing: "border-box" },
     autoRow: { display: "flex", alignItems: "center", gap: 12 },
     autoLabel: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, color: "#e2e8f0", cursor: "pointer" },
-    autoInput: { marginLeft: "auto", width: 112, padding: "8px 10px", borderRadius: 10, border: "1px solid #475569", background: "#1e293b", color: "#ffffff", fontSize: 16, fontWeight: 800, textAlign: "right", boxSizing: "border-box" },
+    autoInput: { marginLeft: "auto", width: 112, padding: "8px 10px", borderRadius: 10, border: "1px solid #475569", background: "#1e293b", color: "#ffffff", fontSize: 16, fontWeight: 800, textAlign: "right" },
     action: { width: "100%", padding: "16px", borderRadius: 14, border: "none", fontSize: 18, fontWeight: 900, letterSpacing: 1,
       cursor: busy ? "default" : "pointer", opacity: busy ? .75 : 1,
       background: phase === "flying" ? "#f97316" : busy ? "#334155" : "#10b981",
@@ -1117,14 +1119,14 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
             {pts.length > 1 && <path d={area} fill="url(#avArea)" />}
             {pts.length > 1 && <path d={line} fill="none" stroke="#ef4444" strokeWidth="3.2" strokeLinejoin="round" filter="url(#avGlow)" />}
             {pts.length > 1 && !boom && (
-                <>
+              <>
                 <path d={trailD} fill="none" stroke="#fb923c" strokeWidth="5" strokeLinecap="round" opacity=".55" filter="url(#avGlow)" />
                 <g transform={`translate(${px} ${py}) rotate(${planeAng.toFixed(1)}) scale(2.1)`} style={{ filter: "drop-shadow(0 0 8px #ef4444)" }}>
-                <path d="M-44 0 L-22 -3 L-22 3 Z" fill="#fb923c" opacity=".65" />
-                <path d="M-18 -3 L-6 -3 L-8 -14 L-2 -14 L6 -3 L14 -3 L22 0 L14 3 L6 3 L-2 14 L-8 14 L-6 3 L-18 3 L-22 7 L-24 7 L-22 0 L-24 -7 L-22 -7 Z"
-                  fill="#f8fafc" stroke="#ef4444" strokeWidth=".8" strokeLinejoin="round" />
-              </g>
-                </>
+                  <path d="M-44 0 L-22 -3 L-22 3 Z" fill="#fb923c" opacity=".65" />
+                  <path d="M-18 -3 L-6 -3 L-8 -14 L-2 -14 L6 -3 L14 -3 L22 0 L14 3 L6 3 L-2 14 L-8 14 L-6 3 L-18 3 L-22 7 L-24 7 L-22 0 L-24 -7 L-22 -7 Z"
+                    fill="#f8fafc" stroke="#ef4444" strokeWidth=".8" strokeLinejoin="round" />
+                </g>
+              </>
             )}
             {boom && (
               <g transform={`translate(${px} ${py})`}>
