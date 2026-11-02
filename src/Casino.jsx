@@ -1991,6 +1991,110 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ================= ELEMENTS (original ClashX7 game) ================= */
+const EL = [
+  { id: 1, name: "Earth", color: "#a16207", glow: "#eab308", icon: "🪨" },
+  { id: 2, name: "Water", color: "#1d4ed8", glow: "#38bdf8", icon: "💧" },
+  { id: 3, name: "Fire", color: "#b91c1c", glow: "#fb923c", icon: "🔥" },
+];
+const EL_PAY = { 1: "0.5x", 2: "2.5x", 3: "5x" };
+function Elements({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 10, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [chip, setChip] = useState(10);
+  const [pick, setPick] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [draw, setDraw] = useState([null, null, null]);   // element ids shown after the roll
+  const [res, setRes] = useState(null);                   // { matches, net, won }
+  const [burst, setBurst] = useState(0);
+
+  const roll = async () => {
+    if (busy) return;
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBal(before - chip); setBusy(true); setRes(null); setDraw([null, null, null]);
+    playSfx(260, 0.05);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_elements_roll", { p_bet: chip, p_element: pick })); } catch (e) { error = e; }
+    if (error || !data?.success) {
+      setBusy(false); setBal(before);
+      return say ? say(friendly(error), 1) : flash(friendly(error));
+    }
+    const d = Array.isArray(data.draw) ? data.draw.map(v => num(v, 1)) : [1, 1, 1];
+    setTimeout(() => {
+      setDraw(d);
+      const won = num(data.won_amount, 0);
+      const net = won - chip;
+      setRes({ matches: num(data.matches, 0), net, won });
+      if (data.new_balance != null) setBal(num(data.new_balance, 0));
+      setBusy(false);
+      if (net > 0) setBurst(b => b + 1);
+      playSfx(net > 0 ? 880 : 180, net > 0 ? 0.25 : 0.15);
+      reload && reload();
+    }, 900);
+  };
+
+  return (
+    <Shell title="Elements" onBack={onBack} right={<SoundBtn />}>
+      <div style={{ background: "radial-gradient(ellipse at 50% 20%,#1e293b,#0b1120 70%)", border: "1px solid #334155", borderRadius: 18, padding: "18px 10px 14px" }}>
+        <div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, letterSpacing: 2, opacity: .7 }}>PICK AN ELEMENT</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginTop: 10 }}>
+          {EL.map(e => {
+            const on = pick === e.id;
+            return (
+              <button key={e.id} disabled={busy} onClick={() => { playSfx(520, 0.03); setPick(e.id); }}
+                style={{ padding: "12px 4px", borderRadius: 14, cursor: "pointer", border: `2px solid ${on ? e.glow : "#334155"}`,
+                  background: on ? `linear-gradient(180deg,${e.color},#0f172a)` : "#0f172a", color: "#f8fafc",
+                  boxShadow: on ? `0 0 16px ${e.glow}88` : "none", fontWeight: 900 }}>
+                <div style={{ fontSize: 28 }}>{e.icon}</div>
+                <div style={{ marginTop: 4 }}>{e.name}</div>
+                <div style={{ fontSize: 10, opacity: .75 }}>1 match {EL_PAY[1]}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, letterSpacing: 2, opacity: .7, marginTop: 18 }}>THREE DRAWS</div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 10, minHeight: 92 }}>
+          {[0, 1, 2].map(i => {
+            const v = draw[i];
+            const e = v ? EL.find(x => x.id === v) : null;
+            const hit = e && e.id === pick;
+            return (
+              <div key={i} style={{ width: 84, height: 92, borderRadius: 16, display: "grid", placeItems: "center",
+                border: `2px solid ${hit ? "#facc15" : "#334155"}`,
+                background: e ? `linear-gradient(180deg,${e.color},#0f172a)` : "repeating-linear-gradient(45deg,#1e293b 0 8px,#0f172a 8px 16px)",
+                boxShadow: hit ? "0 0 18px #facc1566" : "0 6px 14px #000a", fontSize: 40, transition: "all .3s" }}>
+                {busy && !e ? <span style={{ fontSize: 22, opacity: .6 }}>?</span> : e ? e.icon : ""}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ textAlign: "center", minHeight: 44, marginTop: 12, fontWeight: 900 }}>
+          {busy && <span style={{ opacity: .8 }}>Drawing…</span>}
+          {!busy && res && (
+            <span style={{ color: res.net > 0 ? "#86efac" : res.net < 0 ? "#fca5a5" : "#e5e7eb" }}>
+              {res.matches} match{res.matches === 1 ? "" : "es"} · {res.net > 0 ? `WON ${R(res.won)}` : res.net < 0 ? `LOST ${R(-res.net)}` : "RETURNED"}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <Chips value={chip} onChange={setChip} />
+      <button onClick={roll} disabled={busy} style={{ ...actionBtn, opacity: busy ? .6 : 1 }}>
+        {busy ? "DRAWING…" : `DRAW ${R(chip)}`}
+      </button>
+
+      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+      {burst > 0 && <Confetti key={burst} />}
+    </Shell>
+  );
+}
+
 /* ================= LOBBY ================= */
 const CardArt = memo(function CardArt({ kind }) {
   if (kind === "chicken") {
@@ -2094,6 +2198,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "mines") return <Mines {...common} />;
   if (view === "vortex") return <Vortex {...common} />;
   if (view === "dice") return <Dice {...common} />;
+  if (view === "elements") return <Elements {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
 
   const cards = [
@@ -2104,6 +2209,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on 50x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
     ["dice", "dice", "Dice", "Roll two dice. Under 7, seven, or over 7.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
     ["chicken", "chicken", "Chicken Road 2", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
+    ["elements", "elements", "Elements", "Pick Earth, Water or Fire. Match the draw.", "linear-gradient(135deg,#1e3a8a,#7c2d12)"],
   ].filter(([, key]) => games[key]);
 
   return (
