@@ -8,9 +8,9 @@ export const WEB_CSS = `
 .wsBrand img{width:34px;height:34px;border-radius:9px}
 .wsNavBtns{display:flex;gap:10px}
 .wsLink{background:none;border:0;color:#cbd5e1;font-size:14px;cursor:pointer;padding:8px 6px}
-.wsBtn{height:48px;padding:0 22px;border:0;border-radius:10px;background:linear-gradient(135deg,#ffd23f,#f59e0b);color:#1a1200;font-weight:800;font-size:15px;cursor:pointer;letter-spacing:.3px}
+.wsBtn{height:48px;padding:0 22px;border:0;border-radius:10px;background:linear-gradient(135deg,#ffd23f,#f59e0b);color:#1a1200;font-weight:800;font-size:15px;cursor:pointer;letter-spacing:.3px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 .wsBtn:hover{filter:brightness(1.06)}
-.wsGhost{height:48px;padding:0 20px;border-radius:10px;background:transparent;color:#f5f5f7;border:1px solid #ffffff33;font-weight:700;font-size:15px;cursor:pointer}
+.wsGhost{height:48px;padding:0 20px;border-radius:10px;background:transparent;color:#f5f5f7;border:1px solid #ffffff33;font-weight:700;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 .wsHero{position:relative;text-align:center;padding:90px 6vw 80px;background:radial-gradient(ellipse at 50% 0%,#3b0d12 0,#0b0b10 60%)}
 .wsKicker{display:inline-block;padding:6px 14px;border:1px solid #ffd23f55;border-radius:99px;color:#ffd23f;font-size:12px;font-weight:700;letter-spacing:1.5px}
 .wsHero h1{font-size:clamp(40px,7vw,80px);line-height:1;margin:22px 0 14px;font-weight:900;letter-spacing:-1px}
@@ -46,7 +46,6 @@ export const WEB_CSS = `
 .wsField input{width:100%;height:46px;border-radius:10px;border:1px solid #ffffff1f;background:#0b0b10;color:#f5f5f7;padding:0 14px;font-size:15px;outline:none}
 .wsField input:focus{border-color:#ffd23f}
 .wsAuthCard .wsBtn{width:100%;margin-top:6px}
-/* FIX: App.jsx-er global ".x7 input{color:#111!important}" website-er input text ke dark kore dito. Eta oita override kore. */
 .wsPage .wsField input{color:#f5f5f7!important;-webkit-text-fill-color:#f5f5f7!important;caret-color:#ffd23f;background:#0b0b10!important;opacity:1!important;margin:0!important;padding:0 14px!important;font-size:16px}
 .wsPage .wsField input::placeholder{color:#63636e!important;-webkit-text-fill-color:#63636e!important;opacity:1!important}
 .wsPage .wsField input:-webkit-autofill,.wsPage .wsField input:-webkit-autofill:focus{-webkit-box-shadow:0 0 0 1000px #0b0b10 inset!important;box-shadow:0 0 0 1000px #0b0b10 inset!important;-webkit-text-fill-color:#f5f5f7!important;caret-color:#f5f5f7;transition:background-color 9999s ease-out 0s}
@@ -79,7 +78,6 @@ const STEPS = [
   ["3", "Win & withdraw", "Top the room, get paid and withdraw to UPI."],
 ];
 
-/* ---------- Website splash ---------- */
 export function WebSplash({ logo }) {
   return (
     <div className="wsSplash">
@@ -94,7 +92,6 @@ export function WebSplash({ logo }) {
   );
 }
 
-/* ---------- Website landing page ---------- */
 export function WebLanding({ logo, modes, open, download, showDl, support }) {
   return (
     <div className="wsPage">
@@ -114,7 +111,11 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
         <div className="wsCtas">
           <button type="button" className="wsBtn" onClick={() => open("up")}>Create free account</button>
           <button type="button" className="wsGhost" onClick={() => open("in")}>Login</button>
-          {showDl && <button type="button" className="wsGhost" onClick={download}>⬇ Download Android app</button>}
+          {showDl && (
+            <a href="/ClashX7.apk" download="ClashX7.apk" className="wsGhost">
+              ⬇ Download Android app
+            </a>
+          )}
         </div>
         <div className="wsStats">
           <div><b>Daily</b><span>NEW MATCHES</span></div>
@@ -165,7 +166,6 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
   );
 }
 
-/* ---------- Website login / signup page ---------- */
 export function WebAuth({ mode, setMode, f, onChange, onSubmit, onBack, logo, download, showDl }) {
   const up = mode === "up";
   const ac = { un: "username", ph: "tel", em: up ? "email" : "username", pw: up ? "new-password" : "current-password" };
@@ -195,7 +195,11 @@ export function WebAuth({ mode, setMode, f, onChange, onSubmit, onBack, logo, do
           {field("em", up ? "Email" : "Email or Mobile number", up ? "email" : "text")}
           {field("pw", "Password", "password")}
           <button type="button" className="wsBtn" onClick={onSubmit}>{up ? "Create account" : "Login"}</button>
-          {showDl && <button type="button" className="wsGhost" onClick={download}>⬇ Download Android app</button>}
+          {showDl && (
+            <a href="/ClashX7.apk" download="ClashX7.apk" className="wsGhost">
+              ⬇ Download Android app
+            </a>
+          )}
           <p className="wsNote">18+ only · Play responsibly</p>
         </div>
       </main>
