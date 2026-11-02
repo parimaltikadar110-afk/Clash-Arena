@@ -86,7 +86,7 @@ export function WebSplash({ logo }) {
       <style>{WEB_CSS}</style>
       <div className="wsGridBg" />
       <div className="wsRing" />
-      <img className="wsLogo" src={logo} alt="ClashX7" />
+      <img className="wsLogo" src={logo} alt="ClashX7 logo" />
       <p className="wsTag">WHERE SKILLS MEETS REWARD</p>
       <div className="wsBar"><i /></div>
       <small>Loading tournaments…</small>
@@ -102,8 +102,8 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
       <header className="wsNav">
         <span className="wsBrand"><img src={logo} alt="" />ClashX7</span>
         <div className="wsNavBtns">
-          <button className="wsLink" onClick={() => open("in")}>Login</button>
-          <button className="wsBtn" onClick={() => open("up")}>Sign up</button>
+          <button type="button" className="wsLink" onClick={() => open("in")}>Login</button>
+          <button type="button" className="wsBtn" onClick={() => open("up")}>Sign up</button>
         </div>
       </header>
 
@@ -112,9 +112,9 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
         <h1>Play. <em>Win.</em> Withdraw.</h1>
         <p>Join daily custom-room tournaments, compete for real prize pools and cash out your winnings by UPI.</p>
         <div className="wsCtas">
-          <button className="wsBtn" onClick={() => open("up")}>Create free account</button>
-          <button className="wsGhost" onClick={() => open("in")}>Login</button>
-          {showDl && <button className="wsGhost" onClick={download}>⬇ Download Android app</button>}
+          <button type="button" className="wsBtn" onClick={() => open("up")}>Create free account</button>
+          <button type="button" className="wsGhost" onClick={() => open("in")}>Login</button>
+          {showDl && <button type="button" className="wsGhost" onClick={download}>⬇ Download Android app</button>}
         </div>
         <div className="wsStats">
           <div><b>Daily</b><span>NEW MATCHES</span></div>
@@ -154,7 +154,7 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
         <p style={{ color: "#a1a1aa", margin: "0 0 18px" }}>Our support team is here for you.</p>
         {support
           ? <a className="wsBtn" style={{ textDecoration: "none", display: "inline-block" }} href={support} target="_blank" rel="noreferrer">Contact support</a>
-          : <button className="wsBtn" onClick={() => open("in")}>Login to continue</button>}
+          : <button type="button" className="wsBtn" onClick={() => open("in")}>Login to continue</button>}
       </section>
 
       <footer className="wsFoot">
@@ -168,33 +168,34 @@ export function WebLanding({ logo, modes, open, download, showDl, support }) {
 /* ---------- Website login / signup page ---------- */
 export function WebAuth({ mode, setMode, f, onChange, onSubmit, onBack, logo, download, showDl }) {
   const up = mode === "up";
+  const ac = { un: "username", ph: "tel", em: up ? "email" : "username", pw: up ? "new-password" : "current-password" };
   const field = (k, label, type = "text") => (
     <label className="wsField">
       <span>{label}</span>
-      <input type={type} value={f[k] ?? ""} onChange={e => onChange(k, e.target.value)} />
+      <input type={type} name={k} autoComplete={ac[k]} value={f[k] ?? ""} onChange={e => onChange(k, e.target.value)} />
     </label>
   );
   return (
     <div className="wsPage">
       <style>{WEB_CSS}</style>
       <header className="wsNav">
-        <button className="wsLink" onClick={onBack}>← Home</button>
+        <button type="button" className="wsLink" onClick={onBack}>← Home</button>
         <span className="wsBrand"><img src={logo} alt="" />ClashX7</span>
       </header>
       <main className="wsAuthWrap">
         <div className="wsAuthCard">
           <h2>{up ? "Create your account" : "Welcome back"}</h2>
           <p className="wsSub">{up ? "Join in a minute and start playing today." : "Login to join matches and manage your wallet."}</p>
-          <div className="wsTabs">
-            <button className={!up ? "on" : ""} onClick={() => setMode("in")}>Login</button>
-            <button className={up ? "on" : ""} onClick={() => setMode("up")}>Sign up</button>
+          <div className="wsTabs" role="tablist">
+            <button type="button" role="tab" aria-selected={!up} className={!up ? "on" : ""} onClick={() => setMode("in")}>Login</button>
+            <button type="button" role="tab" aria-selected={up} className={up ? "on" : ""} onClick={() => setMode("up")}>Sign up</button>
           </div>
           {up && field("un", "Username")}
           {up && field("ph", "Mobile number", "tel")}
           {field("em", up ? "Email" : "Email or Mobile number", up ? "email" : "text")}
           {field("pw", "Password", "password")}
-          <button className="wsBtn" onClick={onSubmit}>{up ? "Create account" : "Login"}</button>
-          {showDl && <button className="wsGhost" onClick={download}>⬇ Download Android app</button>}
+          <button type="button" className="wsBtn" onClick={onSubmit}>{up ? "Create account" : "Login"}</button>
+          {showDl && <button type="button" className="wsGhost" onClick={download}>⬇ Download Android app</button>}
           <p className="wsNote">18+ only · Play responsibly</p>
         </div>
       </main>
