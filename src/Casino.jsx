@@ -1735,8 +1735,270 @@ function Dice({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ================= CHICKEN ROAD 2 (server decides each lane) ================= */
+const CR_LANES = 10;
+const CR_DIFF = {
+  easy:   { label: "Easy",   survive: 0.9, color: "#22c55e" },
+  medium: { label: "Medium", survive: 0.8, color: "#facc15" },
+  hard:   { label: "Hard",   survive: 0.7, color: "#f87171" },
+};
+const crMult = (diff, k) => Math.round((0.97 / Math.pow(CR_DIFF[diff].survive, k)) * 100) / 100;
+
+/* ---------- sound (Web Audio) ---------- */
+let _crAc = null;
+const crAudio = () => {
+  try {
+    _crAc = _crAc || new (window.AudioContext || window.webkitAudioContext)();
+    if (_crAc.state === "suspended") _crAc.resume();
+    return _crAc;
+  } catch { return null; }
+};
+const crOn = () => { try { return localStorage.getItem("x7_sound") !== "off"; } catch { return true; } };
+const crTone = (f, d, type = "sine", peak = 0.16, delay = 0) => {
+  const ac = crAudio(); if (!ac || !crOn()) return;
+  const t = ac.currentTime + delay;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + d + 0.03);
+};
+const crSfx = {
+  click: () => crTone(560, 0.05, "triangle", 0.14),
+  step:  () => { crTone(190, 0.1, "square", 0.08); crTone(120, 0.14, "sine", 0.12, 0.03); },
+  win:   () => [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => crTone(f, 0.6, "sine", 0.2, i * 0.09)),
+  lose:  () => { crTone(160, 0.5, "sawtooth", 0.14); crTone(90, 0.6, "sine", 0.24, 0.05); },
+};
+
+/* ---------- styles ---------- */
+const CS = {
+  page: { minHeight: "100vh", background: "radial-gradient(ellipse at 50% -10%,#1a2332 0%,#0a0f18 55%,#05080d 100%)",
+    color: "#e5e7eb", fontFamily: "system-ui,sans-serif", padding: "10px 12px 130px", boxSizing: "border-box" },
+  bar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
+  back: { padding: "9px 14px", borderRadius: 12, border: "1px solid #3f4a5a", background: "#111827", color: "#f1f5f9",
+    fontWeight: 800, fontSize: 14, cursor: "pointer" },
+  title: { flex: 1, textAlign: "center", fontWeight: 900, fontSize: 18, color: "#facc15", letterSpacing: 0.5 },
+  icon: { width: 40, height: 40, borderRadius: 12, border: "1px solid #3f4a5a", background: "#111827", color: "#f1f5f9", cursor: "pointer", fontSize: 18 },
+  road: { position: "relative", height: 420, borderRadius: 18, overflow: "hidden", border: "1px solid #1f2937",
+    background: "linear-gradient(180deg,#0f1419 0%,#1b2129 40%,#1f2629 100%)", boxShadow: "inset 0 0 40px #000" },
+  curb: { position: "absolute", top: 0, bottom: 0, width: 26, background: "repeating-linear-gradient(180deg,#6b7280 0 10px,#374151 10px 20px)" },
+  laneLine: { position: "absolute", top: 0, bottom: 0, left: "50%", width: 4, marginLeft: -2,
+    background: "repeating-linear-gradient(180deg,#e5e7eb 0 22px,transparent 22px 44px)", opacity: 0.55 },
+  manhole: { position: "absolute", left: "50%", transform: "translate(-50%,-50%)", width: 96, height: 46, borderRadius: "50%",
+    border: "2px solid #4b5563", display: "grid", placeItems: "center", fontWeight: 900, fontSize: 13, transition: "all .35s",
+    boxShadow: "inset 0 4px 10px #000a, 0 4px 10px #0008" },
+  chicken: { position: "absolute", left: "50%", transform: "translate(-50%,-50%)", fontSize: 40, transition: "top .55s cubic-bezier(.3,1.4,.5,1)",
+    filter: "drop-shadow(0 6px 6px #000a)", zIndex: 3 },
+  tree: { position: "absolute", fontSize: 26, opacity: 0.85 },
+  lamp: { position: "absolute", fontSize: 22, opacity: 0.9 },
+  card: { marginTop: 14, borderRadius: 18, padding: 14, background: "#0f1520", border: "1px solid #1f2937" },
+  row: { display: "flex", alignItems: "center", gap: 10 },
+  betBox: { flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 12,
+    background: "#020617", border: "1px solid #334155" },
+  stepBtn: { width: 44, height: 44, borderRadius: 12, border: "1px solid #374151", background: "#1f2937", color: "#f8fafc",
+    fontSize: 22, fontWeight: 900, cursor: "pointer" },
+  chipBtn: { flex: 1, padding: "9px 0", borderRadius: 12, border: "1px solid #374151", background: "#111827", color: "#e5e7eb",
+    fontWeight: 800, fontSize: 14, cursor: "pointer" },
+  diffBtn: { flex: 1, padding: "10px 0", borderRadius: 12, border: "1px solid #374151", background: "#111827", fontWeight: 800,
+    fontSize: 14, cursor: "pointer" },
+  primary: { width: "100%", padding: "18px", borderRadius: 16, border: "none", fontSize: 19, fontWeight: 900, letterSpacing: 1,
+    color: "#052e16", background: "linear-gradient(180deg,#4ade80,#16a34a)", boxShadow: "0 8px 22px #16a34a55", cursor: "pointer", marginTop: 12 },
+  cash: { width: "100%", padding: "16px", borderRadius: 16, border: "none", fontSize: 17, fontWeight: 900, color: "#fff",
+    background: "linear-gradient(180deg,#fb923c,#ea580c)", boxShadow: "0 8px 22px #ea580c55", cursor: "pointer", marginTop: 10 },
+  msg: { minHeight: 26, textAlign: "center", fontWeight: 900, marginTop: 10 },
+  footer: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(10,15,24,.97)", borderTop: "1px solid #1f2937",
+    padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))", display: "flex", justifyContent: "space-between",
+    alignItems: "center", fontSize: 14, boxSizing: "border-box" },
+};
+
+function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const [bal, setBal] = useState((+me.balance || 0) + (+me.winnings || 0));
+  useEffect(() => { setBal((+me.balance || 0) + (+me.winnings || 0)); }, [me.balance, me.winnings]);
+
+  const [bet, setBet] = useState(10);
+  const [diff, setDiff] = useState("medium");
+  const [round, setRound] = useState(null);          // { id, step, alive, reached }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [bust, setBust] = useState(false);
+  const [sound, setSound] = useState(crOn);
+  const busyRef = useRef(false);
+
+  const active = !!round && round.alive && !round.reached;
+  const stepNow = round?.step || 0;
+  const mult = stepNow ? crMult(diff, stepNow) : 1;
+  const payout = Math.floor(bet * mult * 100) / 100;
+
+  const clampBet = v => Math.min(MAX, Math.max(MIN, Math.round(v)));
+  const setBetSafe = v => { if (!active && !busy) setBet(clampBet(v)); };
+
+  const toggleSound = () => {
+    const n = !sound; setSound(n);
+    try { localStorage.setItem("x7_sound", n ? "on" : "off"); } catch {}
+    if (n) crTone(660, 0.08);
+  };
+
+  const play = async () => {
+    if (busyRef.current || active) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    busyRef.current = true; setBusy(true); setBust(false); setMsg("");
+    crSfx.click();
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_chicken_start", { p_bet: bet, p_difficulty: diff })); } catch (e) { error = e; }
+    busyRef.current = false; setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : setMsg(friendly(error));
+    setRound({ id: data.round_id, step: 0, alive: true, reached: false });
+    if (data.new_balance != null) setBal(num(data.new_balance, bal));
+    reload && reload();
+  };
+
+  const cross = async () => {
+    if (busyRef.current || !active) return;
+    busyRef.current = true; setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_chicken_step", { p_round: round.id })); } catch (e) { error = e; }
+    busyRef.current = false; setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : setMsg(friendly(error));
+    if (!data.alive) {
+      setRound(r => ({ ...r, alive: false }));
+      setBust(true);
+      setMsg("The chicken got hit!");
+      crSfx.lose();
+      if (data.new_balance != null) setBal(num(data.new_balance, bal));
+      reload && reload();
+      return;
+    }
+    const step = num(data.step, stepNow + 1);
+    const reached = step >= CR_LANES;
+    setRound(r => ({ ...r, step, reached }));
+    crSfx.step();
+    setMsg(reached ? "Reached the end — cash out!" : `${RM(bet * crMult(diff, step))} if you cash out now`);
+  };
+
+  const cashOut = async () => {
+    if (busyRef.current || !round || !round.alive || stepNow < 1) return;
+    busyRef.current = true; setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_chicken_cashout", { p_round: round.id })); } catch (e) { error = e; }
+    busyRef.current = false; setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : setMsg(friendly(error));
+    setRound(r => ({ ...r, alive: false, reached: true }));
+    setMsg(`Won ${RM(data.won_amount)}`);
+    crSfx.win();
+    if (data.new_balance != null) setBal(num(data.new_balance, bal));
+    reload && reload();
+  };
+
+  const newRound = () => { setRound(null); setBust(false); setMsg(""); };
+
+  // chicken position: 0 = bottom (start), CR_LANES = top (finish)
+  const chickenPos = Math.round(((CR_LANES - stepNow + 1) / (CR_LANES + 1)) * 100);
+  const idle = !round;
+
+  return (
+    <div style={CS.page}>
+      <div style={CS.bar}>
+        <button style={CS.back} onClick={onBack}>« Lobby</button>
+        <div style={CS.title}>Chicken Road 2</div>
+        <button style={CS.icon} onClick={toggleSound} aria-label="Sound">{sound ? "🔊" : "🔇"}</button>
+      </div>
+
+      {/* road */}
+      <div style={CS.road}>
+        <div style={{ ...CS.curb, left: 0 }} />
+        <div style={{ ...CS.curb, right: 0 }} />
+        <div style={CS.laneLine} />
+        {[18, 46, 74].map(x => <div key={x} style={{ ...CS.laneLine, left: `${x}%`, opacity: 0.25 }} />)}
+        <span style={{ ...CS.tree, left: 6, top: 30 }}>🌳</span>
+        <span style={{ ...CS.tree, right: 6, top: 150 }}>🌲</span>
+        <span style={{ ...CS.tree, left: 6, top: 290 }}>🌳</span>
+        <span style={{ ...CS.lamp, right: 8, top: 80 }}>💡</span>
+        <span style={{ ...CS.lamp, left: 8, top: 220 }}>💡</span>
+
+        {Array.from({ length: CR_LANES }, (_, i) => {
+          const k = i + 1;
+          const top = Math.round(((CR_LANES - k + 1) / (CR_LANES + 1)) * 100);
+          const lit = stepNow >= k;
+          return (
+            <div key={k} style={{ ...CS.manhole, top: `${top}%`,
+              background: lit ? `radial-gradient(circle,#4ade80,#166534)` : "radial-gradient(circle,#374151,#111827)",
+              color: lit ? "#f0fdf4" : "#cbd5e1", borderColor: lit ? "#4ade80" : "#4b5563",
+              boxShadow: lit ? "0 0 18px #4ade80aa, inset 0 4px 10px #000a" : CS.manhole.boxShadow }}>
+              {crMult(diff, k).toFixed(2)}x
+            </div>
+          );
+        })}
+
+        <div style={{ ...CS.chicken, top: `${chickenPos}%`, opacity: bust ? 0.35 : 1,
+          transform: `translate(-50%,-50%) ${bust ? "rotate(90deg) scale(.7)" : ""}` }}>🐔</div>
+
+        {bust && (
+          <div style={{ position: "absolute", top: "50%", left: 0, right: 0, textAlign: "center", fontSize: 30, fontWeight: 900, color: "#f87171",
+            textShadow: "0 3px 10px #000" }}>BUSTED</div>
+        )}
+      </div>
+
+      {/* controls */}
+      <div style={CS.card}>
+        <div style={CS.row}>
+          <div style={CS.betBox}>
+            <span style={{ color: "#64748b", fontWeight: 800, fontSize: 13 }}>
+              {round?.id ? `Bet ID #${round.id}` : "Bet"}
+            </span>
+            <span style={{ fontSize: 22, fontWeight: 900, color: "#f8fafc" }}>{R(bet)}</span>
+          </div>
+          <button style={CS.stepBtn} disabled={!idle} onClick={() => setBetSafe(bet - 10)}>−</button>
+          <button style={CS.stepBtn} disabled={!idle} onClick={() => setBetSafe(bet + 10)}>+</button>
+        </div>
+
+        <div style={{ ...CS.row, marginTop: 10 }}>
+          <button style={CS.chipBtn} disabled={!idle} onClick={() => setBetSafe(bet * 0.5)}>x0.5</button>
+          <button style={CS.chipBtn} disabled={!idle} onClick={() => setBetSafe(bet * 2)}>x2.0</button>
+        </div>
+
+        <div style={{ ...CS.row, marginTop: 10 }}>
+          {Object.entries(CR_DIFF).map(([k, d]) => (
+            <button key={k} disabled={!idle} onClick={() => setDiff(k)}
+              style={{ ...CS.diffBtn, color: diff === k ? "#0a0f18" : d.color,
+                background: diff === k ? d.color : "#111827", borderColor: diff === k ? d.color : "#374151" }}>
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        {idle && (
+          <button style={CS.primary} onClick={play} disabled={busy}>PLAY {R(bet)}</button>
+        )}
+        {!idle && active && (
+          <>
+            <button style={CS.primary} onClick={cross} disabled={busy}>CROSS</button>
+            <button style={{ ...CS.cash, opacity: stepNow < 1 ? 0.5 : 1 }} onClick={cashOut} disabled={busy || stepNow < 1}>
+              CASH OUT {RM(payout)}
+            </button>
+          </>
+        )}
+        {!idle && !active && (
+          <button style={CS.primary} onClick={newRound} disabled={busy}>PLAY AGAIN</button>
+        )}
+        <div style={CS.msg}>{msg}</div>
+      </div>
+
+      <div style={CS.footer}>
+        <div>Balance <b style={{ color: "#4ade80" }}>{R(bal)}</b></div>
+        <div style={{ color: "#94a3b8" }}>{R(MIN)} - {R(MAX)}</div>
+      </div>
+    </div>
+  );
+}
+
 /* ================= LOBBY ================= */
 const CardArt = memo(function CardArt({ kind }) {
+  if (kind === "chicken") {
+    return <div style={{ position: "absolute", right: 6, top: 6, fontSize: 96, opacity: .9, filter: "drop-shadow(0 8px 10px #000a)" }}>🐔</div>;
+  }
   if (kind === "dice") {
     return (
       <svg viewBox="0 0 200 200" style={{ position: "absolute", right: -16, top: -10, width: 190, height: 190 }}>
@@ -1835,6 +2097,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "mines") return <Mines {...common} />;
   if (view === "vortex") return <Vortex {...common} />;
   if (view === "dice") return <Dice {...common} />;
+  if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
 
   const cards = [
     ["roulette", "roulette", "Auto Roulette", "The wheel turns by itself. Place your bets while the timer runs.", "linear-gradient(135deg,#3f0a0f,#b91c1c)"],
@@ -1843,6 +2106,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["mines", "mines", "Mines", "Pick safe cells. Cash out before you hit a mine.", "linear-gradient(135deg,#052e16,#166534)"],
     ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on 50x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
     ["dice", "dice", "Dice", "Roll two dice. Under 7, seven, or over 7.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
+    ["chicken", "chicken", "Chicken Road 2", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
   ].filter(([, key]) => games[key]);
 
   return (
