@@ -193,13 +193,15 @@ export default function App() {
   const [casinoStats,setCasinoStats] = useState(null);
   const [casinoErr,setCasinoErr] = useState("");
   const [casinoBusy,setCasinoBusy] = useState(false);
+  const [casinoAt,setCasinoAt] = useState("");
   const [ccDraft,setCcDraft] = useState(null);
   const loadCasino = async () => {
     setCasinoBusy(true); setCasinoErr("");
     try {
       const {data,error} = await supabase.rpc("casino_admin_stats");
       if(error){ setCasinoErr(error.message); say(error.message,1); return; }
-      setCasinoStats(data || {});
+      setCasinoStats(data || {}); setCasinoAt(new Date().toLocaleTimeString());
+      if (typeof load === "function") await load();   // also refresh balance, settings and profile
     } catch(e) { setCasinoErr(String(e?.message || e)); }
     finally { setCasinoBusy(false); }
   };
@@ -1423,7 +1425,7 @@ export default function App() {
         <p className="sh" style={{marginTop:16}}>Stats</p>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{card("Total Bets",S2.total_bets??0)}{card("Total Staked",R(S2.total_staked||0))}{card("Total Payout",R(S2.total_payout||0))}{card("House Profit",R(S2.house_profit||0))}</div>
         {casinoErr && <p style={{color:"#b91c1c",fontWeight:700,fontSize:13}}>Could not load stats: {casinoErr}</p>}
-        <button className="sm" style={{marginTop:10}} disabled={casinoBusy} onClick={()=>loadCasino()}>{casinoBusy?"Refreshing…":"Refresh stats"}</button></div>;
+        <button className="sm" style={{marginTop:10}} disabled={casinoBusy} onClick={()=>loadCasino()}>{casinoBusy?"Refreshing…":"Refresh stats"}</button>{casinoAt && <span style={{marginLeft:10,fontSize:12,color:"#64748b"}}>Updated {casinoAt}</span>}</div>;
     }
     if(cur==="Gift Codes"){
       b=<div className="pnl"><h3>🎁 Gift codes</h3>
