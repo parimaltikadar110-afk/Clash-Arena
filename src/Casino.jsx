@@ -825,9 +825,9 @@ function DragonTiger({ supabase, me, reload, say, cfg, onBack }) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         {sideBtn("dragon", "DRAGON", "1 : 1")}
-        {sideBtn("tie", "TIE", "11 : 1")}
+        {sideBtn("tie", "TIE", "9 : 1")}
         {sideBtn("tiger", "TIGER", "1 : 1")}
-        {sideBtn("suited_tie", "SUITED TIE", "50 : 1")}
+        {sideBtn("suited_tie", "SUITED TIE", "40 : 1")}
       </div>
 
       <Chips value={chip} onChange={setChip} />
@@ -1031,7 +1031,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
   const label = phase === "idle" ? "WAITING"
     : phase === "flying" ? "FLYING"
-    : res ? (res.won ? "CASHED OUT" : `FLEW AWAY AT ${fx(res.crash)}`)
+    : res ? (res.won ? `CASHED OUT · Won ${RM(res.net + stakeRef.current)}` : `FLEW AWAY AT ${fx(res.crash)} · Lost ${R(-res.net)}`)
     : "WAITING";
   const labelCls = phase === "flying" ? "text-amber-300" : crashed ? "text-red-400" : "text-slate-400";
   const multText = phase === "idle" ? "1.00x"
@@ -1140,8 +1140,6 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
 
         {/* result */}
         <div style={ST.result}>
-          {res?.won && <span style={{ color: "#34d399" }}>Won {RM(res.net + stakeRef.current)}</span>}
-          {res && !res.won && <span style={{ color: "#f87171" }}>Lost {R(-res.net)}</span>}
         </div>
 
         {/* betting panel */}
@@ -2095,6 +2093,140 @@ function Elements({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ================= LUDO (player vs player, entry + 90% payout) =================
+   This screen handles entries, matching, cancel and the winner report.
+   The Ludo board itself is not included yet (it must run on the server side). */
+const LUDO_ENTRIES = [5, 10, 25, 50];
+function Ludo({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg.min_bet || 5, MAX = +cfg.max_bet || 50000;
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [entry, setEntry] = useState(5);
+  const [uid, setUid] = useState(null);
+  const [match, setMatch] = useState(null);    // { id, status, p1, p2, entry }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUid(data?.user?.id || null)).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // while waiting for an opponent, check every 3 seconds (only this screen, only while waiting)
+  useEffect(() => {
+    if (!match || match.status !== "waiting") return;
+    const t = setInterval(async () => {
+      const { data } = await supabase.from("ludo_matches").select("id,status,p1,p2,entry").eq("id", match.id).maybeSingle();
+      if (data && data.status !== "waiting") { setMatch(data); playSfx(660, 0.12); }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [match, supabase]);
+
+  const join = async () => {
+    if (busy) return;
+    if (entry < MIN) return flash(`Minimum entry ${R(MIN)}`);
+    if (entry > MAX) return flash(`Max entry ${R(MAX)}`);
+    if (entry > bal) return flash("Balance too low");
+    setBusy(true); setMsg("");
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("ludo_join", { p_entry: entry })); } catch (e) { error = e; }
+    setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : flash(friendly(error));
+    const { data: row } = await supabase.from("ludo_matches").select("id,status,p1,p2,entry").eq("id", data.match_id).maybeSingle();
+    setMatch(row || { id: data.match_id, status: data.status, entry });
+    playSfx(440, 0.05);
+    reload && reload();
+  };
+
+  const cancel = async () => {
+    if (busy || !match) return;
+    setBusy(true);
+    let error = null;
+    try { ({ error } = await supabase.rpc("ludo_cancel", { p_match: match.id })); } catch (e) { error = e; }
+    setBusy(false);
+    if (error) return say ? say(friendly(error), 1) : flash(friendly(error));
+    setMatch(null); setMsg("Entry returned.");
+    reload && reload();
+  };
+
+  const report = async winnerIsMe => {
+    if (busy || !match || !uid) return;
+    const winner = winnerIsMe ? uid : (uid === match.p1 ? match.p2 : match.p1);
+    setBusy(true);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("ludo_report", { p_match: match.id, p_winner: winner })); } catch (e) { error = e; }
+    setBusy(false);
+    if (error || !data?.success) return say ? say(friendly(error), 1) : flash(friendly(error));
+    if (data.status === "waiting_for_other_player") { setMsg("Waiting for the other player to report."); return; }
+    if (data.status === "finished") {
+      setMsg(winnerIsMe ? "You won! Payout added." : "Opponent won.");
+      playSfx(winnerIsMe ? 880 : 180, winnerIsMe ? 0.25 : 0.15);
+      if (winnerIsMe) speakWin(Math.round(match.entry * 2 * 0.9));
+    } else {
+      setMsg("Results did not match. Both entries refunded.");
+    }
+    setMatch(m => (m ? { ...m, status: data.status === "finished" ? "finished" : "cancelled" } : m));
+    reload && reload();
+  };
+
+  const waiting = match?.status === "waiting";
+  const playing = match?.status === "playing";
+  const done = match && !waiting && !playing;
+
+  return (
+    <Shell title="Ludo" onBack={onBack} right={<SoundBtn />}>
+      <div style={{ background: "radial-gradient(ellipse at 50% 20%,#1e293b,#0b1120 70%)", border: "1px solid #334155", borderRadius: 18, padding: 16 }}>
+        <div style={{ textAlign: "center", fontSize: 13, opacity: .8 }}>Player vs player · 2 players · winner gets 90% of the pot</div>
+
+        {!match && (
+          <>
+            <div style={{ textAlign: "center", fontSize: 12, fontWeight: 800, letterSpacing: 2, opacity: .7, marginTop: 14 }}>CHOOSE ENTRY</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginTop: 10 }}>
+              {LUDO_ENTRIES.map(v => (
+                <button key={v} disabled={busy} onClick={() => { playSfx(520, 0.03); setEntry(v); }}
+                  style={{ padding: "12px 0", borderRadius: 12, cursor: "pointer", fontWeight: 900,
+                    border: `2px solid ${entry === v ? "#facc15" : "#334155"}`,
+                    background: entry === v ? "linear-gradient(180deg,#fde68a,#d4af37)" : "#0f172a",
+                    color: entry === v ? "#111" : "#f8fafc" }}>{R(v)}</button>
+              ))}
+            </div>
+            <div style={{ textAlign: "center", marginTop: 12, fontSize: 13 }}>
+              Pot <b>{R(entry * 2)}</b> · Winner gets <b style={{ color: "#86efac" }}>{R(Math.round(entry * 2 * 0.9))}</b> · House <b>{R(Math.round(entry * 2 * 0.1))}</b>
+            </div>
+          </>
+        )}
+
+        {waiting && (
+          <div style={{ textAlign: "center", marginTop: 18 }}>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>Looking for an opponent…</div>
+            <div style={{ fontSize: 13, opacity: .75, marginTop: 6 }}>Entry {R(match.entry)} is held until a match is found.</div>
+            <button onClick={cancel} disabled={busy} style={{ ...btn, marginTop: 14 }}>Cancel and get entry back</button>
+          </div>
+        )}
+
+        {playing && (
+          <div style={{ textAlign: "center", marginTop: 18 }}>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>Match found · play the board</div>
+            <div style={{ fontSize: 13, opacity: .75, marginTop: 6 }}>When the game ends, both players report the winner.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+              <button onClick={() => report(true)} disabled={busy} style={actionBtn}>I WON</button>
+              <button onClick={() => report(false)} disabled={busy} style={{ ...actionBtn, background: "#1f2937", color: "#f8fafc" }}>OPPONENT WON</button>
+            </div>
+          </div>
+        )}
+
+        {done && <div style={{ textAlign: "center", marginTop: 18, fontWeight: 900 }}>{match.status === "finished" ? "Match finished" : "Match closed"}</div>}
+        {msg && <div style={{ textAlign: "center", marginTop: 12, fontWeight: 800, color: "#fde68a" }}>{msg}</div>}
+      </div>
+
+      {!match && <button onClick={join} disabled={busy} style={{ ...actionBtn, opacity: busy ? .6 : 1 }}>{busy ? "…" : `FIND MATCH ${R(entry)}`}</button>}
+      {done && <button onClick={() => { setMatch(null); setMsg(""); }} style={actionBtn}>PLAY AGAIN</button>}
+
+      <BalBar bal={bal} extra={<>{R(MIN)} - {R(MAX)}</>} />
+      <Tip t={tip} />
+    </Shell>
+  );
+}
+
 /* ================= LOBBY ================= */
 const CardArt = memo(function CardArt({ kind }) {
   if (kind === "chicken") {
@@ -2199,17 +2331,19 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "vortex") return <Vortex {...common} />;
   if (view === "dice") return <Dice {...common} />;
   if (view === "elements") return <Elements {...common} />;
+  if (view === "ludo") return <Ludo {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
 
   const cards = [
     ["roulette", "roulette", "Auto Roulette", "The wheel turns by itself. Place your bets while the timer runs.", "linear-gradient(135deg,#3f0a0f,#b91c1c)"],
-    ["dragon", "dragon_tiger", "Dragon Tiger", "Higher card wins. Tie pays 11 : 1.", "linear-gradient(135deg,#0b1d3a,#1e40af)"],
+    ["dragon", "dragon_tiger", "Dragon Tiger", "Higher card wins. Tie pays 9 : 1.", "linear-gradient(135deg,#0b1d3a,#1e40af)"],
     ["aviator", "aviator", "Aviator", "Cash out before the plane flies away.", "linear-gradient(135deg,#4a1d06,#ea580c)"],
     ["mines", "mines", "Mines", "Pick safe cells. Cash out before you hit a mine.", "linear-gradient(135deg,#052e16,#166534)"],
     ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on 50x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
     ["dice", "dice", "Dice", "Roll two dice. Under 7, seven, or over 7.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
     ["chicken", "chicken", "Chicken Road 2", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
     ["elements", "elements", "Elements", "Pick Earth, Water or Fire. Match the draw.", "linear-gradient(135deg,#1e3a8a,#7c2d12)"],
+    ["ludo", "ludo", "Ludo", "Player vs player. Winner takes 90% of the pot.", "linear-gradient(135deg,#14532d,#16a34a)"],
   ].filter(([, key]) => games[key]);
 
   return (
