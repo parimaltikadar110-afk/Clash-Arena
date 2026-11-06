@@ -3,557 +3,391 @@ import React, { useEffect, useMemo, useState } from 'react';
 const DAILY_INTEREST_RATE = 0.025;
 const MIN_LOCK_IN_DAYS = 3;
 const MAX_LOCK_IN_DAYS = 365;
+const MIN_INVESTMENT = 100;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const currency = (value) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Number(value) || 0);
+  }).format(Number.isFinite(Number(value)) ? Number(value) : 0);
 
 const formatDate = (date) =>
   new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
   }).format(date);
 
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const clampDays = (value) =>
+  Math.min(MAX_LOCK_IN_DAYS, Math.max(MIN_LOCK_IN_DAYS, Math.floor(Number(value) || MIN_LOCK_IN_DAYS)));
 
 const SafeVault = () => {
-  const [amount, setAmount] = useState(2500);
+  const [amount, setAmount] = useState('2500');
   const [lockInDays, setLockInDays] = useState(14);
-  const [customDuration, setCustomDuration] = useState(14);
-  const [startDate, setStartDate] = useState(() => new Date());
-  const [isLocked, setIsLocked] = useState(true);
-  const [lastAction, setLastAction] = useState('Vault is active');
-  const [pendingConfirmation, setPendingConfirmation] = useState(false);
+  const [activeInvestment, setActiveInvestment] = useState(null);
+  const [pendingInvestment, setPendingInvestment] = useState(null);
+  const [message, setMessage] = useState('Choose an amount and lock-in period to preview an investment.');
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const today = new Date();
-    const nextDate = new Date(today);
-    nextDate.setDate(today.getDate() + lockInDays);
-    setStartDate(today);
-    setCustomDuration(lockInDays);
-    setPendingConfirmation(false);
-    setLastAction(`Lock-in period set to ${lockInDays} days`);
-  }, [lockInDays]);
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const investmentSummary = useMemo(() => {
-    const sanitizedAmount = Number(amount) || 0;
-    const safeLockIn = clamp(Number(customDuration) || lockInDays, MIN_LOCK_IN_DAYS, MAX_LOCK_IN_DAYS);
-    const dailyYield = sanitizedAmount * DAILY_INTEREST_RATE;
-    const projectedInterest = dailyYield * safeLockIn;
-    const finalValue = sanitizedAmount + projectedInterest;
-    const unlockDate = new Date(startDate);
-    unlockDate.setDate(unlockDate.getDate() + safeLockIn);
+  const previewAmount = Number(amount);
+  const validAmount = Number.isFinite(previewAmount) && previewAmount >= MIN_INVESTMENT;
+  const previewDays = clampDays(lockInDays);
+  const previewDailyInterest = validAmount ? previewAmount * DAILY_INTEREST_RATE : 0;
+  const previewInterest = previewDailyInterest * previewDays;
 
-    const canWithdraw = (() => {
-      const now = new Date();
-      const diffDays = Math.max(0, Math.ceil((now.getTime() - startDate.getTime()) / 86400000));
-      return diffDays >= safeLockIn;
-    })();
+  const activeSummary = useMemo(() => {
+    if (!activeInvestment) return null;
+
+    const startedAt = new Date(activeInvestment.startedAt);
+    const unlockAt = new Date(startedAt.getTime() + activeInvestment.durationDays * DAY_IN_MS);
+    const elapsedDays = Math.min(
+      activeInvestment.durationDays,
+      Math.max(0, (now - startedAt.getTime()) / DAY_IN_MS),
+    );
+    const accruedInterest = activeInvestment.principal * DAILY_INTEREST_RATE * elapsedDays;
+    const matured = now >= unlockAt.getTime();
 
     return {
-      sanitizedAmount,
-      safeLockIn,
-      dailyYield,
-      projectedInterest,
-      finalValue,
-      unlockDate,
-      canWithdraw,
+      startedAt,
+      unlockAt,
+      elapsedDays,
+      accruedInterest,
+      total: activeInvestment.principal + accruedInterest,
+      matured,
+      remainingMs: Math.max(0, unlockAt.getTime() - now),
     };
-  }, [amount, customDuration, lockInDays, startDate]);
+  }, [activeInvestment, now]);
+
+  const previewUnlockDate = new Date(Date.now() + previewDays * DAY_IN_MS);
 
   const handleDeposit = () => {
-    const depositAmount = Number(amount) || 0;
-    if (depositAmount <= 0) {
-      setLastAction('Enter a valid investment amount to continue.');
+    if (!validAmount) {
+      setMessage(`Enter an amount of at least ${currency(MIN_INVESTMENT)}.`);
+      return;
+    }
+    if (activeInvestment) {
+      setMessage('Withdraw your current vault investment before starting another one.');
       return;
     }
 
-    if (customDuration < MIN_LOCK_IN_DAYS) {
-      setLastAction(`Minimum lock-in is ${MIN_LOCK_IN_DAYS} days.`);
-      return;
-    }
-
-    setPendingConfirmation(true);
-    setLastAction('Investment ready for confirmation.');
+    setPendingInvestment({
+      principal: Math.round(previewAmount * 100) / 100,
+      durationDays: previewDays,
+    });
+    setMessage('Review the investment details and confirm to start the lock-in period.');
   };
 
   const confirmDeposit = () => {
-    const depositAmount = Number(amount) || 0;
-    if (depositAmount <= 0) {
-      setLastAction('Your deposit is invalid.');
-      return;
-    }
+    if (!pendingInvestment) return;
+    setActiveInvestment({ ...pendingInvestment, startedAt: Date.now() });
+    setPendingInvestment(null);
+    setMessage(`Vault investment started for ${pendingInvestment.durationDays} days.`);
+  };
 
-    const nextLockIn = clamp(Number(customDuration) || lockInDays, MIN_LOCK_IN_DAYS, MAX_LOCK_IN_DAYS);
-    setLockInDays(nextLockIn);
-    setStartDate(new Date());
-    setIsLocked(true);
-    setPendingConfirmation(false);
-    setLastAction(`Vault activated: ${currency(depositAmount)} locked for ${nextLockIn} days.`);
+  const cancelDeposit = () => {
+    setPendingInvestment(null);
+    setMessage('Investment confirmation canceled. No funds were committed.');
   };
 
   const withdrawFunds = () => {
-    if (!investmentSummary.canWithdraw) {
-      setLastAction(`Withdrawal blocked until ${formatDate(investmentSummary.unlockDate)}.`);
+    if (!activeInvestment || !activeSummary) return;
+    if (!activeSummary.matured) {
+      setMessage(`Funds remain locked until ${formatDate(activeSummary.unlockAt)}.`);
       return;
     }
 
-    setIsLocked(false);
-    setLastAction('Withdrawal approved. Principal and interest released.');
+    const payout = activeSummary.total;
+    setActiveInvestment(null);
+    setMessage(`Withdrawal complete: ${currency(payout)} estimated principal and interest released.`);
   };
 
   const styles = {
     page: {
       minHeight: '100vh',
-      background: 'radial-gradient(circle at top, #0c1321 0%, #070d16 38%, #050a12 100%)',
-      color: '#edf5ff',
+      padding: 'clamp(16px, 4vw, 40px)',
+      background: 'radial-gradient(ellipse at top left, #17243b 0%, #09111e 42%, #060a12 100%)',
+      color: '#edf4ff',
       fontFamily: 'Inter, "Segoe UI", sans-serif',
-      padding: '32px 20px',
-      display: 'grid',
-      placeItems: 'center',
-    },
-    shell: {
-      width: '100%',
-      maxWidth: '1200px',
-      display: 'grid',
-      gridTemplateColumns: '1.1fr 0.9fr',
-      gap: '24px',
-    },
-    panel: {
-      background: 'rgba(13, 19, 31, 0.9)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: '24px',
-      boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
-      overflow: 'hidden',
-    },
-    leftPanel: {
-      padding: '26px',
-      background: 'linear-gradient(135deg, rgba(255, 122, 24, 0.08), rgba(17, 24, 39, 0.82))',
-    },
-    rightPanel: {
-      padding: '26px',
-    },
-    topRow: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      gap: '14px',
-      marginBottom: '22px',
-    },
-    brand: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      fontWeight: 800,
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      color: '#f5f7fb',
-      fontSize: '0.8rem',
-    },
-    brandBadge: {
-      width: '42px',
-      height: '42px',
-      borderRadius: '14px',
-      display: 'grid',
-      placeItems: 'center',
-      background: 'linear-gradient(135deg, #ff7a18, #ff3b3b)',
-      color: '#0b101b',
-      fontSize: '1.2rem',
-      fontWeight: 900,
-    },
-    pill: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '7px 12px',
-      borderRadius: '999px',
-      background: 'rgba(67, 209, 122, 0.12)',
-      border: '1px solid rgba(67, 209, 122, 0.3)',
-      color: '#7af2a6',
-      fontSize: '0.72rem',
-      fontWeight: 700,
-      letterSpacing: '0.06em',
-      textTransform: 'uppercase',
-    },
-    title: {
-      margin: '0 0 12px',
-      fontSize: 'clamp(2.2rem, 4vw, 3.8rem)',
-      lineHeight: 1.08,
-      fontWeight: 900,
-      letterSpacing: '-0.06em',
-    },
-    lead: {
-      margin: '0 0 22px',
-      color: '#afbacd',
-      lineHeight: 1.7,
-      maxWidth: '640px',
-      fontSize: '1rem',
-    },
-    statGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-      gap: '14px',
-      marginTop: '18px',
-    },
-    statCard: {
-      padding: '16px 14px',
-      borderRadius: '16px',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.06)',
-    },
-    statLabel: {
-      display: 'block',
-      color: '#96a3ba',
-      fontSize: '0.7rem',
-      textTransform: 'uppercase',
-      letterSpacing: '0.09em',
-      marginBottom: '10px',
-    },
-    statValue: {
-      fontSize: '1.4rem',
-      fontWeight: 800,
-      color: '#f3f7ff',
-    },
-    sectionLabel: {
-      display: 'inline-block',
-      color: '#ffb77b',
-      letterSpacing: '0.08em',
-      fontSize: '0.72rem',
-      textTransform: 'uppercase',
-      fontWeight: 700,
-      marginBottom: '12px',
-    },
-    inputGroup: {
-      display: 'grid',
-      gap: '18px',
-      marginTop: '18px',
-    },
-    fieldRow: {
-      display: 'grid',
-      gap: '10px',
-    },
-    label: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '12px',
-      fontSize: '0.8rem',
-      color: '#b7c2d6',
-      fontWeight: 600,
-    },
-    input: {
-      width: '100%',
-      background: 'rgba(255,255,255,0.02)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: '14px',
-      padding: '14px 16px',
-      color: '#edf5ff',
-      fontSize: '1rem',
-      outline: 'none',
       boxSizing: 'border-box',
     },
-    presetRow: {
-      display: 'flex',
-      gap: '10px',
-      flexWrap: 'wrap',
+    container: { width: '100%', maxWidth: 1180, margin: '0 auto' },
+    columns: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 430px), 1fr))',
+      gap: 22,
+      alignItems: 'start',
     },
-    preset: {
-      border: '1px solid rgba(255,255,255,0.08)',
-      background: 'rgba(255,255,255,0.02)',
-      color: '#dfeafc',
-      padding: '10px 12px',
-      borderRadius: '12px',
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-      fontWeight: 700,
+    panel: {
+      minWidth: 0,
+      padding: 'clamp(20px, 3vw, 30px)',
+      border: '1px solid rgba(255,255,255,0.09)',
+      borderRadius: 24,
+      background: 'linear-gradient(145deg, rgba(17,26,42,0.96), rgba(11,17,28,0.96))',
+      boxShadow: '0 20px 55px rgba(0,0,0,0.28)',
+      boxSizing: 'border-box',
     },
-    activePreset: {
-      background: 'rgba(255, 122, 24, 0.12)',
-      borderColor: 'rgba(255, 122, 24, 0.38)',
-      color: '#ffd5b5',
+    topRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 26 },
+    brand: { display: 'flex', alignItems: 'center', gap: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' },
+    badge: {
+      width: 44,
+      height: 44,
+      borderRadius: 15,
+      display: 'grid',
+      placeItems: 'center',
+      color: '#10151e',
+      fontSize: 20,
+      fontWeight: 900,
+      background: 'linear-gradient(135deg, #ffae42, #ff5b36)',
+      boxShadow: '0 8px 25px rgba(255,113,48,0.2)',
     },
-    buttonRow: {
-      display: 'flex',
-      gap: '12px',
-      flexWrap: 'wrap',
-      marginTop: '18px',
-    },
-    actionBtn: {
-      border: 'none',
-      borderRadius: '12px',
-      padding: '13px 18px',
+    pill: {
+      border: '1px solid rgba(101,221,153,0.3)',
+      borderRadius: 999,
+      padding: '7px 11px',
+      color: '#86e9ad',
+      background: 'rgba(63,190,117,0.1)',
+      fontSize: 11,
       fontWeight: 800,
-      cursor: 'pointer',
-      transition: 'transform 0.2s ease, opacity 0.2s ease',
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      whiteSpace: 'nowrap',
     },
-    primaryBtn: {
-      background: 'linear-gradient(135deg, #ff7a18, #ff3b3b)',
-      color: '#09131d',
-    },
-    secondaryBtn: {
-      background: 'rgba(255,255,255,0.04)',
-      color: '#edf5ff',
-      border: '1px solid rgba(255,255,255,0.08)',
-    },
-    summaryCard: {
-      marginTop: '20px',
-      padding: '18px',
-      borderRadius: '18px',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.06)',
-    },
-    summaryRow: {
+    eyebrow: { margin: '0 0 10px', color: '#ffb673', fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' },
+    title: { margin: '0 0 12px', fontSize: 'clamp(2rem, 5vw, 3.4rem)', lineHeight: 1.05, letterSpacing: '-0.055em' },
+    lead: { margin: '0 0 24px', color: '#aab8ce', lineHeight: 1.7, fontSize: 14 },
+    rateCard: {
       display: 'flex',
       justifyContent: 'space-between',
-      gap: '12px',
-      padding: '10px 0',
-      borderBottom: '1px solid rgba(255,255,255,0.05)',
-      color: '#dfeafc',
-    },
-    summaryRowLast: {
-      borderBottom: 'none',
-      color: '#fef3d1',
-      fontWeight: 800,
-    },
-    statusBox: {
-      marginTop: '16px',
-      padding: '14px 16px',
-      borderRadius: '12px',
-      background: pendingConfirmation ? 'rgba(255, 180, 0, 0.08)' : 'rgba(67, 209, 122, 0.08)',
-      border: pendingConfirmation ? '1px solid rgba(255, 180, 0, 0.28)' : '1px solid rgba(67, 209, 122, 0.28)',
-      color: pendingConfirmation ? '#ffd37d' : '#9ef0ba',
-      fontSize: '0.92rem',
-      lineHeight: 1.6,
-    },
-    rightInner: {
-      display: 'grid',
-      gap: '18px',
-    },
-    miniCard: {
-      padding: '18px',
-      borderRadius: '18px',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.06)',
-    },
-    miniStats: {
-      display: 'grid',
-      gap: '12px',
-      marginTop: '14px',
-    },
-    miniItem: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: '12px',
-      color: '#dfeafc',
-      fontSize: '0.9rem',
-    },
-    guard: {
-      display: 'flex',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '12px',
-      padding: '12px 14px',
-      borderRadius: '14px',
-      background: isLocked ? 'rgba(67, 209, 122, 0.08)' : 'rgba(255, 122, 24, 0.08)',
-      border: isLocked ? '1px solid rgba(67, 209, 122, 0.28)' : '1px solid rgba(255, 122, 24, 0.28)',
-      color: isLocked ? '#9ef0ba' : '#ffc08c',
-      fontSize: '0.9rem',
+      gap: 16,
+      padding: 18,
+      borderRadius: 17,
+      background: 'linear-gradient(110deg, rgba(255,137,48,0.15), rgba(255,255,255,0.025))',
+      border: '1px solid rgba(255,146,69,0.17)',
+      marginBottom: 24,
+    },
+    rateValue: { fontSize: 27, fontWeight: 900, color: '#ffc17a' },
+    muted: { color: '#96a5bd', fontSize: 12, lineHeight: 1.6 },
+    field: { display: 'grid', gap: 9, marginBottom: 20 },
+    label: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, color: '#dce6f6', fontSize: 13, fontWeight: 700 },
+    input: {
+      width: '100%',
+      padding: '14px 15px',
+      color: '#f4f7fc',
+      background: 'rgba(4,9,16,0.55)',
+      border: '1px solid rgba(255,255,255,0.12)',
+      borderRadius: 12,
+      outline: 'none',
+      fontSize: 15,
+      boxSizing: 'border-box',
+    },
+    presets: { display: 'flex', flexWrap: 'wrap', gap: 8 },
+    preset: {
+      minWidth: 54,
+      padding: '9px 12px',
+      borderRadius: 10,
+      border: '1px solid rgba(255,255,255,0.1)',
+      color: '#cbd7e8',
+      background: 'rgba(255,255,255,0.035)',
       fontWeight: 700,
+      cursor: 'pointer',
     },
-    tiny: {
-      color: '#9aa9c3',
-      fontSize: '0.76rem',
-      lineHeight: 1.5,
+    presetActive: { borderColor: 'rgba(255,155,78,0.55)', color: '#ffd0a2', background: 'rgba(255,125,47,0.12)' },
+    summary: { display: 'grid', gap: 0, padding: '8px 16px', marginTop: 8, borderRadius: 16, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)' },
+    summaryRow: { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '13px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#b5c2d5', fontSize: 13 },
+    summaryLast: { borderBottom: 'none', color: '#fff0d6', fontSize: 14, fontWeight: 800 },
+    buttons: { display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 },
+    button: { border: 0, borderRadius: 12, padding: '13px 17px', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
+    primary: { color: '#17120d', background: 'linear-gradient(135deg, #ffb34e, #ff6938)' },
+    secondary: { color: '#eaf0f9', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' },
+    disabled: { cursor: 'not-allowed', opacity: 0.45 },
+    section: { padding: 18, borderRadius: 17, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' },
+    sectionTitle: { margin: '0 0 14px', color: '#ffb673', fontSize: 11, fontWeight: 800, letterSpacing: '0.11em', textTransform: 'uppercase' },
+    infoRows: { display: 'grid', gap: 13 },
+    infoRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, fontSize: 13, color: '#aebbd0' },
+    infoValue: { color: '#edf4ff', textAlign: 'right', fontWeight: 700 },
+    status: {
+      marginTop: 17,
+      padding: '13px 15px',
+      borderRadius: 12,
+      border: pendingInvestment ? '1px solid rgba(255,189,83,0.28)' : '1px solid rgba(112,164,255,0.18)',
+      background: pendingInvestment ? 'rgba(255,173,55,0.08)' : 'rgba(84,133,217,0.07)',
+      color: pendingInvestment ? '#ffd48c' : '#b9c9e2',
+      fontSize: 13,
+      lineHeight: 1.55,
     },
+    warning: { marginTop: 15, padding: 13, borderRadius: 12, color: '#d4c7a6', background: 'rgba(195,153,61,0.08)', border: '1px solid rgba(214,175,82,0.16)', fontSize: 11, lineHeight: 1.6 },
+    empty: { padding: '20px 16px', borderRadius: 14, color: '#a7b5ca', background: 'rgba(255,255,255,0.025)', border: '1px dashed rgba(255,255,255,0.12)', textAlign: 'center', fontSize: 13, lineHeight: 1.6 },
+    statusPill: (matured) => ({
+      display: 'inline-flex',
+      padding: '7px 10px',
+      borderRadius: 999,
+      color: matured ? '#90efb2' : '#ffd38d',
+      background: matured ? 'rgba(67,209,122,0.1)' : 'rgba(255,180,0,0.1)',
+      border: matured ? '1px solid rgba(67,209,122,0.25)' : '1px solid rgba(255,180,0,0.23)',
+      fontSize: 11,
+      fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '0.07em',
+    }),
   };
 
-  const presetOptions = [7, 14, 30, 60, 90];
+  const presets = [7, 14, 30, 60, 90];
+  const hasActiveInvestment = Boolean(activeInvestment && activeSummary);
+  const canDeposit = validAmount && !hasActiveInvestment && !pendingInvestment;
 
   return (
-    <div style={styles.page}>
-      <div style={styles.shell}>
-        <div style={{ ...styles.panel, ...styles.leftPanel }}>
-          <div style={styles.topRow}>
-            <div style={styles.brand}>
-              <div style={styles.brandBadge}>V</div>
-              SafeVault
+    <main style={styles.page}>
+      <div style={styles.container}>
+        <div style={styles.columns}>
+          <section style={styles.panel} aria-labelledby="safevault-title">
+            <div style={styles.topRow}>
+              <div style={styles.brand}><span style={styles.badge} aria-hidden="true">V</span><span>SafeVault</span></div>
+              <span style={styles.pill}>Vault overview</span>
             </div>
-            <span style={styles.pill}>Protected</span>
-          </div>
-
-          <div>
-            <h1 style={styles.title}>Grow your rewards safely.</h1>
+            <p style={styles.eyebrow}>Clash Arena rewards</p>
+            <h1 id="safevault-title" style={styles.title}>A clearer way to plan your vault.</h1>
             <p style={styles.lead}>
-              Lock your funds into Clash Arena’s SafeVault and receive a daily return of 2.5% while the
-              treasury keeps your principal protected until the minimum lock-in period ends.
+              Preview a simple-interest estimate, choose a minimum lock-in duration, and review the terms before starting an investment.
             </p>
-          </div>
 
-          <div style={styles.statGrid}>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Daily ROI</span>
-              <div style={styles.statValue}>2.5%</div>
-            </div>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Lock-in</span>
-              <div style={styles.statValue}>{investmentSummary.safeLockIn}d</div>
-            </div>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Projected</span>
-              <div style={styles.statValue}>{currency(investmentSummary.finalValue)}</div>
-            </div>
-          </div>
-
-          <div style={styles.inputGroup}>
-            <div style={styles.fieldRow}>
-              <div style={styles.label}>
-                <span>Investment amount</span>
-                <span style={styles.tiny}>Min: $100</span>
+            <div style={styles.rateCard}>
+              <div>
+                <div style={{ color: '#f4f6fb', fontSize: 14, fontWeight: 800 }}>Daily interest estimate</div>
+                <div style={styles.muted}>Simple interest; not compounded</div>
               </div>
+              <div style={styles.rateValue}>2.5%</div>
+            </div>
+
+            <div style={styles.field}>
+              <label htmlFor="vault-amount" style={styles.label}>
+                <span>Investment amount</span><span style={styles.muted}>Minimum {currency(MIN_INVESTMENT)}</span>
+              </label>
               <input
+                id="vault-amount"
                 type="number"
-                min="100"
-                step="50"
+                min={MIN_INVESTMENT}
+                step="0.01"
+                inputMode="decimal"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(event) => { setAmount(event.target.value); setPendingInvestment(null); }}
                 style={styles.input}
-                placeholder="Enter amount"
+                aria-describedby="vault-amount-help"
               />
+              <span id="vault-amount-help" style={styles.muted}>Enter the principal amount to calculate an estimate.</span>
             </div>
 
-            <div style={styles.fieldRow}>
-              <div style={styles.label}>
-                <span>Minimum investment duration</span>
-                <span style={styles.tiny}>Required before withdrawal</span>
-              </div>
-              <div style={styles.presetRow}>
-                {presetOptions.map((option) => (
+            <div style={styles.field}>
+              <label htmlFor="vault-duration" style={styles.label}>
+                <span>Minimum investment duration</span><span style={styles.muted}>{MIN_LOCK_IN_DAYS}–{MAX_LOCK_IN_DAYS} days</span>
+              </label>
+              <div style={styles.presets}>
+                {presets.map((days) => (
                   <button
-                    key={option}
+                    key={days}
                     type="button"
-                    style={{
-                      ...styles.preset,
-                      ...(Number(customDuration) === option ? styles.activePreset : {}),
-                    }}
-                    onClick={() => setCustomDuration(option)}
-                  >
-                    {option}d
-                  </button>
+                    onClick={() => { setLockInDays(days); setPendingInvestment(null); }}
+                    style={{ ...styles.preset, ...(Number(lockInDays) === days ? styles.presetActive : {}) }}
+                    aria-pressed={Number(lockInDays) === days}
+                  >{days} days</button>
                 ))}
               </div>
               <input
+                id="vault-duration"
                 type="number"
                 min={MIN_LOCK_IN_DAYS}
                 max={MAX_LOCK_IN_DAYS}
-                value={customDuration}
-                onChange={(e) => setCustomDuration(Number(e.target.value) || 0)}
+                step="1"
+                value={lockInDays}
+                onChange={(event) => { setLockInDays(event.target.value); setPendingInvestment(null); }}
+                onBlur={() => setLockInDays(clampDays(lockInDays))}
                 style={styles.input}
+                aria-describedby="vault-duration-help"
               />
-            </div>
-          </div>
-
-          <div style={styles.buttonRow}>
-            <button type="button" style={{ ...styles.actionBtn, ...styles.primaryBtn }} onClick={handleDeposit}>
-              Deposit into Vault
-            </button>
-            <button type="button" style={{ ...styles.actionBtn, ...styles.secondaryBtn }} onClick={withdrawFunds}>
-              Withdraw
-            </button>
-          </div>
-
-          <div style={styles.summaryCard}>
-            <div style={{ ...styles.summaryRow }}>
-              <span>Principal</span>
-              <strong>{currency(investmentSummary.sanitizedAmount)}</strong>
-            </div>
-            <div style={{ ...styles.summaryRow }}>
-              <span>Daily interest</span>
-              <strong>{currency(investmentSummary.dailyYield)}</strong>
-            </div>
-            <div style={{ ...styles.summaryRow }}>
-              <span>Projected total interest</span>
-              <strong>{currency(investmentSummary.projectedInterest)}</strong>
-            </div>
-            <div style={{ ...styles.summaryRow, ...styles.summaryRowLast }}>
-              <span>Estimated withdraw value</span>
-              <strong>{currency(investmentSummary.finalValue)}</strong>
-            </div>
-          </div>
-
-          <div style={styles.statusBox}>
-            {pendingConfirmation
-              ? `Confirmation required: ${currency(investmentSummary.sanitizedAmount)} will be locked for ${investmentSummary.safeLockIn} days and released on ${formatDate(investmentSummary.unlockDate)}.`
-              : lastAction}
-          </div>
-        </div>
-
-        <div style={{ ...styles.panel, ...styles.rightPanel }}>
-          <div style={styles.rightInner}>
-            <div style={styles.miniCard}>
-              <div style={styles.sectionLabel}>Vault status</div>
-              <div style={styles.guard}>
-                <span>{isLocked ? 'Vault locked' : 'Vault unlocked'}</span>
-                <span>{isLocked ? '🔒' : '🔓'}</span>
-              </div>
-              <div style={{ ...styles.miniStats }}>
-                <div style={styles.miniItem}>
-                  <span>Start date</span>
-                  <strong>{formatDate(startDate)}</strong>
-                </div>
-                <div style={styles.miniItem}>
-                  <span>Unlock date</span>
-                  <strong>{formatDate(investmentSummary.unlockDate)}</strong>
-                </div>
-                <div style={styles.miniItem}>
-                  <span>Withdrawal ready</span>
-                  <strong>{investmentSummary.canWithdraw ? 'Yes' : 'No'}</strong>
-                </div>
-              </div>
+              <span id="vault-duration-help" style={styles.muted}>Principal and interest are unavailable until the selected lock-in ends.</span>
             </div>
 
-            <div style={styles.miniCard}>
-              <div style={styles.sectionLabel}>Interest model</div>
-              <div style={{ ...styles.miniStats }}>
-                <div style={styles.miniItem}>
-                  <span>Rate</span>
-                  <strong>2.5% per day</strong>
-                </div>
-                <div style={styles.miniItem}>
-                  <span>Formula</span>
-                  <strong>principal × 0.025 × days</strong>
-                </div>
-                <div style={styles.miniItem}>
-                  <span>Max term</span>
-                  <strong>365 days</strong>
-                </div>
-              </div>
+            <div style={styles.summary} aria-live="polite">
+              <div style={styles.summaryRow}><span>Principal</span><strong>{currency(validAmount ? previewAmount : 0)}</strong></div>
+              <div style={styles.summaryRow}><span>Estimated interest per day</span><strong>{currency(previewDailyInterest)}</strong></div>
+              <div style={styles.summaryRow}><span>Estimated interest for {previewDays} days</span><strong>{currency(previewInterest)}</strong></div>
+              <div style={{ ...styles.summaryRow, ...styles.summaryLast }}><span>Estimated value at unlock</span><strong>{currency((validAmount ? previewAmount : 0) + previewInterest)}</strong></div>
             </div>
+            <div style={{ ...styles.infoRow, marginTop: 14 }}><span style={styles.muted}>Estimated unlock date</span><strong style={{ ...styles.infoValue, fontSize: 12 }}>{formatDate(previewUnlockDate)}</strong></div>
 
-            <div style={styles.miniCard}>
-              <div style={styles.sectionLabel}>Policy</div>
-              <p style={styles.tiny}>
-                SafeVault requires a minimum lock-in period before principal and accumulated interest can be
-                withdrawn. This helps prevent early exits and preserves the expected reward cycle.
-              </p>
-              {pendingConfirmation && (
-                <div style={{ ...styles.buttonRow, marginTop: '16px' }}>
-                  <button type="button" style={{ ...styles.actionBtn, ...styles.primaryBtn }} onClick={confirmDeposit}>
-                    Confirm Deposit
-                  </button>
-                  <button type="button" style={{ ...styles.actionBtn, ...styles.secondaryBtn }} onClick={() => setPendingConfirmation(false)}>
-                    Cancel
-                  </button>
-                </div>
+            <div style={styles.buttons}>
+              {!pendingInvestment ? (
+                <button type="button" style={{ ...styles.button, ...styles.primary, ...(!canDeposit ? styles.disabled : {}) }} onClick={handleDeposit} disabled={!canDeposit}>
+                  {hasActiveInvestment ? 'Active investment exists' : 'Review deposit'}
+                </button>
+              ) : (
+                <>
+                  <button type="button" style={{ ...styles.button, ...styles.primary }} onClick={confirmDeposit}>Confirm investment</button>
+                  <button type="button" style={{ ...styles.button, ...styles.secondary }} onClick={cancelDeposit}>Cancel</button>
+                </>
+              )}
+              {hasActiveInvestment && (
+                <button type="button" style={{ ...styles.button, ...styles.secondary, ...(!activeSummary.matured ? styles.disabled : {}) }} onClick={withdrawFunds} disabled={!activeSummary.matured}>
+                  {activeSummary.matured ? 'Withdraw principal + interest' : 'Locked until maturity'}
+                </button>
               )}
             </div>
-          </div>
+
+            {pendingInvestment && (
+              <div style={styles.status} role="status">
+                Confirm {currency(pendingInvestment.principal)} for {pendingInvestment.durationDays} days? Estimated interest is {currency(pendingInvestment.principal * DAILY_INTEREST_RATE * pendingInvestment.durationDays)}. No investment starts until you confirm.
+              </div>
+            )}
+            {!pendingInvestment && <div style={styles.status} role="status">{message}</div>}
+          </section>
+
+          <aside style={{ ...styles.panel, display: 'grid', gap: 16 }} aria-label="Vault details">
+            <section style={styles.section}>
+              <h2 style={styles.sectionTitle}>Your vault</h2>
+              {hasActiveInvestment ? (
+                <>
+                  <div style={{ marginBottom: 16 }}><span style={styles.statusPill(activeSummary.matured)}>{activeSummary.matured ? 'Ready to withdraw' : 'Locked'}</span></div>
+                  <div style={styles.infoRows}>
+                    <div style={styles.infoRow}><span>Principal</span><strong style={styles.infoValue}>{currency(activeInvestment.principal)}</strong></div>
+                    <div style={styles.infoRow}><span>Lock-in period</span><strong style={styles.infoValue}>{activeInvestment.durationDays} days</strong></div>
+                    <div style={styles.infoRow}><span>Started</span><strong style={styles.infoValue}>{formatDate(activeSummary.startedAt)}</strong></div>
+                    <div style={styles.infoRow}><span>Unlocks</span><strong style={styles.infoValue}>{formatDate(activeSummary.unlockAt)}</strong></div>
+                    <div style={styles.infoRow}><span>Accrued interest estimate</span><strong style={styles.infoValue}>{currency(activeSummary.accruedInterest)}</strong></div>
+                    <div style={{ ...styles.infoRow, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}><span>Estimated withdrawal value</span><strong style={{ ...styles.infoValue, color: '#ffca85' }}>{currency(activeSummary.total)}</strong></div>
+                  </div>
+                </>
+              ) : (
+                <div style={styles.empty}>No active investment. Your confirmed vault position will appear here.</div>
+              )}
+            </section>
+
+            <section style={styles.section}>
+              <h2 style={styles.sectionTitle}>How the estimate works</h2>
+              <div style={styles.infoRows}>
+                <div style={styles.infoRow}><span>Rate used</span><strong style={styles.infoValue}>2.5% per day</strong></div>
+                <div style={styles.infoRow}><span>Interest formula</span><strong style={styles.infoValue}>principal × 0.025 × days</strong></div>
+                <div style={styles.infoRow}><span>Minimum lock-in</span><strong style={styles.infoValue}>{MIN_LOCK_IN_DAYS} days</strong></div>
+                <div style={styles.infoRow}><span>Maximum term</span><strong style={styles.infoValue}>{MAX_LOCK_IN_DAYS} days</strong></div>
+              </div>
+            </section>
+
+            <div style={styles.warning}>
+              Illustrative estimate only—not a guarantee, bank balance, or confirmation that funds are held or insured. This component keeps state in the browser and does not connect to a wallet or database. Confirm the platform’s actual terms and backend accounting before handling real funds.
+            </div>
+          </aside>
         </div>
       </div>
-    </div>
+    </main>
   );
 };
 
