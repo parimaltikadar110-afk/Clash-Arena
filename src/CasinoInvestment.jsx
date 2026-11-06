@@ -1,92 +1,58 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const GOLD = "#facc15";
-const rupees = value => `₹${Math.round(Number(value) || 0).toLocaleString("en-IN")}`;
-
-const opportunities = [
-  { id: "arena", icon: "🏟️", name: "Arena Growth", category: "Tournament pool", risk: "Moderate", tone: "#22c55e", copy: "Support community tournament events." },
-  { id: "studio", icon: "🎮", name: "Game Studio", category: "Gaming projects", risk: "Higher", tone: "#a78bfa", copy: "Back early-stage gaming ideas." },
-  { id: "community", icon: "🤝", name: "Community Fund", category: "Player community", risk: "Lower", tone: "#38bdf8", copy: "Help fund player-led activities." },
+const projects = [
+  { icon: "🏟️", title: "Arena projects", text: "Community tournaments and esports events", color: "#22c55e" },
+  { icon: "🎮", title: "Gaming creators", text: "Gaming and creator-led initiatives", color: "#a78bfa" },
+  { icon: "🤝", title: "Player community", text: "Programs built for ClashX7 players", color: "#38bdf8" },
 ];
 
-/**
- * Casino investment UI prototype. All figures and actions are local demo data;
- * this component does not connect to a wallet, accept funds, or promise returns.
- */
+/** Investment landing screen. Real-money investing is unavailable until a secure backend and product terms exist. */
 export default function CasinoInvestment({ onBack = () => {} }) {
-  const [selected, setSelected] = useState(opportunities[0].id);
-  const [amount, setAmount] = useState(500);
-  const [demoPositions, setDemoPositions] = useState([]);
-  const [notice, setNotice] = useState("");
-  const totalDemo = useMemo(() => demoPositions.reduce((sum, item) => sum + item.amount, 0), [demoPositions]);
-  const active = opportunities.find(item => item.id === selected) || opportunities[0];
-
-  const previewAllocation = () => {
-    const value = Math.floor(Number(amount));
-    if (!Number.isFinite(value) || value < 100) {
-      setNotice("Choose a demo amount of at least ₹100.");
-      return;
-    }
-    setDemoPositions(items => [{ id: `${Date.now()}-${selected}`, name: active.name, amount: value }, ...items]);
-    setNotice("Demo allocation added. No money was moved.");
-  };
-
-  const card = { border: "1px solid #ffffff16", borderRadius: 18, background: "linear-gradient(145deg,#12251c,#0b1712)", padding: 16 };
-  const button = { border: "1px solid #d4af3780", borderRadius: 12, color: "#f5f5f4", background: "#16271d", padding: "11px 14px", fontWeight: 800, cursor: "pointer" };
+  const [selected, setSelected] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
+  const panel = { border: "1px solid #ffffff18", borderRadius: 18, background: "linear-gradient(145deg,#13271c,#0a1510)", padding: 16 };
 
   return (
     <main style={{ minHeight: "100vh", boxSizing: "border-box", padding: "12px 14px 36px", color: "#f5f5f4", background: "radial-gradient(ellipse at 50% -10%,#17452e 0%,#09140e 48%,#050a07 100%)", fontFamily: "system-ui,sans-serif" }}>
-      <style>{`@keyframes investGlow{0%,100%{box-shadow:0 0 0 0 #facc1510}50%{box-shadow:0 0 28px 2px #facc1522}} @media(max-width:380px){.invest-grid{grid-template-columns:1fr!important}.invest-headline{font-size:26px!important}}`}</style>
-      <header style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: 720, margin: "0 auto 18px" }}>
-        <button type="button" onClick={onBack} style={button}>← Casino</button>
-        <div style={{ flex: 1, color: GOLD, fontWeight: 900, fontSize: 17 }}>CLASHX7 <span style={{ color: "#f5f5f4", fontWeight: 700 }}>· INVEST</span></div>
-        <span aria-label="Demo mode" style={{ border: "1px solid #facc1566", borderRadius: 99, padding: "5px 9px", color: GOLD, fontSize: 10, fontWeight: 900 }}>DEMO</span>
-      </header>
+      <style>{`@keyframes investmentShine{0%,100%{box-shadow:0 10px 28px #0005}50%{box-shadow:0 10px 34px #facc1522}} .investProject:active{transform:scale(.985)} @media(max-width:360px){.investStats{grid-template-columns:1fr!important}}`}</style>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: 720, margin: "0 auto 18px" }}>
+        <button type="button" onClick={onBack} style={{ border: "1px solid #d4af3780", borderRadius: 12, color: "#f5f5f4", background: "#16271d", padding: "10px 13px", fontWeight: 800, cursor: "pointer" }}>← Casino</button>
+        <div style={{ flex: 1, color: GOLD, fontWeight: 900, fontSize: 16 }}>CLASHX7 <span style={{ color: "#f5f5f4" }}>· INVEST</span></div>
+        <span style={{ border: "1px solid #facc1566", borderRadius: 99, padding: "5px 9px", color: GOLD, fontSize: 9, fontWeight: 900, letterSpacing: 1 }}>COMING SOON</span>
+      </div>
 
-      <section style={{ ...card, maxWidth: 688, margin: "0 auto 14px", padding: "22px 18px", background: "radial-gradient(ellipse at 90% 10%,#85640c55,transparent 45%),linear-gradient(135deg,#183d2b,#0d1b13 70%)", animation: "investGlow 3s ease-in-out infinite" }}>
-        <div style={{ color: GOLD, fontSize: 11, letterSpacing: 2, fontWeight: 900 }}>PLAY SMARTER. BUILD TOGETHER.</div>
-        <h1 className="invest-headline" style={{ margin: "10px 0 7px", fontSize: 32, lineHeight: 1.1 }}>Gaming projects, <span style={{ color: GOLD }}>all in one place.</span></h1>
-        <p style={{ margin: 0, color: "#cbd5d0", lineHeight: 1.6, fontSize: 13 }}>Explore community project concepts and preview a sample allocation. This is a visual demo—not a real investment product.</p>
-        <div className="invest-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 9, marginTop: 18 }}>
-          {[["DEMO PORTFOLIO", rupees(totalDemo)], ["PROJECTS", String(opportunities.length)], ["RETURNS", "Not guaranteed"]].map(([label, value]) => (
-            <div key={label} style={{ borderRadius: 12, padding: 11, background: "#06110bd9", border: "1px solid #ffffff12" }}>
-              <div style={{ color: "#9ca3af", fontSize: 9, letterSpacing: 1, fontWeight: 800 }}>{label}</div>
-              <div style={{ color: label === "RETURNS" ? "#fbbf24" : "#fff", fontSize: label === "RETURNS" ? 12 : 19, fontWeight: 900, marginTop: 5 }}>{value}</div>
-            </div>
-          ))}
+      <section style={{ ...panel, maxWidth: 688, margin: "0 auto 14px", padding: "22px 18px", background: "radial-gradient(ellipse at 92% 8%,#85640c55,transparent 45%),linear-gradient(135deg,#183d2b,#0d1b13 70%)", animation: "investmentShine 3.2s ease-in-out infinite" }}>
+        <div style={{ color: GOLD, fontSize: 10, letterSpacing: 2, fontWeight: 900 }}>A NEW WAY TO BACK THE GAME</div>
+        <h1 style={{ margin: "10px 0 8px", fontSize: 30, lineHeight: 1.12 }}>Invest in the future of <span style={{ color: GOLD }}>gaming.</span></h1>
+        <p style={{ margin: 0, color: "#cbd5d0", lineHeight: 1.65, fontSize: 13 }}>Explore ideas supporting tournaments, creators and the player community—all in one place.</p>
+        <div className="investStats" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginTop: 18 }}>
+          {[["PROJECT AREAS", "03"], ["INVESTING STATUS", "Not available yet"]].map(([label, value]) => <div key={label} style={{ borderRadius: 12, padding: 11, background: "#06110bd9", border: "1px solid #ffffff12" }}><div style={{ color: "#9ca3af", fontSize: 9, letterSpacing: 1, fontWeight: 800 }}>{label}</div><div style={{ color: label === "PROJECT AREAS" ? GOLD : "#fbbf24", fontSize: label === "PROJECT AREAS" ? 20 : 12, fontWeight: 900, marginTop: 5 }}>{value}</div></div>)}
         </div>
       </section>
 
       <section style={{ maxWidth: 720, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", margin: "20px 2px 10px" }}>
-          <div><div style={{ color: GOLD, fontSize: 10, letterSpacing: 1.6, fontWeight: 900 }}>THE PROJECTS</div><h2 style={{ margin: "4px 0 0", fontSize: 20 }}>Choose a concept</h2></div>
-          <span style={{ color: "#9ca3af", fontSize: 11 }}>3 concepts</span>
-        </div>
+        <div style={{ margin: "20px 2px 10px" }}><div style={{ color: GOLD, fontSize: 10, letterSpacing: 1.6, fontWeight: 900 }}>EXPLORE</div><h2 style={{ margin: "4px 0 0", fontSize: 20 }}>Gaming project areas</h2></div>
         <div style={{ display: "grid", gap: 10 }}>
-          {opportunities.map(item => {
-            const on = selected === item.id;
-            return <button type="button" key={item.id} onClick={() => { setSelected(item.id); setNotice(""); }} style={{ ...card, textAlign: "left", cursor: "pointer", border: `1px solid ${on ? item.tone : "#ffffff18"}`, boxShadow: on ? `0 0 0 1px ${item.tone}44` : "none", display: "flex", alignItems: "center", gap: 12, color: "inherit", padding: 13 }}>
-              <span style={{ width: 46, height: 46, flex: "0 0 46px", display: "grid", placeItems: "center", borderRadius: 14, fontSize: 23, background: `${item.tone}20` }}>{item.icon}</span>
-              <span style={{ flex: 1 }}><span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontWeight: 900 }}>{item.name}<span style={{ color: item.tone, fontSize: 9, border: `1px solid ${item.tone}70`, borderRadius: 99, padding: "3px 7px" }}>{item.risk.toUpperCase()} RISK</span></span><span style={{ display: "block", color: "#a7b0aa", fontSize: 11, marginTop: 4 }}>{item.category} · {item.copy}</span></span>
-              <span style={{ color: on ? item.tone : "#68736c", fontSize: 19 }}>{on ? "◉" : "○"}</span>
+          {projects.map((project, index) => {
+            const active = selected === index;
+            return <button className="investProject" type="button" key={project.title} onClick={() => setSelected(index)} aria-pressed={active} style={{ ...panel, textAlign: "left", cursor: "pointer", border: `1px solid ${active ? project.color : "#ffffff18"}`, display: "flex", alignItems: "center", gap: 12, color: "inherit", padding: 13, transition: "transform .15s,border-color .15s" }}>
+              <span style={{ width: 46, height: 46, flex: "0 0 46px", display: "grid", placeItems: "center", borderRadius: 14, fontSize: 23, background: `${project.color}20` }}>{project.icon}</span>
+              <span style={{ flex: 1 }}><strong style={{ display: "block", fontSize: 14 }}>{project.title}</strong><span style={{ display: "block", color: "#a7b0aa", fontSize: 11, marginTop: 4 }}>{project.text}</span></span>
+              <span aria-hidden="true" style={{ color: active ? project.color : "#68736c", fontSize: 19 }}>{active ? "◉" : "›"}</span>
             </button>;
           })}
         </div>
 
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}><div><div style={{ color: "#9ca3af", fontSize: 10, letterSpacing: 1, fontWeight: 800 }}>DEMO ALLOCATION</div><div style={{ fontWeight: 900, marginTop: 4 }}>{active.icon} {active.name}</div></div><div style={{ textAlign: "right", color: "#fbbf24", fontSize: 11, fontWeight: 800 }}>{active.risk} risk<br /><span style={{ color: "#8d9890", fontWeight: 500 }}>Could lose value</span></div></div>
-          <div style={{ display: "flex", gap: 8, marginTop: 15, flexWrap: "wrap" }}>
-            {[500, 1000, 2500].map(value => <button type="button" key={value} onClick={() => setAmount(value)} style={{ ...button, flex: 1, minWidth: 75, borderColor: amount === value ? GOLD : "#ffffff20", background: amount === value ? "#51400c" : "#0b1711" }}>{rupees(value)}</button>)}
-          </div>
-          <label style={{ display: "block", color: "#a7b0aa", fontSize: 11, margin: "13px 0 6px" }}>Custom demo amount</label>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #ffffff24", background: "#07110b", borderRadius: 12, padding: "0 12px" }}><span style={{ color: GOLD, fontWeight: 900 }}>₹</span><input aria-label="Demo amount in rupees" type="number" min="100" step="100" value={amount} onChange={event => setAmount(event.target.value)} style={{ width: "100%", padding: "12px 0", color: "#fff", background: "transparent", border: 0, outline: 0, fontSize: 17, fontWeight: 800 }} /></div>
-          <button type="button" onClick={previewAllocation} style={{ width: "100%", marginTop: 13, border: 0, borderRadius: 13, padding: 14, background: "linear-gradient(100deg,#fde68a,#d4af37)", color: "#111", fontSize: 14, fontWeight: 950, cursor: "pointer" }}>PREVIEW DEMO ALLOCATION · {rupees(amount)}</button>
-          {notice && <p role="status" style={{ margin: "10px 0 0", color: "#86efac", fontSize: 12, textAlign: "center" }}>{notice}</p>}
-        </div>
-
-        {demoPositions.length > 0 && <div style={{ ...card, marginTop: 14 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><b>My demo portfolio</b><span style={{ color: GOLD, fontWeight: 900 }}>{rupees(totalDemo)}</span></div>{demoPositions.map(position => <div key={position.id} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid #ffffff12", color: "#cbd5d0", fontSize: 12 }}><span>{position.name}</span><b style={{ color: "#fff" }}>{rupees(position.amount)}</b></div>)}</div>}
-
-        <aside style={{ marginTop: 14, padding: 13, borderRadius: 14, background: "#3b2b0d55", border: "1px solid #facc1533", color: "#d6c9a1", fontSize: 11, lineHeight: 1.6 }}><b style={{ color: GOLD }}>⚠ Demo only · No real funds</b><br />This prototype stores sample allocations only in the current screen. It does not move wallet money, create an investment, or predict returns. Real investments can lose some or all of their value; do not rely on projected or guaranteed returns.</aside>
+        <section style={{ ...panel, marginTop: 14, textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ width: 48, height: 48, margin: "0 auto 10px", borderRadius: 16, display: "grid", placeItems: "center", background: "#facc1518", fontSize: 24 }}>🔒</div>
+          <div style={{ color: GOLD, fontSize: 10, letterSpacing: 1.4, fontWeight: 900 }}>INVESTING IS NOT OPEN</div>
+          <h3 style={{ margin: "7px 0", fontSize: 18 }}>We’re building this responsibly</h3>
+          <p style={{ color: "#aeb8b0", fontSize: 12, lineHeight: 1.6, margin: "0 auto", maxWidth: 460 }}>No deposits, wallet deductions, investment orders or returns are available on this screen. We’ll only enable real investing after the service, protections and full terms are ready.</p>
+          <button type="button" onClick={() => setShowInfo(value => !value)} style={{ marginTop: 14, padding: "10px 14px", borderRadius: 11, border: "1px solid #facc1555", background: "#facc1512", color: GOLD, fontWeight: 800, cursor: "pointer" }}>{showInfo ? "Hide details" : "What happens next?"}</button>
+          {showInfo && <p role="status" style={{ color: "#cbd5d0", fontSize: 11, lineHeight: 1.6, margin: "12px 0 0" }}>Project details, eligibility, fees, risk disclosures, and secure server-side funding and withdrawal support must be published before any real investment can be offered. Returns are never guaranteed.</p>}
+        </section>
+        <p style={{ margin: "14px 4px 0", color: "#8d9890", fontSize: 10, lineHeight: 1.5, textAlign: "center" }}>Investments can lose value. This screen does not accept or manage money.</p>
       </section>
     </main>
   );
