@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 const DAILY_INTEREST_RATE = 0.025;
 const MIN_LOCK_IN_DAYS = 3;
@@ -14,14 +14,16 @@ const currency = (value) =>
     maximumFractionDigits: 2,
   }).format(Number.isFinite(Number(value)) ? Number(value) : 0);
 
-const formatDate = (date) =>
-  new Intl.DateTimeFormat('en-US', {
+const formatDate = (date) => {
+  if (!date || Number.isNaN(new Date(date).getTime())) return '—';
+  return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-  }).format(date);
+  }).format(new Date(date));
+};
 
 const clampDays = (value) =>
   Math.min(MAX_LOCK_IN_DAYS, Math.max(MIN_LOCK_IN_DAYS, Math.floor(Number(value) || MIN_LOCK_IN_DAYS)));
@@ -227,7 +229,6 @@ const SafeVault = () => {
       lineHeight: 1.55,
     },
     warning: { marginTop: 15, padding: 13, borderRadius: 12, color: '#d4c7a6', background: 'rgba(195,153,61,0.08)', border: '1px solid rgba(214,175,82,0.16)', fontSize: 11, lineHeight: 1.6 },
-    empty: { padding: '20px 16px', borderRadius: 14, color: '#a7b5ca', background: 'rgba(255,255,255,0.025)', border: '1px dashed rgba(255,255,255,0.12)', textAlign: 'center', fontSize: 13, lineHeight: 1.6 },
     statusPill: (matured) => ({
       display: 'inline-flex',
       padding: '7px 10px',
@@ -323,6 +324,7 @@ const SafeVault = () => {
               <div style={styles.summaryRow}><span>Estimated interest for {previewDays} days</span><strong>{currency(previewInterest)}</strong></div>
               <div style={{ ...styles.summaryRow, ...styles.summaryLast }}><span>Estimated value at unlock</span><strong>{currency((validAmount ? previewAmount : 0) + previewInterest)}</strong></div>
             </div>
+
             <div style={{ ...styles.infoRow, marginTop: 14 }}><span style={styles.muted}>Estimated unlock date</span><strong style={{ ...styles.infoValue, fontSize: 12 }}>{formatDate(previewUnlockDate)}</strong></div>
 
             <div style={styles.buttons}>
@@ -345,7 +347,7 @@ const SafeVault = () => {
 
             {pendingInvestment && (
               <div style={styles.status} role="status">
-                Confirm {currency(pendingInvestment.principal)} for {pendingInvestment.durationDays} days? Estimated interest is {currency(pendingInvestment.principal * DAILY_INTEREST_RATE * pendingInvestment.durationDays)}. No investment starts until you confirm.
+                Confirm {currency(pendingInvestment.principal)} for {pendingInvestment.durationDays} days? Estimated interest is {currency(pendingInvestment.principal * DAILY_INTEREST_RATE * pendingInvestment.durationDays)}.
               </div>
             )}
             {!pendingInvestment && <div style={styles.status} role="status">{message}</div>}
@@ -363,11 +365,11 @@ const SafeVault = () => {
                     <div style={styles.infoRow}><span>Started</span><strong style={styles.infoValue}>{formatDate(activeSummary.startedAt)}</strong></div>
                     <div style={styles.infoRow}><span>Unlocks</span><strong style={styles.infoValue}>{formatDate(activeSummary.unlockAt)}</strong></div>
                     <div style={styles.infoRow}><span>Accrued interest estimate</span><strong style={styles.infoValue}>{currency(activeSummary.accruedInterest)}</strong></div>
-                    <div style={{ ...styles.infoRow, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}><span>Estimated withdrawal value</span><strong style={{ ...styles.infoValue, color: '#ffca85' }}>{currency(activeSummary.total)}</strong></div>
+                    <div style={{ ...styles.infoRow, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}><span>Estimated withdrawal value</span><strong style={{ ...styles.infoValue, fontWeight: 800 }}>{currency(activeSummary.total)}</strong></div>
                   </div>
                 </>
               ) : (
-                <div style={styles.empty}>No active investment. Your confirmed vault position will appear here.</div>
+                <div style={{ padding: '20px 16px', borderRadius: 14, color: '#a7b5ca', background: 'rgba(255,255,255,0.025)', border: '1px dashed rgba(255,255,255,0.12)', textAlign: 'center', fontSize: 13 }}>{'No active investment. Your confirmed vault position will appear here.'}</div>
               )}
             </section>
 
@@ -382,7 +384,7 @@ const SafeVault = () => {
             </section>
 
             <div style={styles.warning}>
-              Illustrative estimate only—not a guarantee, bank balance, or confirmation that funds are held or insured. This component keeps state in the browser and does not connect to a wallet or database. Confirm the platform’s actual terms and backend accounting before handling real funds.
+              Illustrative estimate only—not a guarantee, bank balance, or confirmation that funds are held or insured. This component keeps state in the browser and does not connect to a wallet backend.
             </div>
           </aside>
         </div>
