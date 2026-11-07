@@ -154,8 +154,18 @@ const S = {
     border: "1px solid #4c3a8a",
     background: "#120b26",
     color: "#ffffff",
-    fontSize: "15px",
+    WebkitTextFillColor: "#ffffff",
+    caretColor: "#ffffff",
+    colorScheme: "dark",
+    fontSize: "16px",
     outline: "none",
+    boxSizing: "border-box",
+  },
+  inputLabel: {
+    display: "block",
+    fontSize: "12px",
+    color: "#a897d6",
+    marginBottom: "6px",
   },
   quickRow: {
     display: "flex",
@@ -466,6 +476,9 @@ export default function SafeVault({
           </button>
         </div>
 
+        <label style={S.inputLabel}>
+          {mode === "deposit" ? "Tokens to deposit" : "Tokens to withdraw"}
+        </label>
         <div style={S.inputRow}>
           <input
             type="number"
