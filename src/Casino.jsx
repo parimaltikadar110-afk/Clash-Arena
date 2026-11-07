@@ -999,7 +999,7 @@ function Aviator({ supabase, me, reload, say, cfg, onBack }) {
     setRes(null); setPts([1]); setM(1); setBoom(false); setPhase("flying"); playSfx(330, 0.12);
     clearInterval(timer.current); clearInterval(poll.current);
     timer.current = setInterval(tick, 100);
-    poll.current = setInterval(pollStatus, 500);     // check the server twice a second so the crash shows right away        // one light status call every 2 seconds while flying
+    poll.current = setInterval(pollStatus, 3000);     // check the server twice a second so the crash shows right away        // one light status call every 2 seconds while flying
   };
 
   // ---- custom amount ("Other ₹") ----
@@ -2118,7 +2118,7 @@ function Ludo({ supabase, me, reload, say, cfg, onBack }) {
     const t = setInterval(async () => {
       const { data } = await supabase.from("ludo_matches").select("id,status,p1,p2,entry").eq("id", match.id).maybeSingle();
       if (data && data.status !== "waiting") { setMatch(data); playSfx(660, 0.12); }
-    }, 3000);
+    }, 8000);
     return () => clearInterval(t);
   }, [match, supabase]);
 
