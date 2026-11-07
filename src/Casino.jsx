@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo, useRef } from "react";
+import SafeVault from "./SafeVault";
 
 /* ClashX7 Casino v5
    Lobby -> Auto Roulette | Dragon Tiger | Aviator
@@ -2333,6 +2334,14 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "elements") return <Elements {...common} />;
   if (view === "ludo") return <Ludo {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
+  if (view === "vault") return (
+    <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
+      <button onClick={() => setView("lobby")} style={{ padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>« Lobby</button>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <SafeVault initialBalance={Math.floor((+me.balance || 0) + (+me.winnings || 0))} />
+      </div>
+    </div>
+  );
 
   const cards = [
     ["roulette", "roulette", "Auto Roulette", "The wheel turns by itself. Place your bets while the timer runs.", "linear-gradient(135deg,#3f0a0f,#b91c1c)"],
@@ -2354,6 +2363,11 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
       <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 0 4px" }}><SoundBtn /></div>
         <h2 style={{ color: GOLD_L, margin: 0, letterSpacing: 1 }}>Casino</h2>
         <p style={{ margin: "4px 0 0", fontSize: 12, opacity: .7 }}>Pick a table to play</p>
+      </div>
+      <div onClick={() => setView("vault")} style={{ marginBottom: 12, padding: 14, borderRadius: 18, cursor: "pointer", border: `1px solid ${GOLD}`, background: "linear-gradient(135deg,#1e1b4b,#4c1d95)", boxShadow: "0 10px 26px #000c" }}>
+        <div style={{ fontWeight: 900, fontSize: 18 }}>🪙 Coin Vault</div>
+        <div style={{ fontSize: 12, opacity: .92, marginTop: 6 }}>Lock tokens, earn the daily arcade bonus, claim after the timer.</div>
+        <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: GOLD_L }}>OPEN ›</div>
       </div>
       {cards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games are open right now.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
