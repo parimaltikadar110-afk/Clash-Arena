@@ -187,7 +187,10 @@ export default function App() {
   // casino_config from app_settings (S is filled by load()); defaults used until the row exists
   const casinoCfg = { min_bet:10, max_bet:50000, ...(S.casino_config||{}), enabled: S.casino_config ? S.casino_config.enabled===true : (()=>{ try{ return localStorage.getItem("x7casino_on")==="1" }catch{ return false } })(), games:{ roulette:true, ...(S.casino_config?.games||{}) } };   // OFF unless the saved config explicitly says true (no flash of casino on startup)
   const casinoOn = !!casinoCfg.enabled;
-  const ffOn = !(S.app_mode && S.app_mode.ff === false);   // admin switch; default ON
+  // admin switch. Last known value is cached in localStorage, so a Free Fire-off setting is applied on the very first frame (no Free Fire flash on open)
+  const ffCached = (() => { try { return localStorage.getItem("x7ff_on") !== "0" } catch { return true } })();
+  const ffOn = S.app_mode ? S.app_mode.ff !== false : ffCached;
+  useEffect(()=>{ if(S.app_mode){ try{ localStorage.setItem("x7ff_on", S.app_mode.ff===false?"0":"1") }catch{} } },[S.app_mode]);
   useEffect(()=>{ if(S.casino_config){ try{ localStorage.setItem("x7casino_on", S.casino_config.enabled===true?"1":"0") }catch{} } },[S.casino_config]);
   const appMode = casinoOn ? (ffOn ? appModeRaw : "casino") : "ff";   // Free Fire off = casino only   // master OFF forces Free Fire; casino UI unmounts
   const switchMode = m => { setAppMode(m); try{ localStorage.setItem("x7mode",m) }catch{} setPage(null); setNav("home") };
