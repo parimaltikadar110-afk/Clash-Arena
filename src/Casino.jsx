@@ -2360,7 +2360,7 @@ const GW = {
 const gwDirBtn = (sel, busy) => ({ flex: 1, padding: "12px 0", borderRadius: 12, border: `1px solid ${sel ? GOLD_L : "#334155"}`, background: sel ? "#14532d" : "#0f172a", color: "#f8fafc", fontWeight: 900, fontSize: 14, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 });
 const gwDot = g => ({ width: 26, height: 26, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 900, background: g ? "#16a34a" : "#b91c1c", color: "#fff" });
 
-function GoalWave({ me, onBack, cfg }) {
+function GoalWave({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
   const start = (+me.balance || 0) + (+me.winnings || 0);
   const [bal, setBal] = useState(start);
@@ -2368,14 +2368,31 @@ function GoalWave({ me, onBack, cfg }) {
 
   const [bet, setBet] = useState(10);
   const [pick, setPick] = useState("center");
-  const [round, setRound] = useState(null);     // { goals, alive }
-  const [shooting, setShooting] = useState(false);
+  const [round, setRound] = useState(null);     // { id, goals, alive }
+  const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(null);       // { dir, keeper, scored }
   const [history, setHistory] = useState([]);   // newest first: "G" or "S"
   const [msg, setMsg] = useState("");
-  const shootingRef = useRef(false);
+  const busyRef = useRef(false);
   const timerRef = useRef(null);
   useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  // resume a round left open (e.g. the player left the screen mid-streak)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from("casino_goal_rounds")
+          .select("id,bet,goals").eq("status", "active").maybeSingle();
+        if (alive && data) {
+          setRound({ id: data.id, goals: +data.goals || 0, alive: true });
+          setBet(+data.bet || MIN);
+          setMsg("Your open round was restored. Shoot or cash out.");
+        }
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [supabase]);
 
   const active = !!round && round.alive;
   const goals = round ? round.goals : 0;
@@ -2384,46 +2401,75 @@ function GoalWave({ me, onBack, cfg }) {
   const chance = gwChance(goals);
 
   const clamp = v => Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN));
-  const changeBet = v => { if (!active && !shooting) setBet(clamp(v)); };
+  const changeBet = v => { if (!active && !busy) setBet(clamp(v)); };
 
-  const startGame = () => {
-    if (active || shootingRef.current) return;
+  const rpc = async (fn, args) => {
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc(fn, args)); } catch (e) { error = e; }
+    if (error || !data?.success) throw new Error(error?.message || "Connection lost");
+    return data;
+  };
+
+  const startGame = async () => {
+    if (active || busyRef.current) return;
     if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
     if (bet > bal) return setMsg("Balance too low");
-    setBal(b => Math.round((b - bet) * 100) / 100);
-    setRound({ goals: 0, alive: true });
-    setLast(null);
-    setHistory([]);
-    setMsg("Pick a corner and shoot.");
+    busyRef.current = true; setBusy(true); setMsg("");
+    try {
+      const data = await rpc("casino_goal_start", { p_bet: bet });
+      setRound({ id: data.round_id, goals: 0, alive: true });
+      setBal(num(data.new_balance, bal));
+      setLast(null);
+      setHistory([]);
+      setMsg("Pick a corner and shoot.");
+      reload && reload();
+    } catch (e) {
+      say ? say(e.message, 1) : setMsg(e.message);
+    } finally {
+      busyRef.current = false; setBusy(false);
+    }
   };
 
-  const shoot = () => {
-    if (!active || shootingRef.current) return;
-    shootingRef.current = true;
-    setShooting(true);
-    const k = goals, dir = pick;
-    const scored = Math.random() < gwChance(k);
-    setLast({ dir, keeper: scored ? gwOther(dir) : dir, scored });
-    setMsg("Shot taken...");
-    timerRef.current = setTimeout(() => {
-      shootingRef.current = false;
-      setShooting(false);
-      setHistory(h => [scored ? "G" : "S", ...h].slice(0, 12));
-      if (scored) {
-        setRound({ goals: k + 1, alive: true });
-        setMsg(`Goal! Streak at ${gwMult(k + 1)}x. Cash out or keep shooting.`);
-      } else {
-        setRound({ goals: k, alive: false });
-        setMsg("Saved! Streak lost.");
-      }
-    }, 900);
+  const shoot = async () => {
+    if (!active || busyRef.current) return;
+    busyRef.current = true; setBusy(true); setMsg("Shot taken...");
+    try {
+      const data = await rpc("casino_goal_shot", { p_round: round.id, p_dir: pick });
+      const id = round.id;
+      const goalsNow = num(data.goals, goals + (data.scored ? 1 : 0));
+      setLast({ dir: pick, keeper: data.keeper, scored: !!data.scored });
+      timerRef.current = setTimeout(() => {
+        setHistory(h => [data.scored ? "G" : "S", ...h].slice(0, 12));
+        if (data.scored) {
+          setRound({ id, goals: goalsNow, alive: true });
+          setMsg(`Goal! Streak at ${gwMult(goalsNow)}x. Cash out or keep shooting.`);
+        } else {
+          setRound({ id, goals: goalsNow, alive: false });
+          setMsg("Saved! Streak lost.");
+          reload && reload();
+        }
+        busyRef.current = false; setBusy(false);
+      }, 900);
+    } catch (e) {
+      busyRef.current = false; setBusy(false);
+      say ? say(e.message, 1) : setMsg(e.message);
+    }
   };
 
-  const cashOut = () => {
-    if (!active || shootingRef.current || goals < 1) return;
-    setBal(b => Math.round((b + payout) * 100) / 100);
-    setRound({ goals, alive: false });
-    setMsg(`Cashed out ${RM(payout)} at ${mult.toFixed(2)}x`);
+  const cashOut = async () => {
+    if (!active || busyRef.current || goals < 1) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      const data = await rpc("casino_goal_cashout", { p_round: round.id });
+      setRound({ id: round.id, goals, alive: false });
+      setBal(num(data.new_balance, bal));
+      setMsg(`Cashed out ${RM(data.won_amount)} at ${mult.toFixed(2)}x`);
+      reload && reload();
+    } catch (e) {
+      say ? say(e.message, 1) : setMsg(e.message);
+    } finally {
+      busyRef.current = false; setBusy(false);
+    }
   };
 
   const ballPos = last
@@ -2463,8 +2509,7 @@ function GoalWave({ me, onBack, cfg }) {
 
       <div style={GW.dirRow}>
         {GW_DIRS.map(d => (
-          <button key={d} disabled={shooting} onClick={() => setPick(d)}
-            style={gwDirBtn(pick === d, shooting)}>
+          <button key={d} disabled={busy} onClick={() => setPick(d)} style={gwDirBtn(pick === d, busy)}>
             {GW_NAME[d]}
           </button>
         ))}
@@ -2483,17 +2528,17 @@ function GoalWave({ me, onBack, cfg }) {
       )}
 
       {!active ? (
-        <button style={GW.primary} onClick={startGame}>
+        <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={startGame}>
           {round ? "Play again" : "Start"} · Stake {R(bet)}
         </button>
       ) : (
         <div style={GW.row}>
-          <button style={{ ...GW.shoot, opacity: shooting ? 0.5 : 1, cursor: shooting ? "not-allowed" : "pointer" }}
-            disabled={shooting} onClick={shoot}>
+          <button style={{ ...GW.shoot, opacity: busy ? 0.5 : 1, cursor: busy ? "not-allowed" : "pointer" }}
+            disabled={busy} onClick={shoot}>
             Shoot {GW_NAME[pick]}
           </button>
-          <button style={{ ...GW.cash, opacity: goals < 1 || shooting ? 0.45 : 1, cursor: goals < 1 || shooting ? "not-allowed" : "pointer" }}
-            disabled={goals < 1 || shooting} onClick={cashOut}>
+          <button style={{ ...GW.cash, opacity: goals < 1 || busy ? 0.45 : 1, cursor: goals < 1 || busy ? "not-allowed" : "pointer" }}
+            disabled={goals < 1 || busy} onClick={cashOut}>
             Cash out {RM(payout)}
           </button>
         </div>
@@ -2512,6 +2557,130 @@ function GoalWave({ me, onBack, cfg }) {
         A save ends the streak and the stake is lost. Cash out any time after your first goal.
         Virtual points only.
       </div>
+    </div>
+  );
+}
+
+/* ---------- VIP ---------- */
+const VIP_BTN = { width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: `linear-gradient(135deg,${GOLD},${GOLD_L})`, color: "#1a1300", fontWeight: 900, fontSize: 15, cursor: "pointer" };
+const VIP_CARD = { background: "#0b1d12", border: "1px solid #1f3d2a", borderRadius: 14, padding: 14, marginBottom: 12 };
+const VIP_BAR = { height: 8, borderRadius: 8, background: "#1f2937", overflow: "hidden", marginTop: 6 };
+const vipFill = p => ({ height: "100%", width: `${Math.max(0, Math.min(100, p))}%`, background: `linear-gradient(90deg,${GOLD},${GOLD_L})`, transition: "width .5s" });
+
+function VipPage({ supabase, me, reload, say, onBack }) {
+  const [st, setSt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("vip_status");
+      if (error) throw error;
+      setSt(data || {});
+    } catch (e) { setMsg(e?.message || "Could not load VIP"); }
+  }, [supabase]);
+  useEffect(() => { load(); }, [load, me.balance, me.winnings]);
+
+  const levels = st?.levels || [];
+  const cur = +st?.level || 0;
+  const curRow = levels.find(l => l.level === cur);
+  const nextRow = levels.find(l => l.level === st?.next_level);
+  const claimed = st?.claimed || [];
+  const claimable = levels.filter(l => l.level <= cur && l.levelup_bonus > 0 && !claimed.includes(l.level));
+  const claimTotal = claimable.reduce((a, l) => a + Number(l.levelup_bonus), 0);
+  const expPct = nextRow ? (+st.exp / nextRow.exp_needed) * 100 : 100;
+  const maintPct = curRow && curRow.maintain_exp > 0 ? (+st.period_exp / curRow.maintain_exp) * 100 : 100;
+
+  const claim = async () => {
+    if (busy || claimTotal <= 0) return;
+    setBusy(true); setMsg("");
+    try {
+      const { data, error } = await supabase.rpc("vip_claim_levelup");
+      if (error || !data?.success) throw error || new Error("Could not claim");
+      setMsg(`Claimed ${RM(data.claimed)} to Winnings`);
+      reload && reload();
+      load();
+    } catch (e) {
+      const m = e?.message || "Could not claim";
+      say ? say(m, 1) : setMsg(m);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0", padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <button onClick={onBack} style={{ padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>« Lobby</button>
+        <div style={{ color: GOLD_L, fontWeight: 900, fontSize: 18 }}>VIP</div>
+        <div style={{ width: 70 }} />
+      </div>
+
+      {!st ? <p style={{ textAlign: "center", opacity: .7 }}>{msg || "Loading…"}</p> : (
+        <>
+          <div style={{ ...VIP_CARD, textAlign: "center", background: "linear-gradient(135deg,#3f2a05,#ca8a04)", border: `1px solid ${GOLD}` }}>
+            <div style={{ fontSize: 12, opacity: .9 }}>Your level</div>
+            <div style={{ fontSize: 34, fontWeight: 900, color: "#fff7c2", textShadow: "0 2px 8px #000" }}>{cur ? `VIP ${cur}` : "No VIP yet"}</div>
+            <div style={{ fontSize: 12, marginTop: 6 }}>{+st.exp} EXP · Rebate {((+st.rebate_rate || 0) * 100).toFixed(2)}% / month</div>
+          </div>
+
+          <div style={VIP_CARD}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+              <span>{nextRow ? `Progress to VIP ${nextRow.level}` : "Top level reached"}</span>
+              <b style={{ color: GOLD_L }}>{nextRow ? `${+st.exp} / ${nextRow.exp_needed}` : `${+st.exp} EXP`}</b>
+            </div>
+            <div style={VIP_BAR}><div style={vipFill(expPct)} /></div>
+            {curRow && curRow.maintain_exp > 0 && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 14 }}>
+                  <span>Keep VIP {cur} this month</span>
+                  <b style={{ color: GOLD_L }}>{+st.period_exp} / {curRow.maintain_exp}</b>
+                </div>
+                <div style={VIP_BAR}><div style={vipFill(maintPct)} /></div>
+                <div style={{ fontSize: 11, opacity: .7, marginTop: 6 }}>If you miss the target on the 1st, your level drops to the highest one you still qualify for.</div>
+              </>
+            )}
+          </div>
+
+          <div style={VIP_CARD}>
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>Level-up reward</div>
+            <div style={{ fontSize: 12, opacity: .8, marginBottom: 10 }}>
+              {claimTotal > 0 ? `You can claim ${RM(claimTotal)} now. Each level pays only once.` : "No level-up reward to claim right now."}
+            </div>
+            <button style={{ ...VIP_BTN, opacity: claimTotal > 0 && !busy ? 1 : .45, cursor: claimTotal > 0 && !busy ? "pointer" : "not-allowed" }}
+              disabled={claimTotal <= 0 || busy} onClick={claim}>
+              Claim {claimTotal > 0 ? RM(claimTotal) : ""}
+            </button>
+            {msg && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: GOLD_L, textAlign: "center" }}>{msg}</div>}
+          </div>
+
+          <div style={VIP_CARD}>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>All levels</div>
+            {levels.map(l => {
+              const done = l.level <= cur;
+              const got = claimed.includes(l.level);
+              return (
+                <div key={l.level} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid #1f3d2a", opacity: done ? 1 : .6 }}>
+                  <div>
+                    <div style={{ fontWeight: 900, color: done ? GOLD_L : "#f8fafc" }}>VIP {l.level} {done ? "✓" : ""}</div>
+                    <div style={{ fontSize: 11, opacity: .75 }}>
+                      {Number(l.exp_needed).toLocaleString("en-IN")} EXP · Rebate {(Number(l.rebate_rate) * 100).toFixed(2)}%
+                      {l.maintain_exp > 0 ? ` · keep ${Number(l.maintain_exp).toLocaleString("en-IN")} EXP/month` : ""}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 800, textAlign: "right" }}>
+                    {l.levelup_bonus > 0 ? R(l.levelup_bonus) : ""}
+                    <div style={{ fontSize: 11, opacity: .7 }}>{got ? "Claimed" : done ? "Ready" : "Locked"}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ fontSize: 11, opacity: .7, textAlign: "center" }}>
+            1 EXP for every ₹10 staked. Rebate and rewards are credited to Winnings. Settled at 2:00 am on the 1st of every month. Virtual points only.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -2539,6 +2708,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "elements") return <Elements {...common} />;
   if (view === "ludo") return <Ludo {...common} />;
   if (view === "goal") return <GoalWave {...common} />;
+  if (view === "vip") return <VipPage {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -2570,6 +2740,11 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
       <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 0 4px" }}><SoundBtn /></div>
         <h2 style={{ color: GOLD_L, margin: 0, letterSpacing: 1 }}>Casino</h2>
         <p style={{ margin: "4px 0 0", fontSize: 12, opacity: .7 }}>Pick a table to play</p>
+      </div>
+      <div onClick={() => setView("vip")} style={{ marginBottom: 12, padding: 14, borderRadius: 18, cursor: "pointer", border: `1px solid ${GOLD}`, background: "linear-gradient(135deg,#3f2a05,#ca8a04)", boxShadow: "0 10px 26px #000c" }}>
+        <div style={{ fontWeight: 900, fontSize: 18 }}>👑 VIP</div>
+        <div style={{ fontSize: 12, opacity: .92, marginTop: 6 }}>Earn EXP while you play. Level-up rewards and a monthly rebate.</div>
+        <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: GOLD_L }}>OPEN ›</div>
       </div>
       <div onClick={() => setView("vault")} style={{ marginBottom: 12, padding: 14, borderRadius: 18, cursor: "pointer", border: `1px solid ${GOLD}`, background: "linear-gradient(135deg,#1e1b4b,#4c1d95)", boxShadow: "0 10px 26px #000c" }}>
         <div style={{ fontWeight: 900, fontSize: 18 }}>🪙 Coin Vault</div>
