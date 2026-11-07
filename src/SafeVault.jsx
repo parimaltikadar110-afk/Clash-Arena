@@ -39,6 +39,12 @@ const formatCountdown = (ms) => {
 const formatTime = (ts) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
+// Scoped override: the host app's global input CSS was winning over inline colour, so the typed amount looked dark-on-dark.
+const INPUT_FIX = `
+  .sv-amount, .sv-amount:focus { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; caret-color:#ffffff !important; background:#120b26 !important; opacity:1 !important; }
+  .sv-amount::placeholder { color:#a897d6 !important; -webkit-text-fill-color:#a897d6 !important; opacity:1 !important; }
+`;
+
 const S = {
   wrapper: {
     fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
@@ -444,6 +450,7 @@ export default function SafeVault({
 
   return (
     <div style={S.wrapper}>
+      <style>{INPUT_FIX}</style>
       <div style={S.header}>
         <h2 style={S.title}>Coin Vault</h2>
         <span style={S.badge}>{(dailyRate * 100).toFixed(1)}% daily interest</span>
@@ -481,6 +488,7 @@ export default function SafeVault({
         </label>
         <div style={S.inputRow}>
           <input
+            className="sv-amount"
             type="number"
             min="1"
             placeholder={mode === "deposit" ? "Tokens to deposit" : "Tokens to withdraw"}
