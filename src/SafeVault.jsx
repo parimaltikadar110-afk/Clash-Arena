@@ -4,17 +4,28 @@ import React, { useState, useEffect } from "react";
   SafeVault - virtual in-game Coin Vault / Piggy Bank.
   Uses virtual game tokens only. No real money involved.
 
+  Daily interest is credited automatically at each day boundary (midnight, Asia/Kolkata).
+  Interest compounds per credited day. If the player was away for several days,
+  all missed days are credited the next time the vault is loaded.
+
   Props:
     initialBalance  number  starting main game balance (tokens)
     dailyRate       number  daily arcade bonus rate (0.025 = 2.5%)
-    lockPeriodMs    number  lock-in period before claims are allowed (ms)
+    lockPeriodMs    number  lock-in period before withdrawals are allowed (ms)
     onBalanceChange (next:number) => void   called when main balance changes
 */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const EPS = 1e-9;
 
 const floorTokens = (n) => Math.floor(n + EPS);
+
+// Index of the IST calendar day a timestamp falls on
+const dayIndexOf = (ts) => Math.floor((ts + IST_OFFSET_MS) / DAY_MS);
+
+// Timestamp of the next IST midnight after `ts`
+const nextMidnightAfter = (ts) => (dayIndexOf(ts) + 1) * DAY_MS - IST_OFFSET_MS;
 
 const formatCountdown = (ms) => {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -194,17 +205,6 @@ const S = {
     fontWeight: 700,
     cursor: "not-allowed",
   },
-  ghostButton: {
-    width: "100%",
-    marginTop: "10px",
-    padding: "8px",
-    borderRadius: "10px",
-    border: "1px dashed #4c3a8a",
-    background: "transparent",
-    color: "#a897d6",
-    fontSize: "12px",
-    cursor: "pointer",
-  },
   timerText: {
     fontSize: "26px",
     fontWeight: 700,
@@ -227,6 +227,18 @@ const S = {
     background: "linear-gradient(90deg, #7b5cff, #ffd166)",
     transition: "width 0.9s linear",
   }),
+  creditBox: {
+    marginTop: "12px",
+    padding: "10px 12px",
+    borderRadius: "10px",
+    background: "#21153f",
+    border: "1px solid #332463",
+    fontSize: "12px",
+    color: "#c9b8ff",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
   muted: {
     fontSize: "12px",
     color: "#a897d6",
@@ -274,21 +286,21 @@ export default function SafeVault({
   const [mainBalance, setMainBalance] = useState(initialBalance);
 
   // Vault position or null:
-  //   base       = tokens in the vault, bonus already settled into it (float)
-  //   accruedAt  = timestamp from which the bonus is currently accruing
+  //   base       = tokens in the vault, including all interest credited so far (float)
+  //   lastDay    = IST day index up to which interest has been credited
   //   lockStart  = timestamp of the last deposit
-  //   lockUntil  = timestamp when claims become allowed
+  //   lockUntil  = timestamp when withdrawals become allowed
   const [vault, setVault] = useState(null);
+  const [totalEarned, setTotalEarned] = useState(0); // lifetime interest credited this session
 
   const [now, setNow] = useState(() => Date.now());
-  const [timeOffset, setTimeOffset] = useState(0); // demo: fast-forward offset
   const [amountInput, setAmountInput] = useState("");
   const [message, setMessage] = useState(null);
   const [log, setLog] = useState([]);
 
-  const t = now + timeOffset;
+  const t = now;
 
-  // Tick every second so timers and bonus stay live
+  // Tick every second so timers stay live and day boundaries are detected
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -301,21 +313,34 @@ export default function SafeVault({
     return () => clearTimeout(id);
   }, [message]);
 
-  // Gamified bonus: base x dailyRate x elapsed days (prorated)
-  const accruedBonus = (v, at) =>
-    v ? v.base * dailyRate * (Math.max(0, at - v.accruedAt) / DAY_MS) : 0;
+  // Credit interest for every completed day since the last credit.
+  // Compounding: base grows by (1 + dailyRate) per day.
+  const applyInterest = (v, at) => {
+    const today = dayIndexOf(at);
+    const days = today - v.lastDay;
+    if (days <= 0) return { v, gained: 0 };
+    const newBase = v.base * Math.pow(1 + dailyRate, days);
+    return { v: { ...v, base: newBase, lastDay: today }, gained: newBase - v.base };
+  };
 
-  // Fold accrued bonus into the principal and restart accrual from `at`
-  const settle = (v, at) => ({ ...v, base: v.base + accruedBonus(v, at), accruedAt: at });
+  // Automatic daily credit: runs whenever the clock crosses an IST midnight
+  useEffect(() => {
+    if (!vault) return;
+    if (dayIndexOf(t) <= vault.lastDay) return;
+    const { v: next, gained } = applyInterest(vault, t);
+    setVault(next);
+    setTotalEarned((prev) => prev + gained);
+    pushLog(`Daily interest credited: +${floorTokens(gained).toLocaleString()} tokens`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t, vault]);
 
-  const bonusNow = vault ? accruedBonus(vault, t) : 0;
-  const pendingBonus = floorTokens(bonusNow);
-  const vaultTotal = vault ? floorTokens(vault.base + bonusNow) : 0;
+  const current = vault ? applyInterest(vault, t).v : null;
+  const vaultTotal = current ? floorTokens(current.base) : 0;
   const isLocked = vault ? t < vault.lockUntil : false;
   const remainingLock = vault ? Math.max(0, vault.lockUntil - t) : 0;
   const lockSpan = vault ? Math.max(1, vault.lockUntil - vault.lockStart) : 1;
   const lockPct = vault ? Math.min(100, Math.max(0, ((t - vault.lockStart) / lockSpan) * 100)) : 0;
-  const dailyEstimate = vault ? floorTokens(vault.base * dailyRate) : 0;
+  const nextCreditIn = nextMidnightAfter(t) - t;
 
   const pushLog = (text) => {
     setLog((prev) =>
@@ -341,17 +366,18 @@ export default function SafeVault({
       return;
     }
 
-    const base = vault ? settle(vault, t).base : 0;
+    const base = current ? current.base : 0;
+    const lastDay = current ? current.lastDay : dayIndexOf(t);
     setVault({
       base: base + amt,
-      accruedAt: t,
+      lastDay,
       lockStart: t,
       lockUntil: t + lockPeriodMs,
     });
     updateMain(mainBalance - amt);
     setAmountInput("");
     pushLog(`Deposited ${amt} tokens (lock restarted)`);
-    notify("success", `Deposited ${amt} tokens. Locked for ${formatCountdown(lockPeriodMs)}.`);
+    notify("success", `Deposited ${amt} tokens. Interest starts at the next midnight.`);
   };
 
   const handleWithdraw = (rawAmount = amountInput) => {
@@ -369,8 +395,7 @@ export default function SafeVault({
       return;
     }
 
-    const settled = settle(vault, t);
-    const max = floorTokens(settled.base);
+    const max = floorTokens(current.base);
     if (amt > max) {
       notify("error", `You can withdraw at most ${max} tokens.`);
       return;
@@ -380,11 +405,11 @@ export default function SafeVault({
       // Full withdrawal: fractional dust below 1 token is forfeited
       setVault(null);
     } else {
-      setVault({ ...settled, base: settled.base - amt });
+      setVault({ ...current, base: current.base - amt });
     }
     updateMain(mainBalance + amt);
     setAmountInput("");
-    pushLog(`Withdrew ${amt} tokens (principal + bonus)`);
+    pushLog(`Withdrew ${amt} tokens (principal + interest)`);
     notify("success", `Withdrew ${amt} tokens to your main balance.`);
   };
 
@@ -404,11 +429,6 @@ export default function SafeVault({
     setMessage(null);
   };
 
-  const fastForwardDay = () => {
-    setTimeOffset((prev) => prev + DAY_MS);
-    pushLog("Arcade time skipped forward 1 day (demo)");
-  };
-
   const withdrawBlocked = !vault || isLocked;
   const submitDisabled = mode === "withdraw" ? withdrawBlocked : mainBalance <= 0;
 
@@ -416,7 +436,7 @@ export default function SafeVault({
     <div style={S.wrapper}>
       <div style={S.header}>
         <h2 style={S.title}>Coin Vault</h2>
-        <span style={S.badge}>{(dailyRate * 100).toFixed(1)}% daily arcade bonus</span>
+        <span style={S.badge}>{(dailyRate * 100).toFixed(1)}% daily interest</span>
       </div>
 
       <div style={S.statsGrid}>
@@ -429,8 +449,8 @@ export default function SafeVault({
           <div style={S.statValue}>{vaultTotal.toLocaleString()}</div>
         </div>
         <div style={S.statCard}>
-          <div style={S.statLabel}>Pending Bonus</div>
-          <div style={S.statValueAccent}>+{pendingBonus.toLocaleString()}</div>
+          <div style={S.statLabel}>Total Earned</div>
+          <div style={S.statValueAccent}>+{floorTokens(totalEarned).toLocaleString()}</div>
         </div>
       </div>
 
@@ -488,10 +508,20 @@ export default function SafeVault({
         <p style={S.muted}>
           {vault
             ? isLocked
-              ? "Tokens can be claimed once the timer reaches zero."
-              : `Unlocked. Bonus earns about ${dailyEstimate.toLocaleString()} tokens per arcade day.`
+              ? "Tokens can be withdrawn once the timer reaches zero."
+              : "Unlocked. You can withdraw your tokens now."
             : "Deposit tokens to start a lock period."}
         </p>
+
+        {vault && (
+          <div style={S.creditBox}>
+            <span>Next interest credit</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", color: "#ffd166", fontWeight: 700 }}>
+              {formatCountdown(nextCreditIn)}
+            </span>
+          </div>
+        )}
+
         <div style={{ height: "12px" }} />
         <button
           style={withdrawBlocked ? S.disabledButton : S.claimButton}
@@ -502,10 +532,7 @@ export default function SafeVault({
           }}
           disabled={withdrawBlocked}
         >
-          {vault ? `Claim All ${vaultTotal.toLocaleString()} Tokens` : "Nothing to Claim"}
-        </button>
-        <button style={S.ghostButton} onClick={fastForwardDay}>
-          Demo: skip 1 arcade day
+          {vault ? `Withdraw All ${vaultTotal.toLocaleString()} Tokens` : "Nothing to Withdraw"}
         </button>
       </div>
 
