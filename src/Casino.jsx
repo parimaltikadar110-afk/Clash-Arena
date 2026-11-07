@@ -2311,6 +2311,211 @@ const CardArt = memo(function CardArt({ kind }) {
   );
 });
 
+/* ---------- Goal Wave (penalty shoot-out, virtual points) ---------- */
+const GW_DIRS = ["left", "center", "right"];
+const GW_NAME = { left: "Left", center: "Center", right: "Right" };
+const GW_X = { left: "24%", center: "50%", right: "76%" };
+const GW_EDGE = 0.04;
+const GW_TABLE = [1.3, 1.7, 2.1, 2.8];
+// payout multiplier after k goals in a row (k = 0 means no goal yet)
+const gwMult = k => {
+  if (k <= 0) return 1;
+  if (k <= GW_TABLE.length) return GW_TABLE[k - 1];
+  let m = GW_TABLE[GW_TABLE.length - 1];
+  for (let i = GW_TABLE.length; i < k; i++) m *= 1.3;
+  return Math.round(m * 100) / 100;
+};
+// chance that the next shot scores after k goals: house edge + step risk built in
+const gwChance = k => (1 - GW_EDGE) * gwMult(k) / gwMult(k + 1);
+// keeper dives to a corner other than the shot's corner when a goal is scored
+const gwOther = d => { const o = GW_DIRS.filter(x => x !== d); return o[Math.floor(Math.random() * o.length)]; };
+
+const GW = {
+  page: { background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0", padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" },
+  bar: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  back: { padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer" },
+  title: { color: GOLD_L, fontWeight: 900, fontSize: 18, letterSpacing: 1 },
+  balTag: { fontSize: 13, fontWeight: 900, color: GOLD_L, background: "#000a", border: `1px solid ${GOLD}`, borderRadius: 10, padding: "6px 10px" },
+  field: { position: "relative", height: 260, borderRadius: 18, overflow: "hidden", border: `1px solid ${GOLD}`, background: "repeating-linear-gradient(180deg,#15803d 0px,#15803d 40px,#166534 40px,#166534 80px)", boxShadow: "0 10px 26px #000c", marginBottom: 12 },
+  goalFrame: { position: "absolute", top: "6%", left: "14%", width: "72%", height: "22%", boxSizing: "border-box", border: "4px solid #f8fafc", borderBottom: "none", backgroundImage: "repeating-linear-gradient(0deg,#ffffff26 0px,#ffffff26 2px,transparent 2px,transparent 10px),repeating-linear-gradient(90deg,#ffffff26 0px,#ffffff26 2px,transparent 2px,transparent 10px)" },
+  spot: { position: "absolute", left: "50%", top: "84%", width: 6, height: 6, marginLeft: -3, marginTop: -3, borderRadius: "50%", background: "#fff" },
+  keeper: { position: "absolute", fontSize: 40, transform: "translate(-50%,-50%)", transition: "left .55s ease-out, top .55s ease-out", filter: "drop-shadow(0 4px 6px #000a)" },
+  ball: { position: "absolute", fontSize: 26, transform: "translate(-50%,-50%)", transition: "left .55s ease-out, top .55s ease-out", filter: "drop-shadow(0 3px 4px #000a)" },
+  statRow: { display: "flex", gap: 8, marginBottom: 12 },
+  stat: { flex: 1, background: "#0b1d12", border: "1px solid #1f3d2a", borderRadius: 12, padding: "8px 6px", textAlign: "center" },
+  statLabel: { fontSize: 10, opacity: 0.7, letterSpacing: 0.5, textTransform: "uppercase" },
+  statVal: { fontSize: 16, fontWeight: 900, marginTop: 2, color: GOLD_L },
+  dirRow: { display: "flex", gap: 8, marginBottom: 12 },
+  betRow: { display: "flex", gap: 6, alignItems: "center", marginBottom: 10 },
+  input: { flex: 1, minWidth: 0, padding: "10px", borderRadius: 10, border: `1px solid ${GOLD}`, background: "#0b1d12", color: "#f8fafc", fontWeight: 800, fontSize: 15, boxSizing: "border-box" },
+  quick: { padding: "8px 10px", borderRadius: 10, border: "1px solid #334155", background: "#0f172a", color: "#f8fafc", fontWeight: 800, fontSize: 12, cursor: "pointer" },
+  primary: { width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: `linear-gradient(135deg,${GOLD},${GOLD_L})`, color: "#1a1300", fontWeight: 900, fontSize: 16, cursor: "pointer" },
+  row: { display: "flex", gap: 8 },
+  shoot: { flex: 1, padding: "14px 0", borderRadius: 14, border: "none", background: `linear-gradient(135deg,${GOLD},${GOLD_L})`, color: "#1a1300", fontWeight: 900, fontSize: 15, cursor: "pointer" },
+  cash: { flex: 1, padding: "14px 0", borderRadius: 14, border: `1px solid ${GOLD_L}`, background: "#14532d", color: "#f0fdf4", fontWeight: 900, fontSize: 14, cursor: "pointer" },
+  msg: { minHeight: 20, textAlign: "center", fontSize: 13, fontWeight: 700, margin: "10px 0 0", color: GOLD_L },
+  hist: { display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginTop: 10 },
+  rules: { fontSize: 11, opacity: 0.7, textAlign: "center", marginTop: 14, lineHeight: 1.5 },
+};
+const gwDirBtn = (sel, busy) => ({ flex: 1, padding: "12px 0", borderRadius: 12, border: `1px solid ${sel ? GOLD_L : "#334155"}`, background: sel ? "#14532d" : "#0f172a", color: "#f8fafc", fontWeight: 900, fontSize: 14, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 });
+const gwDot = g => ({ width: 26, height: 26, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 900, background: g ? "#16a34a" : "#b91c1c", color: "#fff" });
+
+function GoalWave({ me, onBack, cfg }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (+me.balance || 0) + (+me.winnings || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [pick, setPick] = useState("center");
+  const [round, setRound] = useState(null);     // { goals, alive }
+  const [shooting, setShooting] = useState(false);
+  const [last, setLast] = useState(null);       // { dir, keeper, scored }
+  const [history, setHistory] = useState([]);   // newest first: "G" or "S"
+  const [msg, setMsg] = useState("");
+  const shootingRef = useRef(false);
+  const timerRef = useRef(null);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const active = !!round && round.alive;
+  const goals = round ? round.goals : 0;
+  const mult = gwMult(goals);
+  const payout = Math.round(bet * mult * 100) / 100;
+  const chance = gwChance(goals);
+
+  const clamp = v => Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN));
+  const changeBet = v => { if (!active && !shooting) setBet(clamp(v)); };
+
+  const startGame = () => {
+    if (active || shootingRef.current) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBal(b => Math.round((b - bet) * 100) / 100);
+    setRound({ goals: 0, alive: true });
+    setLast(null);
+    setHistory([]);
+    setMsg("Pick a corner and shoot.");
+  };
+
+  const shoot = () => {
+    if (!active || shootingRef.current) return;
+    shootingRef.current = true;
+    setShooting(true);
+    const k = goals, dir = pick;
+    const scored = Math.random() < gwChance(k);
+    setLast({ dir, keeper: scored ? gwOther(dir) : dir, scored });
+    setMsg("Shot taken...");
+    timerRef.current = setTimeout(() => {
+      shootingRef.current = false;
+      setShooting(false);
+      setHistory(h => [scored ? "G" : "S", ...h].slice(0, 12));
+      if (scored) {
+        setRound({ goals: k + 1, alive: true });
+        setMsg(`Goal! Streak at ${gwMult(k + 1)}x. Cash out or keep shooting.`);
+      } else {
+        setRound({ goals: k, alive: false });
+        setMsg("Saved! Streak lost.");
+      }
+    }, 900);
+  };
+
+  const cashOut = () => {
+    if (!active || shootingRef.current || goals < 1) return;
+    setBal(b => Math.round((b + payout) * 100) / 100);
+    setRound({ goals, alive: false });
+    setMsg(`Cashed out ${RM(payout)} at ${mult.toFixed(2)}x`);
+  };
+
+  const ballPos = last
+    ? { left: GW_X[last.dir], top: last.scored ? "16%" : "32%" }
+    : { left: "50%", top: "84%" };
+  const keeperPos = last ? { left: GW_X[last.keeper], top: "32%" } : { left: "50%", top: "32%" };
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Goal Wave</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={GW.field}>
+        <div style={GW.goalFrame} />
+        <div style={GW.spot} />
+        <div style={{ ...GW.keeper, ...keeperPos }}>🧤</div>
+        <div style={{ ...GW.ball, ...ballPos }}>⚽</div>
+      </div>
+
+      <div style={GW.statRow}>
+        <div style={GW.stat}>
+          <div style={GW.statLabel}>Streak</div>
+          <div style={GW.statVal}>{goals}</div>
+        </div>
+        <div style={GW.stat}>
+          <div style={GW.statLabel}>Multiplier</div>
+          <div style={GW.statVal}>{mult.toFixed(2)}x</div>
+        </div>
+        <div style={GW.stat}>
+          <div style={GW.statLabel}>Goal chance</div>
+          <div style={GW.statVal}>{active ? `${Math.round(chance * 100)}%` : "—"}</div>
+        </div>
+      </div>
+
+      <div style={GW.dirRow}>
+        {GW_DIRS.map(d => (
+          <button key={d} disabled={shooting} onClick={() => setPick(d)}
+            style={gwDirBtn(pick === d, shooting)}>
+            {GW_NAME[d]}
+          </button>
+        ))}
+      </div>
+
+      {!active && (
+        <div style={GW.betRow}>
+          <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+          <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+            onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+          <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+          {[10, 50, 100, 500].map(v => (
+            <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>
+          ))}
+        </div>
+      )}
+
+      {!active ? (
+        <button style={GW.primary} onClick={startGame}>
+          {round ? "Play again" : "Start"} · Stake {R(bet)}
+        </button>
+      ) : (
+        <div style={GW.row}>
+          <button style={{ ...GW.shoot, opacity: shooting ? 0.5 : 1, cursor: shooting ? "not-allowed" : "pointer" }}
+            disabled={shooting} onClick={shoot}>
+            Shoot {GW_NAME[pick]}
+          </button>
+          <button style={{ ...GW.cash, opacity: goals < 1 || shooting ? 0.45 : 1, cursor: goals < 1 || shooting ? "not-allowed" : "pointer" }}
+            disabled={goals < 1 || shooting} onClick={cashOut}>
+            Cash out {RM(payout)}
+          </button>
+        </div>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+
+      {history.length > 0 && (
+        <div style={GW.hist}>
+          {history.map((h, i) => <div key={i} style={gwDot(h === "G")}>{h}</div>)}
+        </div>
+      )}
+
+      <div style={GW.rules}>
+        Choose a corner, then shoot. Each goal raises the multiplier (1.3x, 1.7x, 2.1x, 2.8x, then higher).
+        A save ends the streak and the stake is lost. Cash out any time after your first goal.
+        Virtual points only.
+      </div>
+    </div>
+  );
+}
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -2333,6 +2538,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "dice") return <Dice {...common} />;
   if (view === "elements") return <Elements {...common} />;
   if (view === "ludo") return <Ludo {...common} />;
+  if (view === "goal") return <GoalWave {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -2353,7 +2559,8 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["chicken", "chicken", "Chicken Road 2", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
     ["elements", "elements", "Elements", "Pick Earth, Water or Fire. Match the draw.", "linear-gradient(135deg,#1e3a8a,#7c2d12)"],
     ["ludo", "ludo", "Ludo", "Player vs player. Winner takes 90% of the pot.", "linear-gradient(135deg,#14532d,#16a34a)"],
-  ].filter(([, key]) => games[key]);
+    ["goal", "goal", "Goal Wave", "Take penalties. Build a streak of goals and cash out before the keeper saves one.", "linear-gradient(135deg,#052e16,#15803d)"],
+  ].filter(([, key]) => (key === "goal" ? games.goal !== false : games[key]));
 
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
