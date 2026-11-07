@@ -207,6 +207,15 @@ export default function App() {
     finally { setCasinoBusy(false); }
   };
   useEffect(()=>{ if(isAdmin && hash==="#admin" && at==="Casino Settings") loadCasino() },[at,isAdmin,hash]);
+  // Admin change live-e user-der kache pathano: 30 second por por app_mode + casino_config refresh
+  useEffect(()=>{
+    if(!supabase) return;
+    const id = setInterval(()=>{
+      supabase.from("app_settings").select("key,value").in("key",["app_mode","casino_config"])
+        .then(({data})=>{ if(data?.length) setS(o=>({...o,...Object.fromEntries(data.map(x=>[x.key,x.value]))})) });
+    }, 30000);
+    return ()=>clearInterval(id);
+  },[]);
   const loadGifts = async () => { const {data,error} = await supabase.rpc("admin_list_gift_codes"); if(error) return say(error.message,1); setGifts(data||[]) };
   const createGift = async () => {
     const amt = +f.gc_amt, max = +f.gc_max || 1;
@@ -1419,7 +1428,7 @@ export default function App() {
       const card=(l,v)=><div className="ucard" style={{flex:1,minWidth:130}}><span className="hint">{l}</span><b style={{fontSize:18}}>{v}</b></div>;
       b=<div className="pnl"><h3>🎰 Casino settings</h3>
         <p className="hint">Changes apply to users the next time the app loads.</p>
-        <div className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Free Fire mode (tournaments)</span><button className="sm" onClick={()=>run(supabase.from("app_settings").upsert({key:"app_mode",value:{ff:!ffOn},updated_at:new Date().toISOString()}),"Free Fire mode saved")}>{ffOn?"ON · turn off":"OFF · turn on"}</button></div>
+        <div className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Free Fire mode (tournaments){!cc.enabled && <small style={{color:"#b91c1c"}}> — Casino ON korle-i off kora jabe</small>}</span><button className="sm" disabled={!cc.enabled && ffOn} style={!cc.enabled && ffOn ? {opacity:.4,cursor:"not-allowed"} : null} onClick={()=>run(supabase.from("app_settings").upsert({key:"app_mode",value:{ff:!ffOn},updated_at:new Date().toISOString()}),"Free Fire mode saved")}>{ffOn?"ON · turn off":"OFF · turn on"}</button></div>
         <div className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Casino mode (master switch)</span><button className="sm" onClick={()=>setCcDraft({...cc,enabled:!cc.enabled})}>{cc.enabled?"ON":"OFF"}</button></div>
         {GL.map(([k,l])=><div key={k} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{l}</span><button className="sm" onClick={()=>setG(k,!cc.games?.[k])}>{cc.games?.[k]?"ON":"OFF"}</button></div>)}
         <label>Min bet ₹</label><input type="number" value={cc.min_bet} onChange={e=>setCcDraft({...cc,min_bet:+e.target.value})}/>
