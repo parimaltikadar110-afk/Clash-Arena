@@ -1,11 +1,27 @@
 import React, { useState, useEffect, useCallback } from "react";
 
+/*
+  SafeVault - virtual Coin Vault (play-money "vault coins" only).
+
+  Every balance, interest credit and lock is decided by the database:
+    vault_get_state()        -> load state, settles missed interest days
+    vault_deposit(p_amount)  -> move vault coins into the vault, restarts lock
+    vault_withdraw(p_amount) -> move whole tokens back to vault coins, only after lock
+
+  This component never touches the rupee wallet (profiles.balance / winnings).
+
+  Props:
+    supabase       Supabase client (required)
+    dailyRatePct   number, display only (default 2.5). Real rate lives in vault_config.
+*/
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-const POLL_MS = 60 * 1000;
+const POLL_MS = 5 * 60 * 1000;
 
 const floorTokens = (n) => Math.floor(Number(n) + 1e-9);
 
+// Timestamp of the next IST midnight after `ts` (display only; interest is credited on the server)
 const nextMidnightAfter = (ts) => {
   const dayIndex = Math.floor((ts + IST_OFFSET_MS) / DAY_MS);
   return (dayIndex + 1) * DAY_MS - IST_OFFSET_MS;
@@ -20,6 +36,8 @@ const formatCountdown = (ms) => {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 };
 
+// Scoped override: the host app's global input CSS was winning over inline colour,
+// so the typed amount looked dark-on-dark.
 const INPUT_FIX = `
   .sv-amount, .sv-amount:focus { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; caret-color:#ffffff !important; background:#120b26 !important; opacity:1 !important; }
   .sv-amount::placeholder { color:#a897d6 !important; -webkit-text-fill-color:#a897d6 !important; opacity:1 !important; }
@@ -50,8 +68,8 @@ const S = {
     border: "1px solid #332463", minWidth: 0,
   },
   statLabel: { fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.8px", color: "#a897d6", marginBottom: "6px" },
-  statValue: { fontSize: "16px", fontWeight: 700, color: "#ffffff", wordBreak: "break-word" },
-  statValueAccent: { fontSize: "16px", fontWeight: 700, color: "#06d6a0", wordBreak: "break-word" },
+  statValue: { fontSize: "18px", fontWeight: 700, color: "#ffffff", wordBreak: "break-word" },
+  statValueAccent: { fontSize: "18px", fontWeight: 700, color: "#06d6a0", wordBreak: "break-word" },
   tabRow: {
     display: "flex", gap: "6px", marginBottom: "14px", background: "#120b26",
     borderRadius: "10px", padding: "4px", border: "1px solid #2e2057",
@@ -113,23 +131,25 @@ const S = {
 };
 
 export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
-  const [mode, setMode] = useState("deposit");
-  const [state, setState] = useState(null);
+  const [mode, setMode] = useState("deposit"); // "deposit" | "withdraw"
+  const [state, setState] = useState(null);     // vault_get_state() result
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [amountInput, setAmountInput] = useState("");
   const [message, setMessage] = useState(null);
   const [now, setNow] = useState(() => Date.now());
-  const [clockOffset, setClockOffset] = useState(0);
+  const [clockOffset, setClockOffset] = useState(0); // server time minus device time
 
   const serverNow = now + clockOffset;
 
+  // Auto-hide messages
   useEffect(() => {
     if (!message) return undefined;
     const id = setTimeout(() => setMessage(null), 3500);
     return () => clearTimeout(id);
   }, [message]);
 
+  // Tick every second for timers
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -143,6 +163,7 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
     }
   }, []);
 
+  // Load state. The server settles any missed interest days inside vault_get_state().
   const refresh = useCallback(async () => {
     const { data, error } = await supabase.rpc("vault_get_state");
     if (error) {
@@ -154,11 +175,13 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
+    // Poll so that new daily interest shows up after midnight without reloading
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
 
-  const mainBalance = Number(state?.main_balance ?? 0);
+  // ----- derived values from server state -----
+  const coins = Number(state?.coins ?? 0);
   const inVault = Number(state?.in_vault ?? 0);
   const totalEarned = Number(state?.total_earned ?? 0);
   const hasPosition = state?.lock_until != null && inVault > 0;
@@ -172,6 +195,7 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
 
   const withdrawBlocked = !hasPosition || isLocked || busy;
 
+  // ----- actions -----
   const parseAmount = () => {
     const n = Math.floor(Number(amountInput));
     return Number.isFinite(n) && n > 0 ? n : null;
@@ -196,11 +220,11 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
       setMessage({ type: "error", text: "Enter a whole number greater than 0." });
       return;
     }
-    if (n > mainBalance) {
-      setMessage({ type: "error", text: "Insufficient balance in main wallet." });
+    if (n > coins) {
+      setMessage({ type: "error", text: "Not enough vault coins." });
       return;
     }
-    runRpc("vault_deposit", { p_amount: n }, `Deposited ${n} from main wallet. Lock restarted.`);
+    runRpc("vault_deposit", { p_amount: n }, `Deposited ${n} vault coins. Lock restarted.`);
   };
 
   const handleWithdraw = (override) => {
@@ -221,7 +245,7 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
       setMessage({ type: "error", text: `You can withdraw at most ${inVault} tokens.` });
       return;
     }
-    runRpc("vault_withdraw", { p_amount: n }, `Withdrew ${n} tokens back to main wallet.`);
+    runRpc("vault_withdraw", { p_amount: n }, `Withdrew ${n} vault coins.`);
   };
 
   const handleSubmit = () => {
@@ -230,7 +254,7 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
   };
 
   const setQuickAmount = (fraction) => {
-    const source = mode === "deposit" ? mainBalance : inVault;
+    const source = mode === "deposit" ? coins : inVault;
     setAmountInput(String(Math.floor(source * fraction)));
   };
 
@@ -240,7 +264,7 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
     setMessage(null);
   };
 
-  const submitDisabled = busy || (mode === "deposit" ? mainBalance <= 0 : withdrawBlocked);
+  const submitDisabled = busy || (mode === "deposit" ? coins <= 0 : withdrawBlocked);
 
   if (loading && !state) {
     return (
@@ -255,14 +279,14 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
       <style>{INPUT_FIX}</style>
 
       <div style={S.header}>
-        <h2 style={S.title}>Safe Vault</h2>
+        <h2 style={S.title}>Coin Vault</h2>
         <span style={S.badge}>{dailyRatePct}% daily interest</span>
       </div>
 
       <div style={S.statsGrid}>
         <div style={S.statCard}>
-          <div style={S.statLabel}>Main Wallet</div>
-          <div style={S.statValue}>{floorTokens(mainBalance).toLocaleString()}</div>
+          <div style={S.statLabel}>Vault Coins</div>
+          <div style={S.statValue}>{floorTokens(coins).toLocaleString()}</div>
         </div>
         <div style={S.statCard}>
           <div style={S.statLabel}>In Vault</div>
@@ -283,7 +307,7 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
         </div>
 
         <label style={S.inputLabel}>
-          {mode === "deposit" ? "Amount to deposit from main wallet" : "Amount to withdraw to main wallet"}
+          {mode === "deposit" ? "Vault coins to deposit" : "Tokens to withdraw"}
         </label>
         <div style={S.inputRow}>
           <input
@@ -310,11 +334,11 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
 
         <p style={S.muted}>
           {mode === "deposit"
-            ? "Deducts directly from your main wallet and restarts lock."
+            ? "Each deposit restarts the lock period."
             : !hasPosition
-            ? "Your vault is empty."
+            ? "Deposit vault coins first."
             : isLocked
-            ? "Withdrawals unlock when timer reaches zero."
+            ? "Withdrawals unlock when the lock timer reaches zero."
             : `Available to withdraw: ${inVault.toLocaleString()} tokens.`}
         </p>
       </div>
@@ -330,9 +354,9 @@ export default function SafeVault({ supabase, dailyRatePct = 2.5 }) {
         <p style={S.muted}>
           {hasPosition
             ? isLocked
-              ? "Tokens can be withdrawn once timer hits zero."
-              : "Unlocked! You can withdraw your balance now."
-            : "Deposit from main wallet to start lock period."}
+              ? "Tokens can be withdrawn once the timer reaches zero."
+              : "Unlocked. You can withdraw your tokens now."
+            : "Deposit vault coins to start a lock period."}
         </p>
 
         {hasPosition && (
