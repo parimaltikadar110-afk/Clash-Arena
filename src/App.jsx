@@ -210,14 +210,14 @@ export default function App() {
     finally { setCasinoBusy(false); }
   };
   useEffect(()=>{ if(isAdmin && hash==="#admin" && at==="Casino Settings") loadCasino() },[at,isAdmin,hash]);
-  // Admin change live-e user-der kache pathano: 30 second por por app_mode + casino_config refresh
+  // app_settings: pull once, then get live changes via Realtime; 5-min fallback pull only while the tab is visible
   useEffect(()=>{
     if(!supabase) return;
-    const id = setInterval(()=>{
-      supabase.from("app_settings").select("key,value").in("key",["app_mode","casino_config"])
-        .then(({data})=>{ if(data?.length) setS(o=>({...o,...Object.fromEntries(data.map(x=>[x.key,x.value]))})) });
-    }, 30000);
-    return ()=>clearInterval(id);
+    const pull = ()=>supabase.from("app_settings").select("key,value").in("key",["app_mode","casino_config"])
+      .then(({data})=>{ if(data?.length) setS(o=>({...o,...Object.fromEntries(data.map(x=>[x.key,x.value]))})) });
+    const ch = supabase.channel("app-settings-live").on("postgres_changes",{event:"*",schema:"public",table:"app_settings"},pull).subscribe();
+    const id = setInterval(()=>{ if(document.visibilityState==="visible") pull(); }, 300000);
+    return ()=>{ clearInterval(id); supabase.removeChannel(ch); };
   },[]);
   const loadGifts = async () => { const {data,error} = await supabase.rpc("admin_list_gift_codes"); if(error) return say(error.message,1); setGifts(data||[]) };
   const createGift = async () => {
@@ -283,7 +283,7 @@ export default function App() {
       window.removeEventListener("touchend", onEnd);
     };
   },[]);
-  useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,30000); return ()=>clearInterval(t); },[openMid,joined.length]);
+  useEffect(()=>{ const load=()=>supabase.rpc("my_match_notes").then(({data})=>setMyNotes(data||[])); load(); const t=setInterval(load,120000); return ()=>clearInterval(t); },[openMid,joined.length]);
   useEffect(()=>{ document.getElementById("x7-boot")?.remove(); const t=setTimeout(()=>setSplash(false),800); return()=>clearTimeout(t) },[]);
 
   const say = (m,err) => { setToast({m,err}); setTimeout(()=>setToast(null),4200) };
@@ -412,8 +412,6 @@ export default function App() {
     setM(cleanMatches(rawM.current)); setJoined((j.data||[]).map(x=>x.match_id)); setTxs(t.data||[]); if(l.data) setLb(l.data); if(mlR.data) setMlb(mlR.data);
       setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     if(ru.data) setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); if(st.data) setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
-      supabase.from("app_settings").select("value").eq("key","casino_config").maybeSingle().then(({data})=>{ if(data) setS(o=>({...o,casino_config:data.value})) });
-      supabase.from("app_settings").select("value").eq("key","app_mode").maybeSingle().then(({data})=>{ if(data) setS(o=>({...o,app_mode:data.value})) });
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(rawM.current),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
     if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
@@ -427,9 +425,9 @@ export default function App() {
     const tick = () => {
       if(document.visibilityState !== "visible") return;
       const now = Date.now();
-      if(now - lastAct < 120000 || now - lastLoad >= 60000){ lastLoad = now; load(); }
+      if(now - lastAct < 120000 || now - lastLoad >= 180000){ lastLoad = now; load(); }
     };
-    const i = setInterval(tick, 15000);
+    const i = setInterval(tick, 60000);
     window.addEventListener("touchstart", mark, {passive:true});
     window.addEventListener("click", mark);
     return ()=>{ clearInterval(i); window.removeEventListener("touchstart", mark); window.removeEventListener("click", mark); };
@@ -442,7 +440,7 @@ export default function App() {
       if(!data) return;
       const tk=data.map(Number);
       setSlotUI(u=>u&&u.m.id===id?{...u,taken:tk,sel:u.sel.filter(x=>!tk.includes(x))}:u);
-    },8000);
+    },20000);
     return()=>clearInterval(t);
   },[slotUI?.m?.id]);
 
