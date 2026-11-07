@@ -2338,7 +2338,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
       <button onClick={() => setView("lobby")} style={{ padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>« Lobby</button>
       <div style={{ display: "flex", justifyContent: "center" }}>
-        <SafeVault initialBalance={Math.floor((+me.balance || 0) + (+me.winnings || 0))} />
+        <SafeVault supabase={supabase} />
       </div>
     </div>
   );
