@@ -1,251 +1,529 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useState, useEffect } from "react";
 
-const DAILY_RATE = 0.025;
-const MIN_DAYS = 3;
-const MAX_DAYS = 365;
-const MIN_AMOUNT = 100;
+/*
+  SafeVault - virtual in-game Coin Vault / Piggy Bank.
+  Uses virtual game tokens only. No real money involved.
+
+  Props:
+    initialBalance  number  starting main game balance (tokens)
+    dailyRate       number  daily arcade bonus rate (0.025 = 2.5%)
+    lockPeriodMs    number  lock-in period before claims are allowed (ms)
+    onBalanceChange (next:number) => void   called when main balance changes
+*/
+
 const DAY_MS = 24 * 60 * 60 * 1000;
-const INR = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const money = value => INR.format(Number.isFinite(Number(value)) ? Number(value) : 0);
-const dateText = value => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(date);
-};
-const durationText = ms => {
-  if (ms <= 0) return "Ready to withdraw";
-  const days = Math.floor(ms / DAY_MS);
-  const hours = Math.floor((ms % DAY_MS) / 3_600_000);
-  const minutes = Math.floor((ms % 3_600_000) / 60_000);
-  return `${days}d ${hours}h ${minutes}m remaining`;
-};
+const EPS = 1e-9;
 
-const styles = {
-  page: { minHeight: "100vh", boxSizing: "border-box", padding: "12px 14px 36px", color: "#f3efe0", background: "radial-gradient(ellipse at 50% -10%,#17452e 0%,#09140e 48%,#050a07 100%)", fontFamily: "system-ui,-apple-system,Segoe UI,sans-serif" },
-  wrap: { width: "100%", maxWidth: 980, margin: "0 auto" },
-  top: { display: "flex", alignItems: "center", gap: 12, margin: "0 auto 18px" },
-  back: { border: "1px solid #d4af3780", borderRadius: 12, color: "#f5f5f4", background: "#16271d", padding: "10px 13px", fontWeight: 800, cursor: "pointer" },
-  heading: { flex: 1, color: "#facc15", fontWeight: 900, fontSize: 17, letterSpacing: 1 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,360px),1fr))", gap: 14, alignItems: "start" },
-  panel: { minWidth: 0, padding: "clamp(17px,3vw,26px)", border: "1px solid #ffffff18", borderRadius: 20, background: "linear-gradient(145deg,#13271c,#0a1510)", boxShadow: "0 18px 48px #0006", boxSizing: "border-box" },
-  eyebrow: { margin: "0 0 8px", color: "#facc15", fontSize: 11, letterSpacing: 1.5, fontWeight: 900, textTransform: "uppercase" },
-  title: { margin: "0 0 8px", fontSize: "clamp(25px,5vw,36px)", lineHeight: 1.12 },
-  muted: { color: "#a5b5a9", fontSize: 12, lineHeight: 1.6 },
-  rate: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: 16, margin: "18px 0", borderRadius: 15, background: "linear-gradient(110deg,#d4af3722,#ffffff08)", border: "1px solid #d4af3744" },
-  rateNumber: { color: "#facc15", fontSize: 26, fontWeight: 900, whiteSpace: "nowrap" },
-  field: { display: "grid", gap: 8, margin: "16px 0" },
-  label: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, color: "#e5e7eb", fontSize: 13, fontWeight: 750 },
-  input: { width: "100%", padding: "12px 13px", color: "#f8fafc", background: "#050d09", border: "1px solid #ffffff25", borderRadius: 11, outline: "none", fontSize: 15, boxSizing: "border-box" },
-  presets: { display: "flex", flexWrap: "wrap", gap: 7 },
-  summary: { display: "grid", gap: 0, padding: "5px 13px", borderRadius: 14, background: "#ffffff08", border: "1px solid #ffffff12" },
-  row: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, padding: "11px 0", borderBottom: "1px solid #ffffff0f", fontSize: 13, color: "#bdc9bf" },
-  buttonRow: { display: "flex", flexWrap: "wrap", gap: 9, marginTop: 16 },
-  primary: { border: 0, borderRadius: 11, padding: "12px 15px", color: "#111", background: "linear-gradient(135deg,#fde68a,#d4af37)", fontWeight: 900, cursor: "pointer" },
-  secondary: { border: "1px solid #ffffff25", borderRadius: 11, padding: "11px 14px", color: "#f3efe0", background: "#ffffff0a", fontWeight: 800, cursor: "pointer" },
-  section: { padding: 15, borderRadius: 15, background: "#ffffff07", border: "1px solid #ffffff12" },
-  status: { marginTop: 14, padding: "12px 14px", borderRadius: 12, background: "#0c1820", border: "1px solid #ffffff12", color: "#cbd5e1", fontSize: 13, lineHeight: 1.55 },
-  warning: { marginTop: 14, padding: 13, borderRadius: 12, color: "#f3d9a1", background: "#8a65151a", border: "1px solid #d4af3733", fontSize: 11, lineHeight: 1.6 },
-  overlay: { position: "fixed", inset: 0, zIndex: 100, display: "grid", placeItems: "center", padding: 14, background: "#000b" },
-  dialog: { width: "min(100%,420px)", padding: 20, borderRadius: 17, border: "1px solid #d4af37", background: "#0a1f14", boxShadow: "0 20px 70px #000", boxSizing: "border-box" },
+const floorTokens = (n) => Math.floor(n + EPS);
+
+const formatCountdown = (ms) => {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 };
 
-/**
- * SafeVault relies on the server-side safe_vault_* RPCs in supabase/safe_vault.sql.
- * It never changes wallet/investment state locally: deposit and withdrawal requests
- * are committed by PostgreSQL only after the user confirms the action.
- */
-export default function SafeVault({ supabase, me, reload, say, onBack = () => {}, cfg = {} }) {
-  const vaultCfg = cfg?.safe_vault || {};
-  const minDays = Math.max(MIN_DAYS, Math.min(MAX_DAYS, Number(vaultCfg.min_lock_days) || MIN_DAYS));
-  const maxDays = Math.max(minDays, Math.min(MAX_DAYS, Number(vaultCfg.max_lock_days) || MAX_DAYS));
-  const minimumAmount = Math.max(MIN_AMOUNT, Number(vaultCfg.min_amount) || MIN_AMOUNT);
-  const [amount, setAmount] = useState("2500");
-  const [days, setDays] = useState(14);
-  const [investment, setInvestment] = useState(null);
-  const [wallet, setWallet] = useState((Number(me?.balance) || 0) + (Number(me?.winnings) || 0));
-  const [now, setNow] = useState(Date.now());
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("Choose an amount and lock-in duration to preview your vault estimate.");
-  const [confirmation, setConfirmation] = useState(null);
+const formatTime = (ts) =>
+  new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-  const refresh = useCallback(async () => {
-    if (!supabase) {
-      setMessage("Supabase is not configured.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const { data, error } = await supabase.rpc("safe_vault_get");
-      if (error) throw error;
-      setInvestment(data?.investment || null);
-      setWallet(Number(data?.wallet_balance) || 0);
-      setMessage(data?.investment ? "Vault details synced securely." : "No active vault investment. Choose terms to get started.");
-    } catch (error) {
-      setMessage(error?.message || "Could not load vault details. Run the supplied SafeVault SQL in Supabase first.");
-    } finally {
-      setBusy(false);
-    }
-  }, [supabase]);
+const S = {
+  wrapper: {
+    fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    background: "linear-gradient(160deg, #1a1033 0%, #0f0a1f 100%)",
+    color: "#f5f0ff",
+    borderRadius: "16px",
+    padding: "24px",
+    maxWidth: "460px",
+    width: "100%",
+    boxSizing: "border-box",
+    boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+    border: "1px solid #3b2a6b",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "18px",
+    gap: "8px",
+  },
+  title: {
+    margin: 0,
+    fontSize: "22px",
+    fontWeight: 700,
+    letterSpacing: "0.5px",
+    color: "#ffd166",
+  },
+  badge: {
+    fontSize: "12px",
+    padding: "4px 10px",
+    borderRadius: "999px",
+    background: "#2d1f57",
+    color: "#c9b8ff",
+    border: "1px solid #4c3a8a",
+    whiteSpace: "nowrap",
+  },
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "10px",
+    marginBottom: "18px",
+  },
+  statCard: {
+    background: "#21153f",
+    borderRadius: "12px",
+    padding: "12px 8px",
+    textAlign: "center",
+    border: "1px solid #332463",
+    minWidth: 0,
+  },
+  statLabel: {
+    fontSize: "11px",
+    textTransform: "uppercase",
+    letterSpacing: "0.8px",
+    color: "#a897d6",
+    marginBottom: "6px",
+  },
+  statValue: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#ffffff",
+    wordBreak: "break-word",
+  },
+  statValueAccent: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#06d6a0",
+    wordBreak: "break-word",
+  },
+  tabRow: {
+    display: "flex",
+    gap: "6px",
+    marginBottom: "14px",
+    background: "#120b26",
+    borderRadius: "10px",
+    padding: "4px",
+    border: "1px solid #2e2057",
+  },
+  tab: (active) => ({
+    flex: 1,
+    padding: "8px 0",
+    borderRadius: "8px",
+    border: "none",
+    background: active ? "linear-gradient(90deg, #7b5cff, #b06bff)" : "transparent",
+    color: active ? "#ffffff" : "#a897d6",
+    fontSize: "13px",
+    fontWeight: 700,
+    cursor: "pointer",
+  }),
+  section: {
+    background: "#1b1236",
+    borderRadius: "12px",
+    padding: "16px",
+    marginBottom: "16px",
+    border: "1px solid #2e2057",
+  },
+  sectionTitle: {
+    margin: "0 0 12px 0",
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#d8ccff",
+  },
+  inputRow: {
+    display: "flex",
+    gap: "8px",
+    marginBottom: "10px",
+  },
+  input: {
+    flex: 1,
+    minWidth: 0,
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: "1px solid #4c3a8a",
+    background: "#120b26",
+    color: "#ffffff",
+    fontSize: "15px",
+    outline: "none",
+  },
+  quickRow: {
+    display: "flex",
+    gap: "6px",
+    marginBottom: "12px",
+  },
+  quickButton: {
+    flex: 1,
+    padding: "6px 0",
+    borderRadius: "8px",
+    border: "1px solid #4c3a8a",
+    background: "#2a1d4f",
+    color: "#c9b8ff",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  primaryButton: {
+    padding: "0 18px",
+    borderRadius: "10px",
+    border: "none",
+    background: "linear-gradient(90deg, #7b5cff, #b06bff)",
+    color: "#ffffff",
+    fontSize: "15px",
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  claimButton: {
+    width: "100%",
+    padding: "12px",
+    borderRadius: "10px",
+    border: "none",
+    background: "linear-gradient(90deg, #06d6a0, #ffd166)",
+    color: "#1a1033",
+    fontSize: "15px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  disabledButton: {
+    width: "100%",
+    padding: "12px",
+    borderRadius: "10px",
+    border: "1px solid #3b2a6b",
+    background: "#2a1d4f",
+    color: "#7d6fa6",
+    fontSize: "15px",
+    fontWeight: 700,
+    cursor: "not-allowed",
+  },
+  ghostButton: {
+    width: "100%",
+    marginTop: "10px",
+    padding: "8px",
+    borderRadius: "10px",
+    border: "1px dashed #4c3a8a",
+    background: "transparent",
+    color: "#a897d6",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  timerText: {
+    fontSize: "26px",
+    fontWeight: 700,
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "center",
+    margin: "4px 0 10px 0",
+    color: "#ffd166",
+  },
+  progressTrack: {
+    width: "100%",
+    height: "8px",
+    background: "#2e2057",
+    borderRadius: "999px",
+    overflow: "hidden",
+    marginBottom: "12px",
+  },
+  progressFill: (pct) => ({
+    width: `${pct}%`,
+    height: "100%",
+    background: "linear-gradient(90deg, #7b5cff, #ffd166)",
+    transition: "width 0.9s linear",
+  }),
+  muted: {
+    fontSize: "12px",
+    color: "#a897d6",
+    textAlign: "center",
+    margin: "0 0 4px 0",
+  },
+  message: (type) => ({
+    padding: "10px 12px",
+    borderRadius: "10px",
+    fontSize: "13px",
+    marginBottom: "14px",
+    background: type === "error" ? "#3d1a2a" : "#12332b",
+    color: type === "error" ? "#ff8fab" : "#06d6a0",
+    border: `1px solid ${type === "error" ? "#7a2d4c" : "#1d6b55"}`,
+  }),
+  logList: {
+    listStyle: "none",
+    padding: 0,
+    margin: 0,
+    maxHeight: "140px",
+    overflowY: "auto",
+  },
+  logItem: {
+    fontSize: "12px",
+    padding: "6px 0",
+    borderBottom: "1px solid #2e2057",
+    color: "#c9b8ff",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+  logTime: {
+    color: "#7d6fa6",
+    whiteSpace: "nowrap",
+  },
+};
 
-  useEffect(() => { refresh(); }, [refresh]);
+export default function SafeVault({
+  initialBalance = 1000,
+  dailyRate = 0.025,
+  lockPeriodMs = DAY_MS,
+  onBalanceChange,
+}) {
+  const [mode, setMode] = useState("deposit"); // "deposit" | "withdraw"
+  const [mainBalance, setMainBalance] = useState(initialBalance);
+
+  // Vault position or null:
+  //   base       = tokens in the vault, bonus already settled into it (float)
+  //   accruedAt  = timestamp from which the bonus is currently accruing
+  //   lockStart  = timestamp of the last deposit
+  //   lockUntil  = timestamp when claims become allowed
+  const [vault, setVault] = useState(null);
+
+  const [now, setNow] = useState(() => Date.now());
+  const [timeOffset, setTimeOffset] = useState(0); // demo: fast-forward offset
+  const [amountInput, setAmountInput] = useState("");
+  const [message, setMessage] = useState(null);
+  const [log, setLog] = useState([]);
+
+  const t = now + timeOffset;
+
+  // Tick every second so timers and bonus stay live
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
-    return () => window.clearInterval(timer);
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, []);
 
-  const principal = Number(investment?.principal) || 0;
-  const duration = Number(investment?.duration_days) || 0;
-  const startedAt = investment?.started_at ? new Date(investment.started_at).getTime() : 0;
-  const unlockAtMs = startedAt + duration * DAY_MS;
-  const elapsedDays = investment ? Math.min(duration, Math.max(0, (now - startedAt) / DAY_MS)) : 0;
-  const accruedInterest = investment ? Math.round(principal * DAILY_RATE * elapsedDays * 100) / 100 : 0;
-  const matured = Boolean(investment && now >= unlockAtMs);
-  const previewAmount = Number(amount);
-  const validAmount = Number.isFinite(previewAmount) && previewAmount >= minimumAmount;
-  const safeDays = Math.max(minDays, Math.min(maxDays, Math.floor(Number(days) || minDays)));
-  const dailyEstimate = validAmount ? previewAmount * DAILY_RATE : 0;
-  const interestEstimate = dailyEstimate * safeDays;
-  const unlockPreview = new Date(now + safeDays * DAY_MS);
+  // Auto-hide messages after 3 seconds
+  useEffect(() => {
+    if (!message) return undefined;
+    const id = setTimeout(() => setMessage(null), 3000);
+    return () => clearTimeout(id);
+  }, [message]);
 
-  const requestDeposit = () => {
-    if (!validAmount) {
-      setMessage(`Investment must be at least ${money(minimumAmount)}.`);
-      return;
-    }
-    if (previewAmount > wallet) {
-      setMessage("Insufficient available wallet balance.");
-      return;
-    }
-    if (investment) {
-      setMessage("Withdraw your current vault investment before starting another.");
-      return;
-    }
-    setConfirmation({ type: "deposit", amount: Math.round(previewAmount * 100) / 100, days: safeDays });
+  // Gamified bonus: base x dailyRate x elapsed days (prorated)
+  const accruedBonus = (v, at) =>
+    v ? v.base * dailyRate * (Math.max(0, at - v.accruedAt) / DAY_MS) : 0;
+
+  // Fold accrued bonus into the principal and restart accrual from `at`
+  const settle = (v, at) => ({ ...v, base: v.base + accruedBonus(v, at), accruedAt: at });
+
+  const bonusNow = vault ? accruedBonus(vault, t) : 0;
+  const pendingBonus = floorTokens(bonusNow);
+  const vaultTotal = vault ? floorTokens(vault.base + bonusNow) : 0;
+  const isLocked = vault ? t < vault.lockUntil : false;
+  const remainingLock = vault ? Math.max(0, vault.lockUntil - t) : 0;
+  const lockSpan = vault ? Math.max(1, vault.lockUntil - vault.lockStart) : 1;
+  const lockPct = vault ? Math.min(100, Math.max(0, ((t - vault.lockStart) / lockSpan) * 100)) : 0;
+  const dailyEstimate = vault ? floorTokens(vault.base * dailyRate) : 0;
+
+  const pushLog = (text) => {
+    setLog((prev) =>
+      [{ id: `${Date.now()}-${Math.random()}`, text, time: Date.now() }, ...prev].slice(0, 8)
+    );
   };
 
-  const requestWithdrawal = () => {
-    if (!investment || !matured) return;
-    setConfirmation({ type: "withdraw" });
+  const notify = (type, text) => setMessage({ type, text });
+
+  const updateMain = (next) => {
+    setMainBalance(next);
+    if (typeof onBalanceChange === "function") onBalanceChange(next);
   };
 
-  const confirmAction = async () => {
-    if (!confirmation || busy || !supabase) return;
-    const action = confirmation;
-    setBusy(true);
-    setConfirmation(null);
-    try {
-      const { data, error } = action.type === "deposit"
-        ? await supabase.rpc("safe_vault_deposit", { p_amount: action.amount, p_duration_days: action.days })
-        : await supabase.rpc("safe_vault_withdraw");
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.message || "Vault action was not completed.");
-      if (data.wallet_balance !== undefined) setWallet(Number(data.wallet_balance) || 0);
-      setInvestment(data.investment || null);
-      setMessage(action.type === "deposit" ? `Vault investment started for ${action.days} days.` : `Withdrawal completed: ${money(data.payout)} returned to your wallet.`);
-      if (typeof reload === "function") await reload();
-      await refresh();
-      if (typeof say === "function") say(action.type === "deposit" ? "SafeVault investment started ✅" : "SafeVault withdrawal completed ✅");
-    } catch (error) {
-      setMessage(error?.message || "Could not complete the vault action.");
-      if (typeof say === "function") say(error?.message || "SafeVault action failed", 1);
-    } finally {
-      setBusy(false);
+  const handleDeposit = () => {
+    const amt = Math.floor(Number(amountInput));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      notify("error", "Enter a whole number of tokens greater than 0.");
+      return;
     }
+    if (amt > mainBalance) {
+      notify("error", "Not enough tokens in your main balance.");
+      return;
+    }
+
+    const base = vault ? settle(vault, t).base : 0;
+    setVault({
+      base: base + amt,
+      accruedAt: t,
+      lockStart: t,
+      lockUntil: t + lockPeriodMs,
+    });
+    updateMain(mainBalance - amt);
+    setAmountInput("");
+    pushLog(`Deposited ${amt} tokens (lock restarted)`);
+    notify("success", `Deposited ${amt} tokens. Locked for ${formatCountdown(lockPeriodMs)}.`);
   };
 
-  const controlStyle = active => ({ ...styles.secondary, borderColor: active ? "#facc15" : "#ffffff25", color: active ? "#fde68a" : "#e5e7eb", background: active ? "#d4af3718" : "#ffffff08" });
-  const displayedEstimate = useMemo(() => Math.round((validAmount ? previewAmount + interestEstimate : 0) * 100) / 100, [validAmount, previewAmount, interestEstimate]);
+  const handleWithdraw = (rawAmount = amountInput) => {
+    if (!vault) {
+      notify("error", "The vault is empty.");
+      return;
+    }
+    if (isLocked) {
+      notify("error", `Still locked. ${formatCountdown(remainingLock)} remaining.`);
+      return;
+    }
+    const amt = Math.floor(Number(rawAmount));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      notify("error", "Enter a whole number of tokens greater than 0.");
+      return;
+    }
+
+    const settled = settle(vault, t);
+    const max = floorTokens(settled.base);
+    if (amt > max) {
+      notify("error", `You can withdraw at most ${max} tokens.`);
+      return;
+    }
+
+    if (amt === max) {
+      // Full withdrawal: fractional dust below 1 token is forfeited
+      setVault(null);
+    } else {
+      setVault({ ...settled, base: settled.base - amt });
+    }
+    updateMain(mainBalance + amt);
+    setAmountInput("");
+    pushLog(`Withdrew ${amt} tokens (principal + bonus)`);
+    notify("success", `Withdrew ${amt} tokens to your main balance.`);
+  };
+
+  const handleSubmit = () => {
+    if (mode === "deposit") handleDeposit();
+    else handleWithdraw();
+  };
+
+  const setQuickAmount = (fraction) => {
+    const source = mode === "deposit" ? mainBalance : vaultTotal;
+    setAmountInput(String(Math.floor(source * fraction)));
+  };
+
+  const switchMode = (next) => {
+    setMode(next);
+    setAmountInput("");
+    setMessage(null);
+  };
+
+  const fastForwardDay = () => {
+    setTimeOffset((prev) => prev + DAY_MS);
+    pushLog("Arcade time skipped forward 1 day (demo)");
+  };
+
+  const withdrawBlocked = !vault || isLocked;
+  const submitDisabled = mode === "withdraw" ? withdrawBlocked : mainBalance <= 0;
 
   return (
-    <main style={styles.page}>
-      <div style={styles.wrap}>
-        <header style={styles.top}>
-          <button type="button" onClick={onBack} style={styles.back}>← Casino</button>
-          <div style={styles.heading}>CLASHX7 · SAFEVAULT</div>
-          <button type="button" onClick={refresh} disabled={busy} style={styles.secondary} aria-label="Refresh vault">↻</button>
-        </header>
+    <div style={S.wrapper}>
+      <div style={S.header}>
+        <h2 style={S.title}>Coin Vault</h2>
+        <span style={S.badge}>{(dailyRate * 100).toFixed(1)}% daily arcade bonus</span>
+      </div>
 
-        <div style={styles.grid}>
-          <section style={styles.panel}>
-            <p style={styles.eyebrow}>Vault overview</p>
-            <h1 style={styles.title}>Plan a safe lock-in.</h1>
-            <p style={styles.muted}>Review your terms, confirm before committing, and withdraw only after the selected minimum lock-in period. Interest is simple and non-compounded.</p>
-
-            <div style={styles.rate}>
-              <div><strong style={{ display: "block", fontSize: 14 }}>Daily simple-interest estimate</strong><span style={styles.muted}>Calculated by the server, not compounded</span></div>
-              <strong style={styles.rateNumber}>2.5% / day</strong>
-            </div>
-
-            <div style={styles.field}>
-              <label htmlFor="safe-vault-amount" style={styles.label}><span>Investment principal</span><span style={styles.muted}>Min {money(minimumAmount)}</span></label>
-              <input id="safe-vault-amount" type="number" min={minimumAmount} step="0.01" inputMode="decimal" value={amount} disabled={Boolean(investment) || busy} onChange={event => setAmount(event.target.value)} style={styles.input} />
-            </div>
-
-            <div style={styles.field}>
-              <label htmlFor="safe-vault-days" style={styles.label}><span>Minimum lock-in duration</span><span style={styles.muted}>{minDays}–{maxDays} days</span></label>
-              <div style={styles.presets}>{[7, 14, 30, 60, 90].filter(value => value >= minDays && value <= maxDays).map(value => <button key={value} type="button" disabled={Boolean(investment) || busy} onClick={() => setDays(value)} style={controlStyle(Number(days) === value)}>{value} days</button>)}</div>
-              <input id="safe-vault-days" type="number" min={minDays} max={maxDays} step="1" value={days} disabled={Boolean(investment) || busy} onChange={event => setDays(event.target.value)} onBlur={() => setDays(safeDays)} style={styles.input} />
-              <span style={styles.muted}>Principal and interest cannot be withdrawn before this lock-in ends.</span>
-            </div>
-
-            <div style={styles.summary} aria-live="polite">
-              <div style={styles.row}><span>Available wallet</span><strong style={{ color: "#f3efe0" }}>{money(wallet)}</strong></div>
-              <div style={styles.row}><span>Principal</span><strong style={{ color: "#f3efe0" }}>{money(validAmount ? previewAmount : 0)}</strong></div>
-              <div style={styles.row}><span>Estimated interest per day</span><strong style={{ color: "#facc15" }}>{money(dailyEstimate)}</strong></div>
-              <div style={styles.row}><span>Estimated interest after {safeDays} days</span><strong style={{ color: "#facc15" }}>{money(interestEstimate)}</strong></div>
-              <div style={{ ...styles.row, borderBottom: 0, color: "#fff0c2", fontSize: 14 }}><span>Estimated value at unlock</span><strong>{money(displayedEstimate)}</strong></div>
-            </div>
-            <p style={{ ...styles.muted, margin: "12px 0 0" }}>Estimated unlock: {dateText(unlockPreview)}</p>
-
-            <div style={styles.buttonRow}>
-              {investment
-                ? <button type="button" style={{ ...styles.primary, opacity: matured ? 1 : 0.5, cursor: matured ? "pointer" : "not-allowed" }} onClick={requestWithdrawal} disabled={!matured || busy}>{matured ? "Review withdrawal" : "Funds locked"}</button>
-                : <button type="button" style={{ ...styles.primary, opacity: validAmount && !busy ? 1 : 0.55 }} onClick={requestDeposit} disabled={!validAmount || busy}>Review investment</button>}
-              <button type="button" style={styles.secondary} onClick={refresh} disabled={busy}>{busy ? "Syncing…" : "Refresh vault"}</button>
-            </div>
-            <div role="status" style={styles.status}>{message}</div>
-          </section>
-
-          <aside style={{ ...styles.panel, display: "grid", gap: 14 }}>
-            <section style={styles.section}>
-              <p style={styles.eyebrow}>Your investment</p>
-              {investment ? <>
-                <div style={{ display: "inline-flex", padding: "6px 10px", borderRadius: 99, color: matured ? "#86efac" : "#fde68a", background: matured ? "#16a34a22" : "#d4af3720", border: `1px solid ${matured ? "#22c55e55" : "#d4af3755"}`, fontSize: 11, fontWeight: 900, textTransform: "uppercase" }}>{matured ? "Ready to withdraw" : "Locked"}</div>
-                <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-                  <div style={styles.row}><span>Principal</span><strong style={{ color: "#fff" }}>{money(principal)}</strong></div>
-                  <div style={styles.row}><span>Lock-in</span><strong style={{ color: "#fff" }}>{duration} days</strong></div>
-                  <div style={styles.row}><span>Started</span><strong style={{ color: "#fff", textAlign: "right" }}>{dateText(investment.started_at)}</strong></div>
-                  <div style={styles.row}><span>Unlocks</span><strong style={{ color: "#fff", textAlign: "right" }}>{dateText(new Date(unlockAtMs))}</strong></div>
-                  <div style={styles.row}><span>Time left</span><strong style={{ color: matured ? "#86efac" : "#fde68a", textAlign: "right" }}>{durationText(unlockAtMs - now)}</strong></div>
-                  <div style={styles.row}><span>Accrued interest estimate</span><strong style={{ color: "#facc15" }}>{money(accruedInterest)}</strong></div>
-                  <div style={{ ...styles.row, borderBottom: 0 }}><span>Estimated withdrawal</span><strong style={{ color: "#facc15", fontSize: 17 }}>{money(principal + accruedInterest)}</strong></div>
-                </div>
-              </> : <div style={{ padding: "22px 10px", color: "#a5b5a9", textAlign: "center", border: "1px dashed #ffffff25", borderRadius: 12 }}>No active investment. Review a deposit to begin.</div>}
-            </section>
-
-            <section style={styles.section}>
-              <p style={styles.eyebrow}>How it is calculated</p>
-              <div style={{ display: "grid", gap: 10, fontSize: 13, color: "#bdc9bf" }}>
-                <div style={styles.row}><span>Rate</span><strong style={{ color: "#fff" }}>2.5% per day</strong></div>
-                <div style={styles.row}><span>Formula</span><strong style={{ color: "#fff", textAlign: "right" }}>Principal × 0.025 × elapsed days</strong></div>
-                <div style={styles.row}><span>Minimum term</span><strong style={{ color: "#fff" }}>{minDays} days</strong></div>
-                <div style={{ ...styles.row, borderBottom: 0 }}><span>Maximum term</span><strong style={{ color: "#fff" }}>{maxDays} days</strong></div>
-              </div>
-            </section>
-            <div style={styles.warning}>This displays a product estimate, not a guaranteed or insured return. Run the provided SQL before use. The database validates lock-in and payout; do not treat this client display as the source of financial truth.</div>
-          </aside>
+      <div style={S.statsGrid}>
+        <div style={S.statCard}>
+          <div style={S.statLabel}>Main Balance</div>
+          <div style={S.statValue}>{mainBalance.toLocaleString()}</div>
+        </div>
+        <div style={S.statCard}>
+          <div style={S.statLabel}>In Vault</div>
+          <div style={S.statValue}>{vaultTotal.toLocaleString()}</div>
+        </div>
+        <div style={S.statCard}>
+          <div style={S.statLabel}>Pending Bonus</div>
+          <div style={S.statValueAccent}>+{pendingBonus.toLocaleString()}</div>
         </div>
       </div>
 
-      {confirmation && <div style={styles.overlay} role="presentation" onClick={() => !busy && setConfirmation(null)}>
-        <section role="dialog" aria-modal="true" aria-labelledby="vault-confirm-title" style={styles.dialog} onClick={event => event.stopPropagation()}>
-          <h2 id="vault-confirm-title" style={{ margin: "0 0 8px", color: "#facc15", fontSize: 20 }}>{confirmation.type === "deposit" ? "Confirm vault investment" : "Confirm vault withdrawal"}</h2>
-          {confirmation.type === "deposit" ? <p style={{ color: "#d1d5db", fontSize: 13, lineHeight: 1.6 }}>Invest {money(confirmation.amount)} for {confirmation.days} days? Estimated simple interest is {money(confirmation.amount * DAILY_RATE * confirmation.days)}. Your wallet will be debited only after you confirm.</p> : <p style={{ color: "#d1d5db", fontSize: 13, lineHeight: 1.6 }}>Withdraw your matured investment? The server will calculate the final payout and update your wallet.</p>}
-          <div style={styles.buttonRow}>
-            <button type="button" style={styles.primary} onClick={confirmAction} disabled={busy}>{busy ? "Processing…" : "Yes, confirm"}</button>
-            <button type="button" style={styles.secondary} onClick={() => setConfirmation(null)} disabled={busy}>Cancel</button>
-          </div>
-        </section>
-      </div>}
-    </main>
+      {message && <div style={S.message(message.type)}>{message.text}</div>}
+
+      <div style={S.section}>
+        <div style={S.tabRow}>
+          <button style={S.tab(mode === "deposit")} onClick={() => switchMode("deposit")}>
+            Deposit
+          </button>
+          <button style={S.tab(mode === "withdraw")} onClick={() => switchMode("withdraw")}>
+            Withdraw
+          </button>
+        </div>
+
+        <div style={S.inputRow}>
+          <input
+            type="number"
+            min="1"
+            placeholder={mode === "deposit" ? "Tokens to deposit" : "Tokens to withdraw"}
+            value={amountInput}
+            onChange={(e) => setAmountInput(e.target.value)}
+            style={S.input}
+          />
+          <button style={S.primaryButton} onClick={handleSubmit} disabled={submitDisabled}>
+            {mode === "deposit" ? "Deposit" : "Withdraw"}
+          </button>
+        </div>
+
+        <div style={S.quickRow}>
+          {[0.25, 0.5, 1].map((f) => (
+            <button key={f} style={S.quickButton} onClick={() => setQuickAmount(f)}>
+              {f === 1 ? "Max" : `${f * 100}%`}
+            </button>
+          ))}
+        </div>
+
+        <p style={S.muted}>
+          {mode === "deposit"
+            ? `Each deposit restarts the ${formatCountdown(lockPeriodMs)} lock period.`
+            : withdrawBlocked
+            ? "Withdrawals unlock when the lock timer reaches zero."
+            : `Available to withdraw: ${vaultTotal.toLocaleString()} tokens.`}
+        </p>
+      </div>
+
+      <div style={S.section}>
+        <h3 style={S.sectionTitle}>Lock Timer</h3>
+        <div style={S.timerText}>
+          {vault ? (isLocked ? formatCountdown(remainingLock) : "UNLOCKED") : "--:--:--"}
+        </div>
+        <div style={S.progressTrack}>
+          <div style={S.progressFill(vault ? lockPct : 0)} />
+        </div>
+        <p style={S.muted}>
+          {vault
+            ? isLocked
+              ? "Tokens can be claimed once the timer reaches zero."
+              : `Unlocked. Bonus earns about ${dailyEstimate.toLocaleString()} tokens per arcade day.`
+            : "Deposit tokens to start a lock period."}
+        </p>
+        <div style={{ height: "12px" }} />
+        <button
+          style={withdrawBlocked ? S.disabledButton : S.claimButton}
+          onClick={() => {
+            setMode("withdraw");
+            setAmountInput("");
+            handleWithdraw(vaultTotal);
+          }}
+          disabled={withdrawBlocked}
+        >
+          {vault ? `Claim All ${vaultTotal.toLocaleString()} Tokens` : "Nothing to Claim"}
+        </button>
+        <button style={S.ghostButton} onClick={fastForwardDay}>
+          Demo: skip 1 arcade day
+        </button>
+      </div>
+
+      <div style={S.section}>
+        <h3 style={S.sectionTitle}>Activity</h3>
+        {log.length === 0 ? (
+          <p style={S.muted}>No vault activity yet.</p>
+        ) : (
+          <ul style={S.logList}>
+            {log.map((entry) => (
+              <li key={entry.id} style={S.logItem}>
+                <span>{entry.text}</span>
+                <span style={S.logTime}>{formatTime(entry.time)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }
