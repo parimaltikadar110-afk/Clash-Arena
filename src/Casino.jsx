@@ -2965,6 +2965,123 @@ function Limbo({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ---------- Vortex 2 (same server RPC as Vortex, new look) ---------- */
+const V2 = {
+  pointer: { position: "absolute", left: "50%", top: -12, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "11px solid transparent", borderRight: "11px solid transparent", borderTop: "20px solid #f0abfc", zIndex: 3, filter: "drop-shadow(0 0 8px #e879f9)" },
+  chip: (sel, busy) => ({ padding: "8px 12px", borderRadius: 10, border: `1px solid ${sel ? "#e879f9" : "#334155"}`, background: sel ? "#4a1d6b" : "#0f172a", color: "#f8fafc", fontWeight: 800, fontSize: 12, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 }),
+};
+
+function Vortex2({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = num(cfg?.min_bet, 10), MAX = num(cfg?.max_bet, 50000);
+  const [bal, setBal] = useBal(me);
+  const [tip, flash] = useFlash();
+  const [chip, setChip] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [rot, setRot] = useState(0);
+  const [anim, setAnim] = useState(false);
+  const [res, setRes] = useState(null);         // { idx, mult, net }
+  const [recent, setRecent] = useState([]);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const spin = async () => {
+    if (busy) return;
+    if (chip < MIN) return flash(`Minimum bet ${R(MIN)}`);
+    if (chip > MAX) return flash(`Max bet ${R(MAX)}`);
+    if (chip > bal) return flash("Balance too low");
+    const before = bal;
+    setBal(before - chip); setBusy(true); setRes(null);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_vortex_spin", { p_bet: chip })); } catch (e) { error = e; }
+    if (error || !data?.success) {
+      setBusy(false); setBal(before);
+      const m = friendly(error);
+      return say ? say(m, 1) : flash(m);
+    }
+    const idx = Math.min(VORTEX.length - 1, Math.max(0, Math.round(num(data.slot, 0))));
+    const center = idx * VSEG + VSEG / 2;
+    setAnim(true);
+    setRot(r => r + 2160 + mod(-center - r, 360));   // spin, then stop on the server's segment
+    timer.current = setTimeout(() => {
+      const net = num(data.won_amount, 0) - chip;
+      setRes({ idx, mult: VORTEX[idx].m, net });
+      setRecent(h => [idx, ...h].slice(0, 12));
+      if (data.new_balance != null) setBal(num(data.new_balance, 0));
+      setBusy(false);
+      reload && reload();
+    }, 3800);
+  };
+
+  return (
+    <Shell title="Vortex 2" onBack={onBack} right={<SoundBtn />}>
+      <div style={{ position: "relative", width: "min(80vw,320px)", aspectRatio: "1", margin: "10px auto 0" }}>
+        <div style={V2.pointer} />
+        <svg viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block", transform: `rotate(${rot}deg)`,
+          transition: anim ? "transform 3.8s cubic-bezier(.12,.7,.15,1)" : "none", filter: "drop-shadow(0 0 22px #a855f7)" }}>
+          <defs>
+            <radialGradient id="v2core" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stopColor="#fdf4ff" /><stop offset=".4" stopColor="#c084fc" /><stop offset="1" stopColor="#3b0764" />
+            </radialGradient>
+          </defs>
+          <circle cx="150" cy="150" r="148" fill="#0c0416" />
+          <circle cx="150" cy="150" r="146" fill="none" stroke="#e879f9" strokeWidth="2" />
+          {VORTEX.map((v, i) => {
+            const a1 = i * VSEG, a2 = (i + 1) * VSEG;
+            const [x1, y1] = pt(140, a1), [x2, y2] = pt(140, a2);
+            const [ix1, iy1] = pt(70, a1), [ix2, iy2] = pt(70, a2);
+            const [tx, ty] = pt(106, a1 + VSEG / 2);
+            return (
+              <g key={i}>
+                <path d={`M${x1} ${y1} A140 140 0 0 1 ${x2} ${y2} L${ix2} ${iy2} A70 70 0 0 0 ${ix1} ${iy1} Z`}
+                  fill={VCOL[i]} opacity=".95" stroke="#f5d0fe" strokeWidth="1" />
+                <text x={tx} y={ty} fill="#fff" fontSize="11" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{v.t}</text>
+              </g>
+            );
+          })}
+          <circle cx="150" cy="150" r="66" fill="#1e0a33" stroke="#f5d0fe" strokeWidth="1" />
+          <circle cx="150" cy="150" r="28" fill="url(#v2core)" />
+        </svg>
+      </div>
+
+      <div style={{ textAlign: "center", minHeight: 44, marginTop: 10 }}>
+        {res && (
+          <>
+            <div style={{ fontSize: 22, fontWeight: 900, color: res.net > 0 ? "#4ade80" : res.net === 0 ? "#facc15" : "#f87171" }}>
+              {VORTEX[res.idx].t}
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>
+              {res.net > 0 ? `Won ${RM(res.net)}` : res.net === 0 ? "Stake returned" : `Lost ${RM(-res.net)}`}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", margin: "10px 0" }}>
+        {[10, 50, 100, 500].map(v => (
+          <button key={v} disabled={busy} onClick={() => setChip(v)} style={V2.chip(chip === v, busy)}>{v}</button>
+        ))}
+        <input type="number" value={chip} disabled={busy} onChange={e => setChip(+e.target.value || 0)}
+          style={{ width: 90, padding: "8px 10px", borderRadius: 10, border: "1px solid #334155", background: "#0f172a", color: "#f8fafc", fontWeight: 800 }} />
+      </div>
+
+      <button onClick={spin} disabled={busy}
+        style={{ display: "block", width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#a21caf,#e879f9)", color: "#fff", fontWeight: 900, fontSize: 16, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.5 : 1 }}>
+        {busy ? "Spinning…" : `Spin · Stake ${R(chip)}`}
+      </button>
+
+      {tip && <div style={{ marginTop: 10, textAlign: "center", fontWeight: 700, color: GOLD_L }}>{tip}</div>}
+
+      {recent.length > 0 && (
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
+          {recent.map((i, k) => (
+            <div key={k} style={{ padding: "4px 8px", borderRadius: 10, fontSize: 11, fontWeight: 800, color: "#fff", background: VCOL[i] }}>{VORTEX[i].t}</div>
+          ))}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -2991,6 +3108,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "vip") return <VipPage {...common} />;
   if (view === "plinko") return <Plinko {...common} />;
   if (view === "limbo") return <Limbo {...common} />;
+  if (view === "vortex2") return <Vortex2 {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -3013,8 +3131,9 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["ludo", "ludo", "Ludo", "Player vs player. Winner takes 90% of the pot.", "linear-gradient(135deg,#14532d,#16a34a)"],
     ["goal", "goal", "Goal Wave", "Take penalties. Build a streak of goals and cash out before the keeper saves one.", "linear-gradient(135deg,#052e16,#15803d)"],
     ["plinko", "plinko", "Plinko", "Drop the ball and land a multiplier. Pick 8, 12 or 16 rows.", "linear-gradient(135deg,#1e1b4b,#7c3aed)"],
+    ["vortex2", "vortex2", "Vortex 2", "Spin the ring. Same server-side payout table as Vortex, with a new look.", "linear-gradient(135deg,#4a044e,#a21caf)"],
     ["limbo", "limbo", "Limbo", "Set a target multiplier. Beat it and your stake multiplies.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
-  ].filter(([, key]) => (["goal", "plinko", "limbo"].includes(key) ? games[key] !== false : games[key]));
+  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2"].includes(key) ? games[key] !== false : games[key]));
 
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
