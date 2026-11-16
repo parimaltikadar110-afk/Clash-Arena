@@ -1431,7 +1431,7 @@ function Mines({ supabase, me, reload, say, cfg, onBack }) {
 /* ================= VORTEX (server decides the slot) ================= */
 const VORTEX = [
   { m: 0, t: "0x" }, { m: 0.5, t: "0.5x" }, { m: 1.5, t: "1.5x" }, { m: 2, t: "2x" }, { m: 3.9, t: "3.9x" },
-  { m: 7, t: "7x" }, { m: 12.5, t: "12.5x" }, { m: 27.5, t: "27.5x" }, { m: 50, t: "50x" },
+  { m: 7, t: "7x" }, { m: 12.5, t: "12.5x" }, { m: 27.5, t: "27.5x" },
 ];
 const VSEG = 360 / VORTEX.length;
 const VCOL = ["#374151", "#92400e", "#1d4ed8", "#7c2d12", "#0f766e", "#7e22ce", "#b45309", "#be123c", "#facc15"];
@@ -3724,13 +3724,15 @@ function Tower({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
-/* ---------- Color Lottery (60-second periods, server-generated results) ---------- */
-const CL = {
-  dot: (c) => ({ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 900, color: "#fff", background: c === "green" ? "#16a34a" : c === "red" ? "#dc2626" : "#7c3aed", border: "2px solid #0008" }),
-  pick: (sel, tone) => ({ flex: 1, padding: "11px 0", borderRadius: 12, border: `2px solid ${sel ? "#fde68a" : "transparent"}`, cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 13, background: tone === "green" ? "#15803d" : tone === "red" ? "#b91c1c" : tone === "violet" ? "#6d28d9" : "#334155" }),
-  num: (sel) => ({ aspectRatio: "1", borderRadius: 10, border: `2px solid ${sel ? "#fde68a" : "#334155"}`, background: "#0f172a", color: "#fff", fontWeight: 900, fontSize: 15, cursor: "pointer" }),
+/* ---------- Color Lottery (trading-terminal layout, server-generated results) ---------- */
+const CLX = {
+  panel: { background: "linear-gradient(180deg,#0b1220,#070d18)", border: "1px solid #1e293b", borderRadius: 16, padding: 12, marginBottom: 10, boxShadow: "0 10px 24px #000a" },
+  label: { fontSize: 11, letterSpacing: 1, color: "#94a3b8", marginBottom: 8 },
+  tab: (on) => ({ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 12, letterSpacing: 0.6, color: on ? "#0b1220" : "#94a3b8", background: on ? "linear-gradient(90deg,#38bdf8,#818cf8)" : "transparent" }),
+  side: (tone, on) => ({ flex: 1, padding: "12px 0", borderRadius: 12, cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 13, border: on ? "2px solid #e2e8f0" : "2px solid transparent", background: tone === "green" ? "linear-gradient(180deg,#22c55e,#14532d)" : tone === "red" ? "linear-gradient(180deg,#ef4444,#7f1d1d)" : tone === "violet" ? "linear-gradient(180deg,#a855f7,#4c1d95)" : "linear-gradient(180deg,#475569,#1e293b)", opacity: on ? 1 : 0.85 }),
+  num: (on, n) => ({ aspectRatio: "1", borderRadius: 10, cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 15, border: on ? "2px solid #e2e8f0" : "1px solid #1e293b", background: n === 0 ? "linear-gradient(135deg,#dc2626 50%,#7c3aed 50%)" : n === 5 ? "linear-gradient(135deg,#16a34a 50%,#7c3aed 50%)" : [2, 4, 6, 8].includes(n) ? "#b91c1c" : "#15803d" }),
+  candle: (colors) => ({ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", color: "#fff", fontWeight: 900, fontSize: 12, border: "1px solid #0008", background: colors.length > 1 ? `linear-gradient(135deg,${colors[0] === "red" ? "#dc2626" : "#16a34a"} 50%,#7c3aed 50%)` : colors[0] === "red" ? "#dc2626" : "#16a34a" }),
 };
-const CL_COLOR_OF = { 0: ["red", "violet"], 5: ["green", "violet"] };
 
 function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
@@ -3739,8 +3741,9 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   useEffect(() => { setBal(start); }, [start]);
 
   const [bet, setBet] = useState(10);
+  const [tab, setTab] = useState("color");
   const [sel, setSel] = useState({ kind: "color", pick: "green" });
-  const [st, setSt] = useState(null);             // server state + fetchedAt
+  const [st, setSt] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -3761,95 +3764,142 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const open = secsLeft >= 6;
   const hist = st?.history || [];
   const mine = st?.my_bet;
+  const odds = sel.kind === "number" ? 9.6 : sel.kind === "color" && sel.pick === "violet" ? 4.8 : 1.92;
+  const potential = Math.round(bet * odds * 100) / 100;
+  const label = sel.kind === "number" ? `NUMBER ${sel.pick}` : sel.pick.toUpperCase();
+
   const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+  const pickTab = t => {
+    setTab(t);
+    setSel(t === "color" ? { kind: "color", pick: "green" } : t === "number" ? { kind: "number", pick: "0" } : { kind: "size", pick: "big" });
+  };
+  const isSel = (k, p) => sel.kind === k && sel.pick === p;
 
   const place = async () => {
     if (busy) return;
-    if (!open) return setMsg("Betting is closed. Next period opens soon.");
+    if (!open) return setMsg("Betting is closed for this period.");
     if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
     if (bet > bal) return setMsg("Balance too low");
     setBusy(true); setMsg("");
     try {
       const { data, error } = await supabase.rpc("casino_lottery_bet", { p_game: "color", p_kind: sel.kind, p_pick: sel.pick, p_bet: bet });
-      if (error || !data?.success) throw new Error(error?.message || "Could not place bet");
+      if (error || !data?.success) throw new Error(error?.message || "Could not place order");
       setBal(Number(data.new_balance) || 0);
-      setMsg("Bet placed for this period.");
+      setMsg("Order placed for this period.");
       reload && reload();
       load();
     } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
     finally { setBusy(false); }
   };
 
-  const isSel = (kind, pick) => sel.kind === kind && sel.pick === pick;
-
   return (
-    <div style={GW.page}>
+    <div style={{ ...GW.page, background: "radial-gradient(120% 60% at 50% 0%,#0c1a33 0%,#050a14 70%)" }}>
       <div style={GW.bar}>
         <button style={GW.back} onClick={onBack}>« Lobby</button>
         <div style={GW.title}>Color Lottery</div>
         <div style={GW.balTag}>{R(bal)}</div>
       </div>
 
-      <div style={{ ...GW.stat, padding: 12, marginBottom: 10 }}>
-        <div style={GW.statLabel}>Period {st?.period ?? "—"} · {open ? "betting open" : "betting closed"}</div>
-        <div style={{ fontSize: 34, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: open ? "#4ade80" : "#f87171" }}>
+      <div style={CLX.panel}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={CLX.label}>PERIOD {st?.period ?? "—"} · 60 SEC</div>
+          <span style={{ fontSize: 10, fontWeight: 900, padding: "4px 9px", borderRadius: 999, letterSpacing: .6, background: open ? "#052e1b" : "#3b0a0a", color: open ? "#4ade80" : "#f87171", border: `1px solid ${open ? "#166534" : "#7f1d1d"}` }}>
+            {open ? "OPEN" : "CLOSED"}
+          </span>
+        </div>
+        <div style={{ fontSize: 40, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: open ? "#e2e8f0" : "#f87171", margin: "4px 0 6px" }}>
           00:{String(secsLeft).padStart(2, "0")}
+        </div>
+        <div style={{ height: 6, borderRadius: 6, background: "#1e293b", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(secsLeft / 60) * 100}%`, background: open ? "linear-gradient(90deg,#38bdf8,#818cf8)" : "#ef4444", transition: "width .25s linear" }} />
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginBottom: 10, minHeight: 30 }}>
-        {hist.map((h, i) => (
-          <div key={i} title={`period ${h.period}`} style={CL.dot(h.colors?.[0] === "red" ? "red" : h.colors?.[0] === "violet" ? "violet" : "green")}>
-            {h.number}
-          </div>
+      <div style={CLX.panel}>
+        <div style={CLX.label}>RECENT RESULTS</div>
+        <div style={{ display: "flex", gap: 6, justifyContent: "space-between", flexWrap: "wrap" }}>
+          {hist.length
+            ? [...hist].slice(0, 10).reverse().map((h, i) => (
+                <div key={i} title={`period ${h.period}`} style={CLX.candle(h.colors || ["green"])}>{h.number}</div>
+              ))
+            : <span style={{ fontSize: 12, color: "#64748b" }}>No results yet</span>}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, background: "#0b1220", border: "1px solid #1e293b", borderRadius: 12, padding: 4, marginBottom: 10 }}>
+        {[["color", "COLOUR"], ["number", "NUMBER"], ["size", "BIG / SMALL"]].map(([k, l]) => (
+          <button key={k} disabled={busy} onClick={() => pickTab(k)} style={CLX.tab(tab === k)}>{l}</button>
         ))}
+      </div>
+
+      <div style={CLX.panel}>
+        {tab === "color" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            {["green", "violet", "red"].map(c => (
+              <button key={c} disabled={busy} onClick={() => setSel({ kind: "color", pick: c })} style={CLX.side(c, isSel("color", c))}>
+                {c.toUpperCase()}
+                <div style={{ fontSize: 11, fontWeight: 700, opacity: .9 }}>{c === "violet" ? "4.80×" : "1.92×"}</div>
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === "number" && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+              <button key={n} disabled={busy} onClick={() => setSel({ kind: "number", pick: String(n) })} style={CLX.num(isSel("number", String(n)), n)}>{n}</button>
+            ))}
+            <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "#64748b", textAlign: "center", marginTop: 4 }}>9.60× on the exact number</div>
+          </div>
+        )}
+        {tab === "size" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            {[["big", "BIG 5–9"], ["small", "SMALL 0–4"]].map(([s, l]) => (
+              <button key={s} disabled={busy} onClick={() => setSel({ kind: "size", pick: s })} style={CLX.side("gray", isSel("size", s))}>
+                {l}
+                <div style={{ fontSize: 11, fontWeight: 700, opacity: .9 }}>1.92×</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={CLX.panel}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", marginBottom: 10 }}>
+          <span>ORDER</span>
+          <b style={{ color: "#e2e8f0" }}>{label} · {odds.toFixed(2)}×</b>
+        </div>
+        <div style={GW.betRow}>
+          <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+          <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+            onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+          <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+          {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", margin: "4px 0 10px" }}>
+          <span>Potential return</span>
+          <b style={{ color: "#4ade80" }}>{RM(potential)}</b>
+        </div>
+        <button style={{ ...GW.primary, opacity: busy || !open ? 0.5 : 1 }} disabled={busy || !open} onClick={place}>
+          PLACE ORDER · {RM(bet)}
+        </button>
+        <div style={GW.msg}>{msg}</div>
       </div>
 
       {mine && (
-        <div style={{ ...GW.msg, marginTop: 0, marginBottom: 10 }}>
-          Your bet: {mine.kind} {mine.pick} · {RM(Number(mine.bet))} ·{" "}
-          {mine.status === "pending" ? "waiting for result" : mine.status === "won" ? `won ${RM(Number(mine.payout))}` : "lost"}
+        <div style={CLX.panel}>
+          <div style={CLX.label}>OPEN POSITION</div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
+            <span>{String(mine.kind)} · {String(mine.pick).toUpperCase()}</span>
+            <span>{RM(Number(mine.bet))}</span>
+          </div>
+          <div style={{ marginTop: 6, fontWeight: 900, color: mine.status === "won" ? "#4ade80" : mine.status === "lost" ? "#f87171" : "#fde68a" }}>
+            {mine.status === "pending" ? "Waiting for result" : mine.status === "won" ? `Won ${RM(Number(mine.payout))}` : "Lost"}
+          </div>
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        {["green", "violet", "red"].map(c => (
-          <button key={c} disabled={busy} onClick={() => setSel({ kind: "color", pick: c })} style={{ ...CL.pick(isSel("color", c), c), opacity: busy ? 0.6 : 1 }}>
-            {c.toUpperCase()}<br /><span style={{ fontSize: 11, opacity: .85 }}>{c === "violet" ? "4.8x" : "1.92x"}</span>
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, marginBottom: 10 }}>
-        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-          <button key={n} disabled={busy} onClick={() => setSel({ kind: "number", pick: String(n) })} style={CL.num(isSel("number", String(n)))}>{n}</button>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        {["big", "small"].map(s => (
-          <button key={s} disabled={busy} onClick={() => setSel({ kind: "size", pick: s })} style={{ ...CL.pick(isSel("size", s), "gray"), opacity: busy ? 0.6 : 1 }}>
-            {s.toUpperCase()}<br /><span style={{ fontSize: 11, opacity: .85 }}>1.92x</span>
-          </button>
-        ))}
-      </div>
-
-      <div style={GW.betRow}>
-        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
-        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
-          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
-        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
-        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
-      </div>
-
-      <button style={{ ...GW.primary, opacity: busy || !open ? 0.5 : 1 }} disabled={busy || !open} onClick={place}>
-        Bet {sel.pick.toUpperCase()} · Stake {R(bet)}
-      </button>
-
-      <div style={GW.msg}>{msg}</div>
-
       <div style={GW.rules}>
-        One bet per 60-second period. Results are created after the period closes and cannot change. Colour: 0 is red and violet, 5 is green and violet. Return is about 96%. Virtual points only.
+        One order per 60-second period. Results are generated when a period closes and cannot change. Colour: 0 is red and violet, 5 is green and violet. Big is 5 to 9, small is 0 to 4. Return is about 96%. Virtual points only.
       </div>
     </div>
   );
@@ -4126,6 +4176,7 @@ function MotoRace({ supabase, me, reload, say, cfg, onBack }) {
 const CRASH_SKIN = {
   aviator2: { icon: "🛩️", title: "Aviator 2", bg: "linear-gradient(180deg,#1e3a8a,#0b1120)" },
   space: { icon: "🛸", title: "Space Crash", bg: "radial-gradient(circle at 50% 0%,#4c1d95,#020617 70%)" },
+  dcrash: { icon: "🐉", title: "Dragon Crash", bg: "radial-gradient(circle at 50% 100%,#7f1d1d,#0b0a10 70%)" },
 };
 
 function CrashGame({ variant, supabase, me, reload, say, cfg, onBack }) {
@@ -4257,14 +4308,296 @@ function CrashGame({ variant, supabase, me, reload, say, cfg, onBack }) {
 
 const LOBBY_CATS = [["all", "All"], ["table", "Table"], ["crash", "Crash"], ["lottery", "Lottery"], ["slots", "Slots"], ["originals", "Originals"]];
 const LOBBY_SETS = {
-  table: ["roulette", "dragon", "dice", "mines", "chicken", "vortex", "ludo"],
-  crash: ["aviator", "aviator2", "space"],
+  table: ["roulette", "dragon", "dice", "mines", "minespro", "chicken", "chicken2", "vortex", "ludo"],
+  crash: ["aviator", "aviator2", "space", "dcrash"],
   lottery: ["color"],
   slots: ["slots"],
   originals: ["plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "goal", "fishing", "moto"],
 };
 const lobbyMatches = (cat, v) => cat === "all" || (LOBBY_SETS[cat] || []).includes(v);
-const LOBBY_ICON = { roulette: "🎡", dragon: "🐉", dice: "🎲", aviator: "✈️", aviator2: "🛩️", space: "🛸", mines: "💣", vortex: "🌀", vortex2: "🌪️", chicken: "🐔", ludo: "🎯", plinko: "🔻", limbo: "🚀", coinflip: "🪙", wheel: "🎡", keno: "🔢", hilo: "🃏", tower: "🏰", goal: "⚽", color: "🎨", slots: "🎰", fishing: "🎣", moto: "🏍️" };
+const LOBBY_ICON = { roulette: "🎡", dragon: "🐉", dice: "🎲", aviator: "✈️", aviator2: "🛩️", space: "🛸", dcrash: "🐉", minespro: "💠", chicken2: "🐓", mines: "💣", vortex: "🌀", vortex2: "🌪️", chicken: "🐔", ludo: "🎯", plinko: "🔻", limbo: "🚀", coinflip: "🪙", wheel: "🎡", keno: "🔢", hilo: "🃏", tower: "🏰", goal: "⚽", color: "🎨", slots: "🎰", fishing: "🎣", moto: "🏍️" };
+
+/* ---------- Mines Pro (new skin, same server RPCs as Mines) ---------- */
+const MP_COUNTS = [3, 5, 8, 12, 16];
+const MP = {
+  cell: (state) => ({
+    aspectRatio: "1", borderRadius: 12, display: "grid", placeItems: "center", fontSize: 20, fontWeight: 900, color: "#fff",
+    border: `1px solid ${state === "gem" ? "#22d3ee" : state === "mine" ? "#f43f5e" : "#1e3a5f"}`,
+    background: state === "gem" ? "radial-gradient(circle,#0e7490,#042f2e)" : state === "mine" ? "radial-gradient(circle,#9f1239,#1f0a14)" : "linear-gradient(180deg,#0f2748,#081426)",
+    boxShadow: state === "gem" ? "0 0 14px #22d3ee55" : "inset 0 1px 0 #ffffff14",
+    cursor: state === "hidden" ? "pointer" : "default",
+  }),
+};
+
+function MinesPro({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [mineCount, setMineCount] = useState(3);
+  const [roundId, setRoundId] = useState(null);
+  const [opened, setOpened] = useState([]);
+  const [mines, setMines] = useState([]);
+  const [mult, setMult] = useState(1);
+  const [status, setStatus] = useState("idle");   // idle | playing | busted | cashed
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const playing = status === "playing";
+
+  const call = async (fn, args) => {
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error || !data?.success) throw new Error(error?.message || "Request failed");
+    return data;
+  };
+  const failed = e => (say ? say(e.message, 1) : setMsg(e.message));
+  const changeBet = v => { if (!busy && !playing) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const start_ = async () => {
+    if (busy || playing) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg("");
+    try {
+      const d = await call("casino_mines_start", { p_bet: bet, p_mines: mineCount });
+      setRoundId(d.round_id); setOpened([]); setMines([]); setMult(1); setStatus("playing");
+      setBal(Number(d.new_balance) || 0);
+      reload && reload();
+    } catch (e) { failed(e); }
+    finally { setBusy(false); }
+  };
+
+  const reveal = async i => {
+    if (!playing || busy || opened.includes(i)) return;
+    setBusy(true);
+    try {
+      const d = await call("casino_mines_reveal", { p_round: roundId, p_cell: i });
+      setOpened(o => [...o, i]);
+      if (d.hit) {
+        setMines(d.mines || []); setStatus("busted");
+        setBal(Number(d.new_balance) || 0);
+        setMsg("Boom. Stake lost.");
+        reload && reload();
+      } else {
+        setMult(Number(d.multiplier) || 1);
+      }
+    } catch (e) { failed(e); }
+    finally { setBusy(false); }
+  };
+
+  const cashOut = async () => {
+    if (!playing || busy || opened.length < 1) return;
+    setBusy(true);
+    try {
+      const d = await call("casino_mines_cashout", { p_round: roundId });
+      setMines(d.mines || []); setStatus("cashed");
+      setBal(Number(d.new_balance) || 0);
+      setMsg(`Cashed out ${RM(Math.round(bet * mult * 100) / 100)}`);
+      reload && reload();
+    } catch (e) { failed(e); }
+    finally { setBusy(false); }
+  };
+
+  const cellState = i => (mines.includes(i) ? "mine" : opened.includes(i) ? "gem" : "hidden");
+  const payout = Math.round(bet * mult * 100) / 100;
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Mines Pro</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={GW.statRow}>
+        <div style={GW.stat}><div style={GW.statLabel}>Mines</div><div style={GW.statVal}>{mineCount}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Multiplier</div><div style={GW.statVal}>{mult.toFixed(2)}x</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Cash out</div><div style={GW.statVal}>{RM(payout)}</div></div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 12 }}>
+        {Array.from({ length: 25 }, (_, i) => {
+          const st = cellState(i);
+          return (
+            <div key={i} onClick={() => reveal(i)} style={MP.cell(st)}>
+              {st === "gem" ? "💠" : st === "mine" ? "💥" : ""}
+            </div>
+          );
+        })}
+      </div>
+
+      {!playing && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {MP_COUNTS.map(c => (
+            <button key={c} disabled={busy} onClick={() => setMineCount(c)} style={{ ...GW.quick, flex: 1, border: `1px solid ${mineCount === c ? "#22d3ee" : "#334155"}` }}>{c}</button>
+          ))}
+        </div>
+      )}
+
+      {!playing ? (
+        <>
+          <div style={GW.betRow}>
+            <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+            <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+              onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+            <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+            {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+          </div>
+          <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={start_}>
+            Deal · Stake {R(bet)}
+          </button>
+        </>
+      ) : (
+        <button style={{ ...GW.cash, width: "100%", opacity: busy || opened.length < 1 ? 0.45 : 1 }} disabled={busy || opened.length < 1} onClick={cashOut}>
+          Cash out {RM(payout)}
+        </button>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>Reveal gems and avoid the mines. Each gem raises the multiplier. Cash out any time after your first gem. Virtual points only.</div>
+    </div>
+  );
+}
+
+/* ---------- Chicken Road 2 (new skin, same server RPCs as Chicken Road) ---------- */
+function ChickenRoad2({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [diff, setDiff] = useState("medium");
+  const [round, setRound] = useState(null);       // { id, step, alive, done, hitAt }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const playing = !!round && round.alive;
+
+  const call = async (fn, args) => {
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error || !data?.success) throw new Error(error?.message || "Request failed");
+    return data;
+  };
+  const failed = e => (say ? say(e.message, 1) : setMsg(e.message));
+  const changeBet = v => { if (!busy && !playing) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const start_ = async () => {
+    if (busy || playing) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg("");
+    try {
+      const d = await call("casino_chicken_start", { p_bet: bet, p_difficulty: diff });
+      setRound({ id: d.round_id, step: 0, alive: true, done: false, hitAt: null });
+      setBal(Number(d.new_balance) || 0);
+      setMsg("Cross the first lane.");
+      reload && reload();
+    } catch (e) { failed(e); }
+    finally { setBusy(false); }
+  };
+
+  const cross = async () => {
+    if (!playing || busy) return;
+    setBusy(true);
+    try {
+      const d = await call("casino_chicken_step", { p_round: round.id });
+      if (!d.alive) {
+        setRound(r => ({ ...r, alive: false, hitAt: r.step + 1 }));
+        if (d.new_balance != null) setBal(Number(d.new_balance) || 0);
+        setMsg("The chicken got hit.");
+        reload && reload();
+      } else {
+        const step = Number(d.step) || 0;
+        setRound(r => ({ ...r, step }));
+        setMsg(step >= CR_LANES ? "Top of the road. Cash out now." : `Cash out now for ${RM(Math.round(bet * crMult(diff, step) * 100) / 100)}`);
+      }
+    } catch (e) { failed(e); }
+    finally { setBusy(false); }
+  };
+
+  const cash = async () => {
+    if (!playing || busy || round.step < 1) return;
+    setBusy(true);
+    try {
+      const d = await call("casino_chicken_cashout", { p_round: round.id });
+      setRound(r => ({ ...r, alive: false, done: true }));
+      setBal(Number(d.new_balance) || 0);
+      setMsg(`Won ${RM(Number(d.won_amount) || 0)}`);
+      reload && reload();
+    } catch (e) { failed(e); }
+    finally { setBusy(false); }
+  };
+
+  const rows = Array.from({ length: CR_LANES + 1 }, (_, i) => CR_LANES - i);
+  const chickenRow = round ? round.step : 0;
+  const curMult = round && round.step > 0 ? crMult(diff, round.step) : 1;
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Chicken Road 2</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {Object.entries(CR_DIFF).map(([k, d]) => (
+          <button key={k} disabled={busy || playing} onClick={() => setDiff(k)}
+            style={{ ...GW.quick, flex: 1, border: `1px solid ${diff === k ? d.color : "#334155"}`, color: diff === k ? d.color : "#f8fafc" }}>
+            {d.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ borderRadius: 16, padding: "8px 12px", marginBottom: 12, background: "linear-gradient(180deg,#2a1d07,#140e04)", border: "1px solid #78350f" }}>
+        {rows.map(r => {
+          const here = round && r === chickenRow && !round.hitAt;
+          const hitHere = round && round.hitAt === r;
+          return (
+            <div key={r} style={{ display: "grid", gridTemplateColumns: "70px 1fr", alignItems: "center", height: 26, borderBottom: "1px dashed #78350f66" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#fcd34d" }}>{r === 0 ? "START" : `${crMult(diff, r).toFixed(2)}x`}</div>
+              <div style={{ fontSize: 18 }}>
+                {hitHere ? "💥" : here ? (round.done ? "🏁" : "🐓") : r === CR_LANES ? "🏁" : ""}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={GW.statRow}>
+        <div style={GW.stat}><div style={GW.statLabel}>Lane</div><div style={GW.statVal}>{round ? `${round.step}/${CR_LANES}` : "0"}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Multiplier</div><div style={GW.statVal}>{curMult.toFixed(2)}x</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Cash out</div><div style={GW.statVal}>{RM(Math.round(bet * curMult * 100) / 100)}</div></div>
+      </div>
+
+      {!playing ? (
+        <>
+          <div style={GW.betRow}>
+            <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+            <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+              onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+            <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+            {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+          </div>
+          <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={start_}>
+            Start · Stake {R(bet)}
+          </button>
+        </>
+      ) : (
+        <div style={GW.row}>
+          <button style={{ ...GW.shoot, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={cross}>Cross</button>
+          <button style={{ ...GW.cash, opacity: busy || round.step < 1 ? 0.45 : 1 }} disabled={busy || round.step < 1} onClick={cash}>
+            Cash out {RM(Math.round(bet * curMult * 100) / 100)}
+          </button>
+        </div>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>Cross each lane. Harder difficulty means lower survival per lane and higher multipliers. Cash out before you get hit. Virtual points only.</div>
+    </div>
+  );
+}
 
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
@@ -4303,7 +4636,9 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "slots") return <Slots {...common} />;
   if (view === "fishing") return <Fishing {...common} />;
   if (view === "moto") return <MotoRace {...common} />;
-  if (view === "aviator2" || view === "space") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
+  if (view === "minespro") return <MinesPro {...common} />;
+  if (view === "chicken2") return <ChickenRoad2 {...common} />;
+  if (view === "aviator2" || view === "space" || view === "dcrash") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -4319,7 +4654,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["dragon", "dragon_tiger", "Dragon Tiger", "Higher card wins. Tie pays 9 : 1.", "linear-gradient(135deg,#0b1d3a,#1e40af)"],
     ["aviator", "aviator", "Aviator", "Cash out before the plane flies away.", "linear-gradient(135deg,#4a1d06,#ea580c)"],
     ["mines", "mines", "Mines", "Pick safe cells. Cash out before you hit a mine.", "linear-gradient(135deg,#052e16,#166534)"],
-    ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on 50x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
+    ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on up to 27.5x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
     ["dice", "dice", "Dice", "Roll two dice. Under 7, seven, or over 7.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
     ["chicken", "chicken", "Chicken Road 2", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
     ["elements", "elements", "Elements", "Pick Earth, Water or Fire. Match the draw.", "linear-gradient(135deg,#1e3a8a,#7c2d12)"],
@@ -4338,8 +4673,11 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["moto", "moto", "MotoRace", "Pick a bike. The fastest bike wins your stake back multiplied.", "linear-gradient(135deg,#7f1d1d,#ef4444)"],
     ["aviator2", "aviator2", "Aviator 2", "Cash out before the craft flies away. Fair server-side crash point.", "linear-gradient(135deg,#1e3a8a,#0b1120)"],
     ["space", "space", "Space Crash", "Ride the rocket and cash out before it crashes.", "linear-gradient(135deg,#4c1d95,#020617)"],
+    ["minespro", "minespro", "Mines Pro", "Reveal gems, avoid the mines, cash out anytime.", "linear-gradient(135deg,#0c4a6e,#0f172a)"],
+    ["chicken2", "chicken2", "Chicken Road 2", "Cross the lanes. Pick a difficulty and cash out in time.", "linear-gradient(135deg,#78350f,#f59e0b)"],
+    ["dcrash", "dcrash", "Dragon Crash", "Cash out before the dragon flies away.", "linear-gradient(135deg,#7f1d1d,#0b0a10)"],
     ["color", "color", "Color Lottery", "Bet on the colour or number of the next 60-second draw.", "linear-gradient(135deg,#4c1d95,#be185d)"],
-  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color", "slots", "fishing", "moto", "aviator2", "space"].includes(key) ? games[key] !== false : games[key]));
+  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color", "slots", "fishing", "moto", "aviator2", "space", "minespro", "chicken2", "dcrash"].includes(key) ? games[key] !== false : games[key]));
 
   const visibleCards = cards.filter(([v]) => lobbyMatches(lobbyCat, v));
   return (
