@@ -4670,6 +4670,37 @@ const LOBBY_SECTIONS = [
 // Put your own artwork here, e.g. LOBBY_IMG.vortex2 = "https://.../vortex2.png"
 const LOBBY_IMG = {};
 
+// original flat icons (64x64). Replace with real artwork via LOBBY_IMG if you have it.
+const LOBBY_GLYPH = {
+  roulette: '<circle cx="32" cy="32" r="24" fill="none" stroke="#fff" stroke-width="3"/><circle cx="32" cy="32" r="8" fill="#fff"/><path d="M32 8v12M32 44v12M8 32h12M44 32h12" stroke="#fff" stroke-width="3"/>',
+  dragon: '<circle cx="22" cy="32" r="13" fill="#fff"/><circle cx="42" cy="32" r="13" fill="#fff" opacity=".55"/>',
+  dice: '<rect x="12" y="12" width="40" height="40" rx="9" fill="none" stroke="#fff" stroke-width="3"/><circle cx="23" cy="23" r="3.5" fill="#fff"/><circle cx="32" cy="32" r="3.5" fill="#fff"/><circle cx="41" cy="41" r="3.5" fill="#fff"/>',
+  aviator: '<path d="M6 34 L58 22 L58 27 L38 34 L58 41 L58 46 L6 34Z" fill="#fff"/>',
+  aviator2: '<path d="M6 34 L58 22 L58 27 L38 34 L58 41 L58 46 L6 34Z" fill="#fff"/>',
+  space: '<path d="M32 6 C44 18 46 36 40 50 L24 50 C18 36 20 18 32 6Z" fill="#fff"/><circle cx="32" cy="28" r="5" fill="#0b1020"/><path d="M24 50 L18 58 L28 54ZM40 50 L46 58 L36 54Z" fill="#fff"/>',
+  dcrash: '<path d="M32 8 C40 22 52 26 46 44 C42 56 22 56 18 44 C14 32 24 28 32 8Z" fill="#fff"/>',
+  mines: '<circle cx="32" cy="34" r="15" fill="#fff"/><path d="M32 8v8M32 52v4M8 34h8M48 34h8" stroke="#fff" stroke-width="4"/>',
+  minespro: '<path d="M32 10 L52 28 L32 56 L12 28Z" fill="none" stroke="#fff" stroke-width="3"/><path d="M12 28H52" stroke="#fff" stroke-width="2"/>',
+  vortex: '<circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-width="5" stroke-dasharray="90 20"/><circle cx="32" cy="32" r="9" fill="none" stroke="#fff" stroke-width="3"/>',
+  vortex2: '<circle cx="32" cy="32" r="24" fill="none" stroke="#fff" stroke-width="3"/><circle cx="32" cy="32" r="16" fill="none" stroke="#fff" stroke-width="5" stroke-dasharray="60 40"/>',
+  chicken: '<circle cx="30" cy="30" r="15" fill="#fff"/><path d="M42 28 L56 32 L42 36Z" fill="#fff"/><circle cx="25" cy="26" r="2.5" fill="#0b1020"/>',
+  chicken2: '<circle cx="30" cy="30" r="15" fill="#fff"/><path d="M42 28 L56 32 L42 36Z" fill="#fff"/><circle cx="25" cy="26" r="2.5" fill="#0b1020"/><path d="M8 52H56" stroke="#fff" stroke-width="3" stroke-dasharray="6 6"/>',
+  ludo: '<circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-width="4"/><circle cx="32" cy="32" r="10" fill="none" stroke="#fff" stroke-width="4"/><circle cx="32" cy="32" r="3" fill="#fff"/>',
+  plinko: '<path d="M32 8 L56 52 L8 52Z" fill="none" stroke="#fff" stroke-width="3"/><circle cx="32" cy="22" r="3" fill="#fff"/><circle cx="24" cy="36" r="3" fill="#fff"/><circle cx="40" cy="36" r="3" fill="#fff"/><circle cx="32" cy="50" r="3" fill="#fff"/>',
+  limbo: '<path d="M32 8 L50 30 H38 V56 H26 V30 H14Z" fill="#fff"/>',
+  coinflip: '<circle cx="32" cy="32" r="22" fill="#fff"/><circle cx="32" cy="32" r="13" fill="none" stroke="#0b1020" stroke-width="3"/>',
+  wheel: '<circle cx="32" cy="32" r="24" fill="none" stroke="#fff" stroke-width="3"/><path d="M32 32V8M32 32L52 44M32 32L12 44" stroke="#fff" stroke-width="3"/><circle cx="32" cy="32" r="4" fill="#fff"/>',
+  keno: '<rect x="8" y="8" width="13" height="13" rx="3" fill="#fff"/><rect x="25" y="8" width="13" height="13" rx="3" fill="#fff" opacity=".5"/><rect x="42" y="8" width="13" height="13" rx="3" fill="#fff"/><rect x="8" y="25" width="13" height="13" rx="3" fill="#fff" opacity=".5"/><rect x="25" y="25" width="13" height="13" rx="3" fill="#fff"/><rect x="42" y="25" width="13" height="13" rx="3" fill="#fff" opacity=".5"/><rect x="8" y="42" width="13" height="13" rx="3" fill="#fff"/><rect x="25" y="42" width="13" height="13" rx="3" fill="#fff" opacity=".5"/><rect x="42" y="42" width="13" height="13" rx="3" fill="#fff"/>',
+  hilo: '<path d="M20 22 L32 10 L44 22 H36 V40 H28 V22Z" fill="#fff"/><path d="M20 42 L32 54 L44 42 H36 V34 H28 V42Z" fill="#fff" opacity=".55"/>',
+  tower: '<rect x="18" y="40" width="28" height="14" fill="#fff"/><rect x="22" y="26" width="20" height="12" fill="#fff" opacity=".85"/><rect x="26" y="14" width="12" height="10" fill="#fff" opacity=".7"/>',
+  goal: '<circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-width="3"/><path d="M32 20 L42 27 L38 39 H26 L22 27Z" fill="#fff"/>',
+  color: '<circle cx="32" cy="32" r="22" fill="#fff"/><circle cx="32" cy="32" r="11" fill="#0b1020"/><circle cx="32" cy="32" r="5" fill="#fff"/>',
+  slots: '<rect x="8" y="14" width="48" height="36" rx="6" fill="none" stroke="#fff" stroke-width="3"/><rect x="16" y="22" width="10" height="20" fill="#fff"/><rect x="27" y="22" width="10" height="20" fill="#fff"/><rect x="38" y="22" width="10" height="20" fill="#fff"/>',
+  fishing: '<ellipse cx="30" cy="32" rx="18" ry="11" fill="#fff"/><path d="M46 32 L58 22 V42Z" fill="#fff"/><circle cx="22" cy="30" r="2.5" fill="#0b1020"/>',
+  moto: '<circle cx="18" cy="42" r="10" fill="none" stroke="#fff" stroke-width="4"/><circle cx="46" cy="42" r="10" fill="none" stroke="#fff" stroke-width="4"/><path d="M18 42 L28 26 H42 L46 42 M28 26 L34 42" fill="none" stroke="#fff" stroke-width="4"/>',
+  originals: '<path d="M32 8 L38 26 L57 26 L42 37 L48 56 L32 45 L16 56 L22 37 L7 26 L26 26Z" fill="#fff"/>',
+};
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -4788,20 +4819,21 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
         return (
           <div key={sec.key} style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-              <div style={{ fontWeight: 900, fontSize: 16, color: "#f8fafc" }}>{sec.label}</div>
+              <div style={{ fontWeight: 900, fontSize: 16, color: "#f8fafc", borderLeft: "3px solid #fbbf24", paddingLeft: 8 }}>{sec.label}</div>
               <div style={{ fontSize: 11, color: "#64748b", letterSpacing: .6 }}>{items.length} GAMES</div>
             </div>
             <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollSnapType: "x mandatory" }}>
               {items.map(([v, , name, desc, bg]) => (
-                <div key={v} onClick={() => setView(v)} style={{ flex: "0 0 132px", scrollSnapAlign: "start", borderRadius: 16, overflow: "hidden", cursor: "pointer", background: "#0f1420", border: "1px solid #1f2937" }}>
-                  <div style={{ height: 118, background: bg, display: "grid", placeItems: "center", overflow: "hidden" }}>
+                <div key={v} onClick={() => setView(v)} style={{ flex: "0 0 150px", scrollSnapAlign: "start", borderRadius: 16, overflow: "hidden", cursor: "pointer", background: "#0d131d", border: "1px solid #1f2937", boxShadow: "0 10px 22px #0008" }}>
+                  <div style={{ height: 124, position: "relative", display: "grid", placeItems: "center", background: `radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.25),transparent 60%), ${bg}` }}>
                     {LOBBY_IMG[v]
-                      ? <img src={LOBBY_IMG[v]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <div style={{ fontSize: 34, fontWeight: 900, color: "rgba(255,255,255,.92)", textShadow: "0 4px 14px rgba(0,0,0,.35)" }}>{initials(name)}</div>}
+                      ? <img src={LOBBY_IMG[v]} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <svg viewBox="0 0 64 64" width="64" height="64" style={{ filter: "drop-shadow(0 6px 10px rgba(0,0,0,.35))" }} dangerouslySetInnerHTML={{ __html: LOBBY_GLYPH[v] || LOBBY_GLYPH.originals }} />}
                   </div>
-                  <div style={{ padding: "9px 10px 11px" }}>
-                    <div style={{ fontWeight: 800, fontSize: 13, color: "#f1f5f9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{desc}</div>
+                  <div style={{ padding: "10px 11px 12px" }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: "#f8fafc", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3, lineHeight: 1.35, height: 30, overflow: "hidden" }}>{desc}</div>
+                    <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, marginTop: 6 }}>Min {R(+C?.min_bet || 10)}</div>
                   </div>
                 </div>
               ))}
