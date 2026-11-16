@@ -2965,10 +2965,17 @@ function Limbo({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
-/* ---------- Vortex 2 (same server RPC as Vortex, new look) ---------- */
+/* ---------- Vortex 2 (same server RPC as Vortex, refined ring dial) ---------- */
+const initials = (n) => n.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 const V2 = {
-  pointer: { position: "absolute", left: "50%", top: -12, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "11px solid transparent", borderRight: "11px solid transparent", borderTop: "20px solid #f0abfc", zIndex: 3, filter: "drop-shadow(0 0 8px #e879f9)" },
-  chip: (sel, busy) => ({ padding: "8px 12px", borderRadius: 10, border: `1px solid ${sel ? "#e879f9" : "#334155"}`, background: sel ? "#4a1d6b" : "#0f172a", color: "#f8fafc", fontWeight: 800, fontSize: 12, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 }),
+  page: { minHeight: "100vh", padding: "12px 12px 40px", boxSizing: "border-box", color: "#e5e7eb", background: "radial-gradient(120% 70% at 50% 0%,#1b1f2a 0%,#07090e 70%)", fontFamily: "system-ui,sans-serif" },
+  panel: { background: "linear-gradient(180deg,#121621,#0b0e15)", border: "1px solid #232a3a", borderRadius: 16, padding: 12, marginBottom: 10 },
+  label: { fontSize: 11, letterSpacing: 1, color: "#8b93a7", marginBottom: 6 },
+  quick: { flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid #2a3345", background: "#0e1219", color: "#cbd5e1", fontWeight: 800, fontSize: 12, cursor: "pointer" },
+  step: { width: 40, height: 40, borderRadius: 10, border: "1px solid #2a3345", background: "#0e1219", color: "#e2e8f0", fontSize: 18, fontWeight: 800, cursor: "pointer" },
+  input: { flex: 1, minWidth: 0, padding: "10px", borderRadius: 10, border: "1px solid #2a3345", background: "#0a0d14", color: "#f8fafc", fontWeight: 800, fontSize: 15, textAlign: "center", boxSizing: "border-box" },
+  spin: (dis) => ({ width: "100%", padding: "15px 0", borderRadius: 12, border: "none", cursor: dis ? "not-allowed" : "pointer", color: "#fff", fontWeight: 900, fontSize: 15, letterSpacing: 1, opacity: dis ? 0.5 : 1, background: "linear-gradient(90deg,#6d28d9,#a855f7)", boxShadow: "0 8px 22px #6d28d966" }),
+  display: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", minWidth: 110, padding: "10px 12px", borderRadius: 12, background: "rgba(6,8,14,.94)", border: "1px solid #3b2a6b", textAlign: "center", boxShadow: "0 0 26px #7c3aed55" },
 };
 
 function Vortex2({ supabase, me, reload, say, cfg, onBack }) {
@@ -2979,10 +2986,12 @@ function Vortex2({ supabase, me, reload, say, cfg, onBack }) {
   const [busy, setBusy] = useState(false);
   const [rot, setRot] = useState(0);
   const [anim, setAnim] = useState(false);
-  const [res, setRes] = useState(null);         // { idx, mult, net }
+  const [res, setRes] = useState(null);
   const [recent, setRecent] = useState([]);
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  const changeStake = v => { if (!busy) setChip(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
 
   const spin = async () => {
     if (busy) return;
@@ -3001,84 +3010,90 @@ function Vortex2({ supabase, me, reload, say, cfg, onBack }) {
     const idx = Math.min(VORTEX.length - 1, Math.max(0, Math.round(num(data.slot, 0))));
     const center = idx * VSEG + VSEG / 2;
     setAnim(true);
-    setRot(r => r + 2160 + mod(-center - r, 360));   // spin, then stop on the server's segment
+    setRot(r => r + 2160 + mod(-center - r, 360));
     timer.current = setTimeout(() => {
       const net = num(data.won_amount, 0) - chip;
       setRes({ idx, mult: VORTEX[idx].m, net });
-      setRecent(h => [idx, ...h].slice(0, 12));
+      setRecent(h => [idx, ...h].slice(0, 10));
       if (data.new_balance != null) setBal(num(data.new_balance, 0));
       setBusy(false);
       reload && reload();
     }, 3800);
   };
 
+  const RIN = 146, HUB = 58;
   return (
-    <Shell title="Vortex 2" onBack={onBack} right={<SoundBtn />}>
-      <div style={{ position: "relative", width: "min(80vw,320px)", aspectRatio: "1", margin: "10px auto 0" }}>
-        <div style={V2.pointer} />
-        <svg viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block", transform: `rotate(${rot}deg)`,
-          transition: anim ? "transform 3.8s cubic-bezier(.12,.7,.15,1)" : "none", filter: "drop-shadow(0 0 22px #a855f7)" }}>
+    <div style={V2.page}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <button onClick={onBack} style={{ ...V2.quick, flex: "none", padding: "8px 14px" }}>‹ Lobby</button>
+        <div style={{ fontWeight: 900, letterSpacing: 1.5, color: "#e9d5ff" }}>VORTEX 2</div>
+        <div style={{ fontWeight: 800, color: "#fde68a", fontSize: 13 }}>{R(bal)}</div>
+      </div>
+
+      <div style={{ position: "relative", width: "min(86vw,340px)", aspectRatio: "1", margin: "0 auto 12px" }}>
+        <div style={{ position: "absolute", left: "50%", top: -6, transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderTop: "16px solid #e879f9", zIndex: 3, filter: "drop-shadow(0 0 6px #e879f9)" }} />
+        <svg viewBox="0 0 300 300" style={{ width: "100%", height: "100%", display: "block", transform: `rotate(${rot}deg)`, transition: anim ? "transform 3.8s cubic-bezier(.12,.7,.15,1)" : "none" }}>
           <defs>
-            <radialGradient id="v2core" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stopColor="#fdf4ff" /><stop offset=".4" stopColor="#c084fc" /><stop offset="1" stopColor="#3b0764" />
+            <radialGradient id="v2hub" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stopColor="#1f1338" /><stop offset="1" stopColor="#07050d" />
             </radialGradient>
           </defs>
-          <circle cx="150" cy="150" r="148" fill="#0c0416" />
-          <circle cx="150" cy="150" r="146" fill="none" stroke="#e879f9" strokeWidth="2" />
+          <circle cx="150" cy="150" r="149" fill="#0a0c12" stroke="#2a3345" strokeWidth="1" />
           {VORTEX.map((v, i) => {
             const a1 = i * VSEG, a2 = (i + 1) * VSEG;
-            const [x1, y1] = pt(140, a1), [x2, y2] = pt(140, a2);
-            const [ix1, iy1] = pt(70, a1), [ix2, iy2] = pt(70, a2);
-            const [tx, ty] = pt(106, a1 + VSEG / 2);
+            const [x1, y1] = pt(RIN, a1), [x2, y2] = pt(RIN, a2);
+            const [ix1, iy1] = pt(HUB, a1), [ix2, iy2] = pt(HUB, a2);
+            const [tx, ty] = pt(104, a1 + VSEG / 2);
             return (
               <g key={i}>
-                <path d={`M${x1} ${y1} A140 140 0 0 1 ${x2} ${y2} L${ix2} ${iy2} A70 70 0 0 0 ${ix1} ${iy1} Z`}
-                  fill={VCOL[i]} opacity=".95" stroke="#f5d0fe" strokeWidth="1" />
-                <text x={tx} y={ty} fill="#fff" fontSize="11" fontWeight="900" textAnchor="middle" dominantBaseline="middle">{v.t}</text>
+                <path d={`M${x1} ${y1} A${RIN} ${RIN} 0 0 1 ${x2} ${y2} L${ix2} ${iy2} A${HUB} ${HUB} 0 0 0 ${ix1} ${iy1} Z`}
+                  fill={VCOL[i]} fillOpacity="0.9" stroke="#0a0c12" strokeWidth="2" />
+                <text x={tx} y={ty} fill="#fff" fontSize="11" fontWeight="800" textAnchor="middle" dominantBaseline="middle">{v.t}</text>
               </g>
             );
           })}
-          <circle cx="150" cy="150" r="66" fill="#1e0a33" stroke="#f5d0fe" strokeWidth="1" />
-          <circle cx="150" cy="150" r="28" fill="url(#v2core)" />
+          {[70, 96, 126].map(r => <circle key={r} cx="150" cy="150" r={r} fill="none" stroke="#ffffff10" strokeWidth="1" />)}
+          <circle cx="150" cy="150" r={HUB} fill="url(#v2hub)" stroke="#a855f7" strokeWidth="2" />
         </svg>
+        <div style={V2.display}>
+          {res ? (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 900, color: res.net > 0 ? "#4ade80" : res.net === 0 ? "#facc15" : "#f87171" }}>{VORTEX[res.idx].t}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#cbd5e1" }}>{res.net > 0 ? `+${RM(res.net)}` : res.net === 0 ? "Stake returned" : `-${RM(-res.net)}`}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: 11, letterSpacing: 1, color: "#8b93a7" }}>{busy ? "SPINNING" : "READY"}</div>
+          )}
+        </div>
       </div>
 
-      <div style={{ textAlign: "center", minHeight: 44, marginTop: 10 }}>
-        {res && (
-          <>
-            <div style={{ fontSize: 22, fontWeight: 900, color: res.net > 0 ? "#4ade80" : res.net === 0 ? "#facc15" : "#f87171" }}>
-              {VORTEX[res.idx].t}
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>
-              {res.net > 0 ? `Won ${RM(res.net)}` : res.net === 0 ? "Stake returned" : `Lost ${RM(-res.net)}`}
-            </div>
-          </>
-        )}
+      <div style={V2.panel}>
+        <div style={V2.label}>STAKE</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button style={V2.step} disabled={busy} onClick={() => changeStake(chip - 10)}>−</button>
+          <input type="number" value={chip} disabled={busy} style={V2.input}
+            onChange={e => setChip(+e.target.value || 0)} onBlur={e => changeStake(e.target.value)} />
+          <button style={V2.step} disabled={busy} onClick={() => changeStake(chip + 10)}>+</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {[10, 50, 100, 500].map(v => <button key={v} disabled={busy} style={{ ...V2.quick, borderColor: chip === v ? "#a855f7" : "#2a3345", color: chip === v ? "#e9d5ff" : "#cbd5e1" }} onClick={() => changeStake(v)}>{v}</button>)}
+        </div>
+        <button style={V2.spin(busy)} disabled={busy} onClick={spin}>{busy ? "SPINNING…" : `SPIN · ${R(chip)}`}</button>
+        {tip && <div style={{ marginTop: 10, textAlign: "center", fontWeight: 700, color: "#fde68a", fontSize: 13 }}>{tip}</div>}
       </div>
-
-      <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", margin: "10px 0" }}>
-        {[10, 50, 100, 500].map(v => (
-          <button key={v} disabled={busy} onClick={() => setChip(v)} style={V2.chip(chip === v, busy)}>{v}</button>
-        ))}
-        <input type="number" value={chip} disabled={busy} onChange={e => setChip(+e.target.value || 0)}
-          style={{ width: 90, padding: "8px 10px", borderRadius: 10, border: "1px solid #334155", background: "#0f172a", color: "#f8fafc", fontWeight: 800 }} />
-      </div>
-
-      <button onClick={spin} disabled={busy}
-        style={{ display: "block", width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: "linear-gradient(135deg,#a21caf,#e879f9)", color: "#fff", fontWeight: 900, fontSize: 16, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.5 : 1 }}>
-        {busy ? "Spinning…" : `Spin · Stake ${R(chip)}`}
-      </button>
-
-      {tip && <div style={{ marginTop: 10, textAlign: "center", fontWeight: 700, color: GOLD_L }}>{tip}</div>}
 
       {recent.length > 0 && (
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
-          {recent.map((i, k) => (
-            <div key={k} style={{ padding: "4px 8px", borderRadius: 10, fontSize: 11, fontWeight: 800, color: "#fff", background: VCOL[i] }}>{VORTEX[i].t}</div>
-          ))}
+        <div style={V2.panel}>
+          <div style={V2.label}>RECENT</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {recent.map((i, k) => (
+              <div key={k} style={{ padding: "5px 9px", borderRadius: 8, fontSize: 11, fontWeight: 800, color: "#fff", background: VCOL[i] }}>{VORTEX[i].t}</div>
+            ))}
+          </div>
         </div>
       )}
-    </Shell>
+      <div style={{ fontSize: 11, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>Each spin is settled by the server. Return is about 96%. Virtual points only.</div>
+    </div>
   );
 }
 
@@ -3724,15 +3739,19 @@ function Tower({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
-/* ---------- Color Lottery (trading-terminal layout, server-generated results) ---------- */
-const CLX = {
-  panel: { background: "linear-gradient(180deg,#0b1220,#070d18)", border: "1px solid #1e293b", borderRadius: 16, padding: 12, marginBottom: 10, boxShadow: "0 10px 24px #000a" },
-  label: { fontSize: 11, letterSpacing: 1, color: "#94a3b8", marginBottom: 8 },
-  tab: (on) => ({ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 12, letterSpacing: 0.6, color: on ? "#0b1220" : "#94a3b8", background: on ? "linear-gradient(90deg,#38bdf8,#818cf8)" : "transparent" }),
-  side: (tone, on) => ({ flex: 1, padding: "12px 0", borderRadius: 12, cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 13, border: on ? "2px solid #e2e8f0" : "2px solid transparent", background: tone === "green" ? "linear-gradient(180deg,#22c55e,#14532d)" : tone === "red" ? "linear-gradient(180deg,#ef4444,#7f1d1d)" : tone === "violet" ? "linear-gradient(180deg,#a855f7,#4c1d95)" : "linear-gradient(180deg,#475569,#1e293b)", opacity: on ? 1 : 0.85 }),
-  num: (on, n) => ({ aspectRatio: "1", borderRadius: 10, cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 15, border: on ? "2px solid #e2e8f0" : "1px solid #1e293b", background: n === 0 ? "linear-gradient(135deg,#dc2626 50%,#7c3aed 50%)" : n === 5 ? "linear-gradient(135deg,#16a34a 50%,#7c3aed 50%)" : [2, 4, 6, 8].includes(n) ? "#b91c1c" : "#15803d" }),
-  candle: (colors) => ({ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", color: "#fff", fontWeight: 900, fontSize: 12, border: "1px solid #0008", background: colors.length > 1 ? `linear-gradient(135deg,${colors[0] === "red" ? "#dc2626" : "#16a34a"} 50%,#7c3aed 50%)` : colors[0] === "red" ? "#dc2626" : "#16a34a" }),
+/* ---------- Color Lottery (Win Go style layout, server-generated results) ---------- */
+const CLW = {
+  page: { minHeight: "100vh", padding: "12px 12px 40px", boxSizing: "border-box", color: "#e5e7eb", background: "linear-gradient(180deg,#0e1624,#060a12)", fontFamily: "system-ui,sans-serif" },
+  card: { background: "#0f1725", border: "1px solid #1e2a3d", borderRadius: 14, padding: 12, marginBottom: 10 },
+  label: { fontSize: 11, letterSpacing: 1, color: "#8b9bb4", marginBottom: 8 },
+  digit: { width: 34, height: 44, borderRadius: 8, background: "#0b1220", border: "1px solid #22304a", display: "grid", placeItems: "center", fontSize: 26, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: "#f8fafc" },
+  colour: (c, on) => ({ flex: 1, padding: "12px 0", borderRadius: 10, cursor: "pointer", color: "#fff", fontWeight: 800, fontSize: 13, border: on ? "2px solid #f8fafc" : "2px solid transparent", background: c === "green" ? "#16a34a" : c === "violet" ? "#7c3aed" : "#dc2626", opacity: on ? 1 : 0.85 }),
+  ball: (n, on) => ({ aspectRatio: "1", borderRadius: "50%", cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 15, border: on ? "3px solid #f8fafc" : "2px solid #0006", boxShadow: on ? "0 0 0 2px #38bdf8" : "none", background: clBall(n) }),
+  seg: (on) => ({ flex: 1, padding: "10px 0", border: "none", cursor: "pointer", fontWeight: 800, fontSize: 13, borderRadius: 8, color: on ? "#fff" : "#8b9bb4", background: on ? "#1d4ed8" : "transparent" }),
+  qty: (on) => ({ padding: "7px 0", flex: 1, borderRadius: 8, border: `1px solid ${on ? "#38bdf8" : "#22304a"}`, background: on ? "#0c2a44" : "#0b1220", color: "#e2e8f0", fontWeight: 800, fontSize: 12, cursor: "pointer" }),
+  tab: (on) => ({ flex: 1, padding: "9px 0", border: "none", cursor: "pointer", fontWeight: 800, fontSize: 12, color: on ? "#fff" : "#8b9bb4", borderBottom: on ? "2px solid #38bdf8" : "2px solid transparent", background: "transparent" }),
 };
+const clBall = (n) => (n === 0 ? "linear-gradient(135deg,#dc2626 50%,#7c3aed 50%)" : n === 5 ? "linear-gradient(135deg,#16a34a 50%,#7c3aed 50%)" : [2, 4, 6, 8].includes(n) ? "#dc2626" : "#16a34a");
 
 function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
@@ -3740,13 +3759,15 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const [bal, setBal] = useState(start);
   useEffect(() => { setBal(start); }, [start]);
 
-  const [bet, setBet] = useState(10);
-  const [tab, setTab] = useState("color");
+  const [base, setBase] = useState(10);
+  const [qty, setQty] = useState(1);
   const [sel, setSel] = useState({ kind: "color", pick: "green" });
+  const [pane, setPane] = useState("history");
   const [st, setSt] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [confirm, setConfirm] = useState(false);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc("casino_lottery_state", { p_game: "color" });
@@ -3764,25 +3785,30 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const open = secsLeft >= 6;
   const hist = st?.history || [];
   const mine = st?.my_bet;
+  const last = hist[0];
+  const total = base * qty;
   const odds = sel.kind === "number" ? 9.6 : sel.kind === "color" && sel.pick === "violet" ? 4.8 : 1.92;
-  const potential = Math.round(bet * odds * 100) / 100;
-  const label = sel.kind === "number" ? `NUMBER ${sel.pick}` : sel.pick.toUpperCase();
+  const potential = Math.round(total * odds * 100) / 100;
+  const selLabel = sel.kind === "number" ? `Number ${sel.pick}` : sel.kind === "size" ? (sel.pick === "big" ? "Big" : "Small") : sel.pick.charAt(0).toUpperCase() + sel.pick.slice(1);
+  const digits = String(secsLeft).padStart(2, "0").split("");
 
-  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
-  const pickTab = t => {
-    setTab(t);
-    setSel(t === "color" ? { kind: "color", pick: "green" } : t === "number" ? { kind: "number", pick: "0" } : { kind: "size", pick: "big" });
-  };
+  const changeBase = v => { if (!busy) setBase(Math.max(1, Math.round(+v) || 1)); };
   const isSel = (k, p) => sel.kind === k && sel.pick === p;
 
-  const place = async () => {
-    if (busy) return;
+  const askConfirm = () => {
     if (!open) return setMsg("Betting is closed for this period.");
-    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
-    if (bet > bal) return setMsg("Balance too low");
+    if (total < MIN) return setMsg(`Minimum total ${R(MIN)}`);
+    if (total > MAX) return setMsg(`Maximum total ${R(MAX)}`);
+    if (total > bal) return setMsg("Balance too low");
+    setMsg(""); setConfirm(true);
+  };
+
+  const place = async () => {
+    setConfirm(false);
+    if (busy) return;
     setBusy(true); setMsg("");
     try {
-      const { data, error } = await supabase.rpc("casino_lottery_bet", { p_game: "color", p_kind: sel.kind, p_pick: sel.pick, p_bet: bet });
+      const { data, error } = await supabase.rpc("casino_lottery_bet", { p_game: "color", p_kind: sel.kind, p_pick: sel.pick, p_bet: total });
       if (error || !data?.success) throw new Error(error?.message || "Could not place order");
       setBal(Number(data.new_balance) || 0);
       setMsg("Order placed for this period.");
@@ -3793,113 +3819,148 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   };
 
   return (
-    <div style={{ ...GW.page, background: "radial-gradient(120% 60% at 50% 0%,#0c1a33 0%,#050a14 70%)" }}>
-      <div style={GW.bar}>
-        <button style={GW.back} onClick={onBack}>« Lobby</button>
-        <div style={GW.title}>Color Lottery</div>
-        <div style={GW.balTag}>{R(bal)}</div>
+    <div style={CLW.page}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <button onClick={onBack} style={{ ...CLW.qty(false), flex: "none", padding: "8px 14px" }}>‹ Lobby</button>
+        <div style={{ fontWeight: 900, letterSpacing: 1.2 }}>COLOUR · 60 SEC</div>
+        <div style={{ fontWeight: 800, color: "#fde68a", fontSize: 13 }}>{R(bal)}</div>
       </div>
 
-      <div style={CLX.panel}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={CLX.label}>PERIOD {st?.period ?? "—"} · 60 SEC</div>
-          <span style={{ fontSize: 10, fontWeight: 900, padding: "4px 9px", borderRadius: 999, letterSpacing: .6, background: open ? "#052e1b" : "#3b0a0a", color: open ? "#4ade80" : "#f87171", border: `1px solid ${open ? "#166534" : "#7f1d1d"}` }}>
-            {open ? "OPEN" : "CLOSED"}
-          </span>
-        </div>
-        <div style={{ fontSize: 40, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: open ? "#e2e8f0" : "#f87171", margin: "4px 0 6px" }}>
-          00:{String(secsLeft).padStart(2, "0")}
-        </div>
-        <div style={{ height: 6, borderRadius: 6, background: "#1e293b", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${(secsLeft / 60) * 100}%`, background: open ? "linear-gradient(90deg,#38bdf8,#818cf8)" : "#ef4444", transition: "width .25s linear" }} />
-        </div>
-      </div>
-
-      <div style={CLX.panel}>
-        <div style={CLX.label}>RECENT RESULTS</div>
-        <div style={{ display: "flex", gap: 6, justifyContent: "space-between", flexWrap: "wrap" }}>
-          {hist.length
-            ? [...hist].slice(0, 10).reverse().map((h, i) => (
-                <div key={i} title={`period ${h.period}`} style={CLX.candle(h.colors || ["green"])}>{h.number}</div>
-              ))
-            : <span style={{ fontSize: 12, color: "#64748b" }}>No results yet</span>}
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 6, background: "#0b1220", border: "1px solid #1e293b", borderRadius: 12, padding: 4, marginBottom: 10 }}>
-        {[["color", "COLOUR"], ["number", "NUMBER"], ["size", "BIG / SMALL"]].map(([k, l]) => (
-          <button key={k} disabled={busy} onClick={() => pickTab(k)} style={CLX.tab(tab === k)}>{l}</button>
-        ))}
-      </div>
-
-      <div style={CLX.panel}>
-        {tab === "color" && (
-          <div style={{ display: "flex", gap: 8 }}>
-            {["green", "violet", "red"].map(c => (
-              <button key={c} disabled={busy} onClick={() => setSel({ kind: "color", pick: c })} style={CLX.side(c, isSel("color", c))}>
-                {c.toUpperCase()}
-                <div style={{ fontSize: 11, fontWeight: 700, opacity: .9 }}>{c === "violet" ? "4.80×" : "1.92×"}</div>
-              </button>
-            ))}
+      <div style={CLW.card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div>
+            <div style={CLW.label}>PERIOD</div>
+            <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{st?.period ?? "—"}</div>
           </div>
-        )}
-        {tab === "number" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
-            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-              <button key={n} disabled={busy} onClick={() => setSel({ kind: "number", pick: String(n) })} style={CLX.num(isSel("number", String(n)), n)}>{n}</button>
-            ))}
-            <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "#64748b", textAlign: "center", marginTop: 4 }}>9.60× on the exact number</div>
+          <div style={{ textAlign: "right" }}>
+            <div style={CLW.label}>{open ? "TIME REMAINING" : "BETTING CLOSED"}</div>
+            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", alignItems: "center" }}>
+              <div style={CLW.digit}>0</div><div style={CLW.digit}>0</div>
+              <span style={{ color: "#8b9bb4", fontWeight: 900 }}>:</span>
+              <div style={CLW.digit}>{digits[0]}</div><div style={CLW.digit}>{digits[1]}</div>
+            </div>
           </div>
-        )}
-        {tab === "size" && (
-          <div style={{ display: "flex", gap: 8 }}>
-            {[["big", "BIG 5–9"], ["small", "SMALL 0–4"]].map(([s, l]) => (
-              <button key={s} disabled={busy} onClick={() => setSel({ kind: "size", pick: s })} style={CLX.side("gray", isSel("size", s))}>
-                {l}
-                <div style={{ fontSize: 11, fontWeight: 700, opacity: .9 }}>1.92×</div>
-              </button>
-            ))}
-          </div>
-        )}
+        </div>
+        <div style={{ height: 4, borderRadius: 4, background: "#1e2a3d", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(secsLeft / 60) * 100}%`, background: open ? "#38bdf8" : "#ef4444", transition: "width .25s linear" }} />
+        </div>
       </div>
 
-      <div style={CLX.panel}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", marginBottom: 10 }}>
-          <span>ORDER</span>
-          <b style={{ color: "#e2e8f0" }}>{label} · {odds.toFixed(2)}×</b>
+      <div style={{ ...CLW.card, display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 64, height: 64, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 26, fontWeight: 900, color: "#fff", border: "3px solid #f8fafc", background: last ? clBall(last.number) : "#1e2a3d" }}>
+          {last ? last.number : "–"}
         </div>
-        <div style={GW.betRow}>
-          <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
-          <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
-            onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
-          <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
-          {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+        <div>
+          <div style={CLW.label}>LAST RESULT</div>
+          <div style={{ fontWeight: 800 }}>{last ? `${last.number} · ${last.number >= 5 ? "Big" : "Small"} · ${(last.colors || []).join(" / ")}` : "Waiting for first draw"}</div>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", margin: "4px 0 10px" }}>
-          <span>Potential return</span>
-          <b style={{ color: "#4ade80" }}>{RM(potential)}</b>
+      </div>
+
+      <div style={CLW.card}>
+        <div style={CLW.label}>COLOUR</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {["green", "violet", "red"].map(c => (
+            <button key={c} disabled={busy} onClick={() => setSel({ kind: "color", pick: c })} style={CLW.colour(c, isSel("color", c))}>{c.toUpperCase()}</button>
+          ))}
         </div>
-        <button style={{ ...GW.primary, opacity: busy || !open ? 0.5 : 1 }} disabled={busy || !open} onClick={place}>
-          PLACE ORDER · {RM(bet)}
+        <div style={CLW.label}>NUMBER</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 12 }}>
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+            <button key={n} disabled={busy} onClick={() => setSel({ kind: "number", pick: String(n) })} style={CLW.ball(n, isSel("number", String(n)))}>{n}</button>
+          ))}
+        </div>
+        <div style={CLW.label}>BIG / SMALL</div>
+        <div style={{ display: "flex", gap: 6, background: "#0b1220", borderRadius: 10, padding: 3 }}>
+          {[["big", "BIG 5–9"], ["small", "SMALL 0–4"]].map(([s, l]) => (
+            <button key={s} disabled={busy} onClick={() => setSel({ kind: "size", pick: s })} style={CLW.seg(isSel("size", s))}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={CLW.card}>
+        <div style={CLW.label}>QUANTITY</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {[1, 5, 10, 20, 50, 100].map(q => (
+            <button key={q} disabled={busy} onClick={() => setQty(q)} style={CLW.qty(qty === q)}>×{q}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button disabled={busy} onClick={() => changeBase(base - 10)} style={{ ...CLW.qty(false), flex: "none", width: 40 }}>−</button>
+          <input type="number" value={base} disabled={busy} onChange={e => setBase(+e.target.value || 0)} onBlur={e => changeBase(e.target.value)}
+            style={{ flex: 1, minWidth: 0, padding: 10, borderRadius: 8, border: "1px solid #22304a", background: "#0b1220", color: "#f8fafc", fontWeight: 800, textAlign: "center", boxSizing: "border-box" }} />
+          <button disabled={busy} onClick={() => changeBase(base + 10)} style={{ ...CLW.qty(false), flex: "none", width: 40 }}>+</button>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#8b9bb4", margin: "10px 0" }}>
+          <span>Order</span><b style={{ color: "#e5e7eb" }}>{selLabel} · {odds.toFixed(2)}×</b>
+        </div>
+        <button disabled={busy || !open} onClick={askConfirm}
+          style={{ width: "100%", padding: "14px 0", borderRadius: 10, border: "none", cursor: busy || !open ? "not-allowed" : "pointer", color: "#fff", fontWeight: 900, fontSize: 15, background: "linear-gradient(90deg,#0ea5e9,#2563eb)", opacity: busy || !open ? 0.5 : 1 }}>
+          TOTAL {RM(total)}
         </button>
-        <div style={GW.msg}>{msg}</div>
+        <div style={{ textAlign: "center", minHeight: 18, marginTop: 8, fontSize: 12, color: "#fde68a", fontWeight: 700 }}>{msg}</div>
       </div>
 
-      {mine && (
-        <div style={CLX.panel}>
-          <div style={CLX.label}>OPEN POSITION</div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
-            <span>{String(mine.kind)} · {String(mine.pick).toUpperCase()}</span>
-            <span>{RM(Number(mine.bet))}</span>
+      <div style={CLW.card}>
+        <div style={{ display: "flex", borderBottom: "1px solid #1e2a3d", marginBottom: 10 }}>
+          <button style={CLW.tab(pane === "history")} onClick={() => setPane("history")}>Game history</button>
+          <button style={CLW.tab(pane === "mine")} onClick={() => setPane("mine")}>My order</button>
+        </div>
+
+        {pane === "history" && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.8fr 0.8fr", fontSize: 11, color: "#8b9bb4", padding: "4px 0", fontWeight: 700 }}>
+              <span>Period</span><span>Number</span><span>Size</span><span>Colour</span>
+            </div>
+            {hist.length === 0 && <div style={{ fontSize: 12, color: "#64748b", padding: "10px 0" }}>No results yet.</div>}
+            {hist.map((h, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.8fr 0.8fr", fontSize: 12, padding: "8px 0", borderTop: "1px solid #1e2a3d", alignItems: "center", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ color: "#94a3b8" }}>{String(h.period).slice(-5)}</span>
+                <span style={{ fontWeight: 800 }}>{h.number}</span>
+                <span>{h.number >= 5 ? "Big" : "Small"}</span>
+                <span style={{ display: "flex", gap: 4 }}>
+                  {(h.colors || []).map(c => <i key={c} style={{ width: 9, height: 9, borderRadius: "50%", display: "inline-block", background: c === "green" ? "#16a34a" : c === "violet" ? "#7c3aed" : "#dc2626" }} />)}
+                </span>
+              </div>
+            ))}
           </div>
-          <div style={{ marginTop: 6, fontWeight: 900, color: mine.status === "won" ? "#4ade80" : mine.status === "lost" ? "#f87171" : "#fde68a" }}>
-            {mine.status === "pending" ? "Waiting for result" : mine.status === "won" ? `Won ${RM(Number(mine.payout))}` : "Lost"}
+        )}
+
+        {pane === "mine" && (
+          <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+            {mine ? (
+              <>
+                <div>{String(mine.kind)} · {String(mine.pick).toUpperCase()}</div>
+                <div>Stake {RM(Number(mine.bet))}</div>
+                <div style={{ fontWeight: 800, color: mine.status === "won" ? "#4ade80" : mine.status === "lost" ? "#f87171" : "#fde68a" }}>
+                  {mine.status === "pending" ? "Waiting for result" : mine.status === "won" ? `Won ${RM(Number(mine.payout))}` : "Lost"}
+                </div>
+              </>
+            ) : <div style={{ color: "#64748b" }}>No order in this period.</div>}
+          </div>
+        )}
+      </div>
+
+      {confirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,12,.7)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }} onClick={() => setConfirm(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#0f1725", borderRadius: "18px 18px 0 0", padding: 18, boxSizing: "border-box", border: "1px solid #1e2a3d" }}>
+            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 12 }}>Confirm order</div>
+            <div style={{ fontSize: 13, lineHeight: 1.9, color: "#cbd5e1" }}>
+              <div>Selection: <b style={{ color: "#fff" }}>{selLabel}</b></div>
+              <div>Quantity: <b style={{ color: "#fff" }}>×{qty}</b></div>
+              <div>Stake: <b style={{ color: "#fff" }}>{RM(base)}</b></div>
+              <div>Total: <b style={{ color: "#fff" }}>{RM(total)}</b></div>
+              <div>Potential return: <b style={{ color: "#4ade80" }}>{RM(potential)}</b></div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button onClick={() => setConfirm(false)} style={{ flex: 1, padding: 13, borderRadius: 10, border: "1px solid #22304a", background: "#0b1220", color: "#cbd5e1", fontWeight: 800, cursor: "pointer" }}>Cancel</button>
+              <button onClick={place} style={{ flex: 1, padding: 13, borderRadius: 10, border: "none", background: "linear-gradient(90deg,#0ea5e9,#2563eb)", color: "#fff", fontWeight: 900, cursor: "pointer" }}>Confirm</button>
+            </div>
           </div>
         </div>
       )}
 
-      <div style={GW.rules}>
-        One order per 60-second period. Results are generated when a period closes and cannot change. Colour: 0 is red and violet, 5 is green and violet. Big is 5 to 9, small is 0 to 4. Return is about 96%. Virtual points only.
+      <div style={{ fontSize: 11, color: "#6b7280", textAlign: "center", lineHeight: 1.5, marginTop: 6 }}>
+        One order per period. Results are generated when a period closes. 0 is red and violet, 5 is green and violet. Virtual points only.
       </div>
     </div>
   );
@@ -4708,9 +4769,12 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
       {visibleCards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games in this category right now.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
         {visibleCards.map(([v, , name, desc, bg]) => (
-          <div key={v} onClick={() => setView(v)} style={{ borderRadius: 16, padding: "14px 6px 12px", textAlign: "center", cursor: "pointer", background: bg, border: `1px solid ${GOLD}`, boxShadow: "0 8px 18px #000a" }}>
-            <div style={{ fontSize: 30 }}>{LOBBY_ICON[v] || "🎲"}</div>
-            <div style={{ fontWeight: 900, fontSize: 12, marginTop: 6, color: "#fff", textShadow: "0 1px 4px #000" }}>{name}</div>
+          <div key={v} onClick={() => setView(v)} style={{ position: "relative", borderRadius: 14, overflow: "hidden", cursor: "pointer", background: "#0f1420", border: "1px solid #1f2937", minHeight: 100 }}>
+            <div style={{ height: 5, background: bg }} />
+            <div style={{ padding: "12px 10px" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: bg, display: "grid", placeItems: "center", fontWeight: 900, fontSize: 12, color: "#fff", letterSpacing: .5 }}>{initials(name)}</div>
+              <div style={{ fontWeight: 800, fontSize: 13, marginTop: 10, color: "#f1f5f9" }}>{name}</div>
+            </div>
           </div>
         ))}
       </div>
