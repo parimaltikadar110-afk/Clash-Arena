@@ -196,7 +196,7 @@ export default function App() {
   const [gifts,setGifts] = useState([]);
   const [appModeRaw,setAppMode] = useState(()=>{ try{ return localStorage.getItem("x7mode")==="casino"?"casino":"ff" }catch{ return "ff" } });
   // casino_config from app_settings (S is filled by load()); defaults used until the row exists
-  const casinoCfg = { min_bet:10, max_bet:50000, ...(S.casino_config||{}), enabled: S.casino_config ? S.casino_config.enabled===true : (()=>{ try{ return localStorage.getItem("x7casino_on")==="1" }catch{ return false } })(), games:{ roulette:true, ...(S.casino_config?.games||{}) } };   // OFF unless the saved config explicitly says true (no flash of casino on startup)
+  const casinoCfg = { min_bet:10, max_bet:50000, vault_min:10, ...(S.casino_config||{}), enabled: S.casino_config ? S.casino_config.enabled===true : (()=>{ try{ return localStorage.getItem("x7casino_on")==="1" }catch{ return false } })(), games:{ roulette:true, ...(S.casino_config?.games||{}) } };   // OFF unless the saved config explicitly says true (no flash of casino on startup)
   const casinoOn = !!casinoCfg.enabled;
   // admin switch. Last known value is cached in localStorage, so a Free Fire-off setting is applied on the very first frame (no Free Fire flash on open)
   const ffCached = (() => { try { return localStorage.getItem("x7ff_on") !== "0" } catch { return true } })();
@@ -1442,15 +1442,15 @@ export default function App() {
     }
     if(cur==="Casino Settings"){
       const cc = ccDraft || casinoCfg, S2 = casinoStats||{};
-      const GL = [["roulette","Roulette"],["dragon_tiger","Dragon Tiger"],["aviator","Aviator"],["mines","Mines"],["vortex","Vortex"],["dice","Dice"],["chicken","Chicken Road"],["elements","Elements"],["ludo","Ludo"]];
+      const GL = [["roulette","Roulette"],["dragon_tiger","Dragon Tiger"],["aviator","Aviator"],["mines","Mines"],["vortex","Vortex"],["dice","Dice"],["chicken","Chicken Road"],["elements","Elements"],["ludo","Ludo"],["goal","Goal Wave"],["plinko","Plinko"],["limbo","Limbo"]];
       const setG = (k,v) => setCcDraft({...cc, games:{...cc.games, [k]:v}});
       const card=(l,v)=><div className="ucard" style={{flex:1,minWidth:130}}><span className="hint">{l}</span><b style={{fontSize:18}}>{v}</b></div>;
       b=<div className="pnl"><h3>🎰 Casino settings</h3>
         <p className="hint">Changes apply to users the next time the app loads.</p>
         <div className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Free Fire mode (tournaments){!cc.enabled && <small style={{color:"#b91c1c"}}> — Casino ON korle-i off kora jabe</small>}</span><button className="sm" disabled={!cc.enabled && ffOn} style={!cc.enabled && ffOn ? {opacity:.4,cursor:"not-allowed"} : null} onClick={()=>run(supabase.from("app_settings").upsert({key:"app_mode",value:{ff:!ffOn},updated_at:new Date().toISOString()}),"Free Fire mode saved")}>{ffOn?"ON · turn off":"OFF · turn on"}</button></div>
         <div className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>Casino mode (master switch)</span><button className="sm" onClick={()=>setCcDraft({...cc,enabled:!cc.enabled})}>{cc.enabled?"ON":"OFF"}</button></div>
-        {GL.map(([k,l])=><div key={k} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{l}</span><button className="sm" onClick={()=>setG(k,!cc.games?.[k])}>{cc.games?.[k]?"ON":"OFF"}</button></div>)}
-        <label>Min bet ₹</label><input type="number" value={cc.min_bet} onChange={e=>setCcDraft({...cc,min_bet:+e.target.value})}/>
+        {GL.map(([k,l])=><div key={k} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{l}</span><button className="sm" onClick={()=>setG(k,!(["goal","plinko","limbo"].includes(k)?cc.games?.[k]!==false:cc.games?.[k]))}>{(["goal","plinko","limbo"].includes(k)?cc.games?.[k]!==false:cc.games?.[k])?"ON":"OFF"}</button></div>)}
+        <label>Min bet ₹</label><input type="number" value={cc.min_bet} onChange={e=>setCcDraft({...cc,min_bet:+e.target.value})}/><label>Coin Vault min deposit ₹</label><input type="number" value={cc.vault_min??10} onChange={e=>setCcDraft({...cc,vault_min:+e.target.value})}/>
         <label>Max bet ₹</label><input type="number" value={cc.max_bet} onChange={e=>setCcDraft({...cc,max_bet:+e.target.value})}/>
         <button className="btn" style={{marginTop:10}} onClick={()=>run(supabase.from("app_settings").upsert({key:"casino_config",value:cc,updated_at:new Date().toISOString()}),"Casino settings saved").then(ok=>{ if(ok) setCcDraft(null) })}>Save casino settings</button>
         <p className="sh" style={{marginTop:16}}>Stats</p>
