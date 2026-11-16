@@ -3855,6 +3855,417 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ---------- Slots (server picks the reels) ---------- */
+const SYM = { cherry: "🍒", lemon: "🍋", bell: "🔔", diamond: "💎", seven: "7" };
+const SYM_KEYS = Object.keys(SYM);
+
+function Slots({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+  const [bet, setBet] = useState(10);
+  const [reels, setReels] = useState(["seven", "seven", "seven"]);
+  const [spinning, setSpinning] = useState(false);
+  const [res, setRes] = useState(null);           // { multiplier, payout }
+  const [msg, setMsg] = useState("");
+  const timers = useRef([]);
+  useEffect(() => () => timers.current.forEach(clearInterval), []);
+
+  const changeBet = v => { if (!spinning) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const spin = async () => {
+    if (spinning) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setSpinning(true); setMsg(""); setRes(null);
+
+    // cosmetic shuffle while the server works
+    const ids = [0, 1, 2].map(i => setInterval(() => {
+      setReels(r => r.map((v, j) => (j === i ? SYM_KEYS[Math.floor(Math.random() * SYM_KEYS.length)] : v)));
+    }, 80));
+    timers.current = ids;
+
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_slots_spin", { p_bet: bet })); }
+    catch (e) { error = e; }
+
+    if (error || !data?.success) {
+      ids.forEach(clearInterval);
+      setSpinning(false);
+      const m = error?.message || "Could not spin";
+      return say ? say(m, 1) : setMsg(m);
+    }
+
+    const final = (data.reels || []).map(String);
+    // stop reels one by one
+    [0, 1, 2].forEach(i => setTimeout(() => {
+      clearInterval(ids[i]);
+      setReels(r => r.map((v, j) => (j === i ? final[i] : v)));
+      if (i === 2) {
+        setBal(Number(data.new_balance) || 0);
+        setRes({ multiplier: Number(data.multiplier) || 0, payout: Number(data.payout) || 0 });
+        setSpinning(false);
+        reload && reload();
+      }
+    }, 900 + i * 500));
+  };
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Slots</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", padding: "18px 12px", borderRadius: 18, border: "2px solid #facc15", background: "linear-gradient(180deg,#1e1b4b,#0b0a1f)", marginBottom: 12, boxShadow: "0 10px 26px #000c" }}>
+        {reels.map((s, i) => (
+          <div key={i} style={{ width: 88, height: 110, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 52, background: "linear-gradient(180deg,#f8fafc,#cbd5e1)", boxShadow: "inset 0 -6px 12px #0006", border: "2px solid #64748b" }}>
+            {SYM[s]}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ textAlign: "center", minHeight: 26, fontWeight: 900, color: res ? (res.payout > 0 ? "#4ade80" : "#f87171") : GOLD_L }}>
+        {res ? (res.payout > 0 ? `${res.multiplier}x · Won ${RM(res.payout)}` : "No win") : "Spin the reels"}
+      </div>
+
+      <div style={GW.betRow}>
+        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      <button style={{ ...GW.primary, opacity: spinning ? 0.5 : 1 }} disabled={spinning} onClick={spin}>
+        {spinning ? "Spinning…" : `Spin · Stake ${R(bet)}`}
+      </button>
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>Three of a kind pays up to 45x. Two cherries pay 3x. Return is about 96%. Virtual points only.</div>
+    </div>
+  );
+}
+
+/* ---------- Fishing (one shot per bet) ---------- */
+const FISH_TXT = {
+  miss: ["💨", "Missed"], small: ["🐟", "Small fish · 1.92x"], medium: ["🐠", "Medium fish · 3.2x"],
+  big: ["🐡", "Big fish · 6.4x"], shark: ["🦈", "Shark! · 16x"],
+};
+
+function Fishing({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+  const [bet, setBet] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [shot, setShot] = useState(null);         // catch key
+  const [payout, setPayout] = useState(0);
+  const [msg, setMsg] = useState("");
+
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const fire = async () => {
+    if (busy) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg(""); setShot(null);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_fish_shot", { p_bet: bet })); }
+    catch (e) { error = e; }
+    if (error || !data?.success) {
+      setBusy(false);
+      const m = error?.message || "Could not fire";
+      return say ? say(m, 1) : setMsg(m);
+    }
+    setTimeout(() => {
+      setShot(data.catch);
+      setPayout(Number(data.payout) || 0);
+      setBal(Number(data.new_balance) || 0);
+      setBusy(false);
+      reload && reload();
+    }, 700);
+  };
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Fishing</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ position: "relative", height: 240, borderRadius: 18, overflow: "hidden", marginBottom: 12, border: "1px solid #0ea5e9", background: "linear-gradient(180deg,#0c4a6e,#082f49)", boxShadow: "0 10px 26px #000c" }}>
+        {["🐟", "🐠", "🐡", "🐟"].map((f, i) => (
+          <div key={i} style={{ position: "absolute", fontSize: 26, top: 30 + i * 42, left: "-10%", animation: `fishSwim ${5 + i}s linear ${i * 0.7}s infinite` }}>{f}</div>
+        ))}
+        <div style={{ position: "absolute", left: "50%", bottom: 10, transform: "translateX(-50%)", fontSize: 34 }}>🎣</div>
+        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 54, opacity: shot ? 1 : 0, transition: "opacity .3s" }}>
+          {shot ? FISH_TXT[shot][0] : ""}
+        </div>
+        <style>{`@keyframes fishSwim{from{transform:translateX(0)}to{transform:translateX(130%)}}`}</style>
+      </div>
+
+      <div style={{ textAlign: "center", minHeight: 26, fontWeight: 900, color: shot ? (payout > 0 ? "#4ade80" : "#f87171") : GOLD_L }}>
+        {shot ? `${FISH_TXT[shot][1]}${payout > 0 ? ` · Won ${RM(payout)}` : ""}` : "Cast your line"}
+      </div>
+
+      <div style={GW.betRow}>
+        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={fire}>
+        {busy ? "Casting…" : `Cast · Stake ${R(bet)}`}
+      </button>
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>Each cast is one shot. Most casts miss. Bigger catches pay more. Return is about 96%. Virtual points only.</div>
+    </div>
+  );
+}
+
+/* ---------- MotoRace (pick a bike, server picks the winner) ---------- */
+const BIKES = [
+  { k: "A", c: "#ef4444", m: "2.4x" }, { k: "B", c: "#3b82f6", m: "3.2x" },
+  { k: "C", c: "#22c55e", m: "4.8x" }, { k: "D", c: "#eab308", m: "9.6x" },
+];
+
+function MotoRace({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+  const [bet, setBet] = useState(10);
+  const [pick, setPick] = useState("A");
+  const [prog, setProg] = useState({ A: 0, B: 0, C: 0, D: 0 });
+  const [race, setRace] = useState(null);         // { winner, won, payout }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const race_ = async () => {
+    if (busy) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg(""); setRace(null);
+    setProg({ A: 0, B: 0, C: 0, D: 0 });
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_moto_race", { p_bet: bet, p_bike: pick })); }
+    catch (e) { error = e; }
+    if (error || !data?.success) {
+      setBusy(false);
+      const m = error?.message || "Could not start race";
+      return say ? say(m, 1) : setMsg(m);
+    }
+    // every bike drives; the server's winner crosses the line first
+    const win = data.winner;
+    setTimeout(() => {
+      setProg(BIKES.reduce((o, b) => ({ ...o, [b.k]: b.k === win ? 100 : 60 + Math.round(Math.random() * 30) }), {}));
+    }, 50);
+    timer.current = setTimeout(() => {
+      setRace({ winner: win, won: !!data.won, payout: Number(data.payout) || 0 });
+      setBal(Number(data.new_balance) || 0);
+      setBusy(false);
+      reload && reload();
+    }, 2600);
+  };
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>MotoRace</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ borderRadius: 16, padding: 10, marginBottom: 10, background: "#111827", border: "1px solid #334155" }}>
+        {BIKES.map(b => (
+          <div key={b.k} onClick={() => { if (!busy) setPick(b.k); }} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, cursor: busy ? "default" : "pointer", opacity: pick === b.k ? 1 : 0.75 }}>
+            <div style={{ width: 22, fontWeight: 900, color: b.c }}>{b.k}</div>
+            <div style={{ flex: 1, height: 16, borderRadius: 8, background: "#1f2937", overflow: "hidden", border: pick === b.k ? "1px solid #fde68a" : "1px solid #334155" }}>
+              <div style={{ width: `${prog[b.k]}%`, height: "100%", background: b.c, transition: "width 2.4s ease-out" }} />
+            </div>
+            <div style={{ width: 40, fontSize: 11, fontWeight: 800, textAlign: "right" }}>{b.m}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ textAlign: "center", minHeight: 26, fontWeight: 900, color: race ? (race.won ? "#4ade80" : "#f87171") : GOLD_L }}>
+        {race ? `Bike ${race.winner} won. ${race.won ? `You won ${RM(race.payout)}` : "Your bike did not win"}` : `Bike ${pick} selected`}
+      </div>
+
+      <div style={GW.betRow}>
+        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={race_}>
+        {busy ? "Racing…" : `Race on bike ${pick} · Stake ${R(bet)}`}
+      </button>
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>Pick one bike. Payouts are 2.4x, 3.2x, 4.8x or 9.6x depending on the bike. Return is about 96%. Virtual points only.</div>
+    </div>
+  );
+}
+
+/* ---------- Crash (Aviator 2 and Space Crash share this engine) ---------- */
+const CRASH_SKIN = {
+  aviator2: { icon: "🛩️", title: "Aviator 2", bg: "linear-gradient(180deg,#1e3a8a,#0b1120)" },
+  space: { icon: "🛸", title: "Space Crash", bg: "radial-gradient(circle at 50% 0%,#4c1d95,#020617 70%)" },
+};
+
+function CrashGame({ variant, supabase, me, reload, say, cfg, onBack }) {
+  const skin = CRASH_SKIN[variant] || CRASH_SKIN.aviator2;
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [round, setRound] = useState(null);     // { id, bet, startMs }
+  const [offset, setOffset] = useState(0);      // server clock minus device clock
+  const [now, setNow] = useState(() => Date.now());
+  const [end, setEnd] = useState(null);         // { kind, multiplier, payout, crash_point }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const running = !!round && !end;
+  const elapsed = running ? Math.max(0, (now + offset - round.startMs) / 1000) : 0;
+  const mult = running ? Math.floor(Math.exp(0.07 * elapsed) * 100) / 100 : (end?.multiplier || 1);
+
+  // redraw while running
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [running]);
+
+  // ask the server whether the craft has crashed
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(async () => {
+      const { data } = await supabase.rpc("casino_crash_status", { p_round: round.id });
+      if (data?.crashed) {
+        setEnd({ kind: "crashed", crash_point: Number(data.crash_point), multiplier: 0, payout: 0 });
+        setMsg(`Crashed at ${Number(data.crash_point).toFixed(2)}x. Stake lost.`);
+        reload && reload();
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [running, round, supabase, reload]);
+
+  const changeBet = v => { if (!busy && !running) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const launch = async () => {
+    if (busy || running) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg(""); setEnd(null);
+    try {
+      const { data, error } = await supabase.rpc("casino_crash_start", { p_game: variant, p_bet: bet });
+      if (error || !data?.success) throw new Error(error?.message || "Could not start");
+      setOffset(Number(data.server_ms) - Date.now());
+      setNow(Date.now());
+      setRound({ id: data.round_id, bet, startMs: Number(data.started_ms) });
+      setBal(Number(data.new_balance) || 0);
+      setMsg("Cash out before it flies away.");
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const cash = async () => {
+    if (busy || !running) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("casino_crash_cashout", { p_round: round.id });
+      if (error || !data?.success) throw new Error(error?.message || "Cash-out failed");
+      if (data.crashed) {
+        setEnd({ kind: "crashed", crash_point: Number(data.crash_point), multiplier: 0, payout: 0 });
+        setMsg(`Too late. It crashed at ${Number(data.crash_point).toFixed(2)}x.`);
+      } else {
+        setEnd({ kind: "cashed", multiplier: Number(data.multiplier), payout: Number(data.payout) });
+        setBal(Number(data.new_balance) || 0);
+        setMsg(`Cashed out at ${Number(data.multiplier).toFixed(2)}x · ${RM(Number(data.payout))}`);
+      }
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const crashed = end?.kind === "crashed";
+  const lift = Math.min(70, (mult - 1) * 22);
+  const sideways = Math.min(70, elapsed * 6);
+
+  return (
+    <div style={{ ...GW.page, background: skin.bg }}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>{skin.title}</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ position: "relative", height: 260, borderRadius: 18, overflow: "hidden", border: "1px solid #334155", marginBottom: 12, background: "radial-gradient(120% 90% at 50% 100%,#0ea5e922,transparent)" }}>
+        <div style={{ position: "absolute", left: `${sideways}%`, bottom: `${lift}%`, fontSize: 44, transition: "left .1s linear, bottom .1s linear", transform: "translate(-50%,50%)", opacity: crashed ? 0.2 : 1 }}>
+          {skin.icon}
+        </div>
+        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+          <div style={{ fontSize: 56, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: crashed ? "#f87171" : end?.kind === "cashed" ? "#4ade80" : "#fff", textShadow: "0 4px 18px #000" }}>
+            {crashed ? "CRASHED" : `${mult.toFixed(2)}x`}
+          </div>
+        </div>
+      </div>
+
+      {!running ? (
+        <>
+          <div style={GW.betRow}>
+            <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+            <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+              onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+            <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+            {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+          </div>
+          <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={launch}>
+            Fly · Stake {R(bet)}
+          </button>
+        </>
+      ) : (
+        <button style={{ ...GW.cash, width: "100%", padding: "16px 0", fontSize: 16, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={cash}>
+          Cash out {RM(Math.round(round.bet * mult * 100) / 100)}
+        </button>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>The multiplier rises until the craft flies away. The crash point is set when you launch and is hidden until the round ends. Return is about 96%. Virtual points only.</div>
+    </div>
+  );
+}
+
+const LOBBY_CATS = [["all", "All"], ["table", "Table"], ["crash", "Crash"], ["lottery", "Lottery"], ["slots", "Slots"], ["originals", "Originals"]];
+const LOBBY_SETS = {
+  table: ["roulette", "dragon", "dice", "mines", "chicken", "vortex", "ludo"],
+  crash: ["aviator", "aviator2", "space"],
+  lottery: ["color"],
+  slots: ["slots"],
+  originals: ["plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "goal", "fishing", "moto"],
+};
+const lobbyMatches = (cat, v) => cat === "all" || (LOBBY_SETS[cat] || []).includes(v);
+const LOBBY_ICON = { roulette: "🎡", dragon: "🐉", dice: "🎲", aviator: "✈️", aviator2: "🛩️", space: "🛸", mines: "💣", vortex: "🌀", vortex2: "🌪️", chicken: "🐔", ludo: "🎯", plinko: "🔻", limbo: "🚀", coinflip: "🪙", wheel: "🎡", keno: "🔢", hilo: "🃏", tower: "🏰", goal: "⚽", color: "🎨", slots: "🎰", fishing: "🎣", moto: "🏍️" };
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -3868,6 +4279,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     return () => evs.forEach(e => window.removeEventListener(e, u, true));
   }, []);
   const common = { supabase, me, reload, say, cfg: C, onBack: () => setView("lobby") };
+  const [lobbyCat, setLobbyCat] = useState("all");
 
   if (view === "roulette") return <Roulette {...common} />;
   if (view === "dragon") return <DragonTiger {...common} />;
@@ -3888,6 +4300,10 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "hilo") return <HiLo {...common} />;
   if (view === "tower") return <Tower {...common} />;
   if (view === "color") return <ColorLottery {...common} />;
+  if (view === "slots") return <Slots {...common} />;
+  if (view === "fishing") return <Fishing {...common} />;
+  if (view === "moto") return <MotoRace {...common} />;
+  if (view === "aviator2" || view === "space") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -3917,9 +4333,15 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["keno", "keno", "Keno", "Pick 4 to 10 numbers from 1 to 40. More hits pay more.", "linear-gradient(135deg,#14532d,#16a34a)"],
     ["hilo", "hilo", "Hi-Lo", "Is the next card higher or lower? Each correct guess multiplies.", "linear-gradient(135deg,#1e293b,#475569)"],
     ["tower", "tower", "Tower", "Climb 8 floors. Find the safe tile on each floor.", "linear-gradient(135deg,#312e81,#6366f1)"],
+    ["slots", "slots", "Slots", "Spin three reels. Three of a kind pays up to 45x.", "linear-gradient(135deg,#7c2d12,#f59e0b)"],
+    ["fishing", "fishing", "Fishing", "Cast your line. Catch a fish or a shark.", "linear-gradient(135deg,#0c4a6e,#0ea5e9)"],
+    ["moto", "moto", "MotoRace", "Pick a bike. The fastest bike wins your stake back multiplied.", "linear-gradient(135deg,#7f1d1d,#ef4444)"],
+    ["aviator2", "aviator2", "Aviator 2", "Cash out before the craft flies away. Fair server-side crash point.", "linear-gradient(135deg,#1e3a8a,#0b1120)"],
+    ["space", "space", "Space Crash", "Ride the rocket and cash out before it crashes.", "linear-gradient(135deg,#4c1d95,#020617)"],
     ["color", "color", "Color Lottery", "Bet on the colour or number of the next 60-second draw.", "linear-gradient(135deg,#4c1d95,#be185d)"],
-  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color"].includes(key) ? games[key] !== false : games[key]));
+  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color", "slots", "fishing", "moto", "aviator2", "space"].includes(key) ? games[key] !== false : games[key]));
 
+  const visibleCards = cards.filter(([v]) => lobbyMatches(lobbyCat, v));
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
       padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
@@ -3940,25 +4362,19 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
         <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: GOLD_L }}>OPEN ›</div>
       </div>
       {cards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games are open right now.</p>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {cards.map(([v, , name, desc, bg]) => {
-          const img = images[v];
-          return (
-            <div key={v} onClick={() => setView(v)} style={{ position: "relative", overflow: "hidden", background: bg, borderRadius: 18,
-              padding: 14, minHeight: 176, cursor: "pointer", border: `1px solid ${GOLD}`, boxShadow: "0 10px 26px #000c",
-              gridColumn: cards.length === 1 || (v === "aviator" && cards.length === 3) ? "1 / -1" : undefined }}>
-              {img
-                ? <img src={img} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: .5 }} />
-                : <CardArt kind={v} />}
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,transparent 25%,#000d 100%)" }} />
-              <div style={{ position: "relative", maxWidth: "70%" }}>
-                <div style={{ fontWeight: 900, fontSize: 18, textShadow: "0 2px 8px #000" }}>{name}</div>
-                <div style={{ fontSize: 12, opacity: .92, marginTop: 6, textShadow: "0 1px 4px #000" }}>{desc}</div>
-                <div style={{ marginTop: 16, fontSize: 12, fontWeight: 900, color: GOLD_L }}>PLAY ›</div>
-              </div>
-            </div>
-          );
-        })}
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+        {LOBBY_CATS.map(([k, label]) => (
+          <button key={k} onClick={() => setLobbyCat(k)} style={{ flexShrink: 0, padding: "8px 14px", borderRadius: 999, cursor: "pointer", fontWeight: 800, fontSize: 12, color: "#f8fafc", border: `1px solid ${lobbyCat === k ? GOLD_L : "#334155"}`, background: lobbyCat === k ? "#14532d" : "#0f172a" }}>{label}</button>
+        ))}
+      </div>
+      {visibleCards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games in this category right now.</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+        {visibleCards.map(([v, , name, desc, bg]) => (
+          <div key={v} onClick={() => setView(v)} style={{ borderRadius: 16, padding: "14px 6px 12px", textAlign: "center", cursor: "pointer", background: bg, border: `1px solid ${GOLD}`, boxShadow: "0 8px 18px #000a" }}>
+            <div style={{ fontSize: 30 }}>{LOBBY_ICON[v] || "🎲"}</div>
+            <div style={{ fontWeight: 900, fontSize: 12, marginTop: 6, color: "#fff", textShadow: "0 1px 4px #000" }}>{name}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
