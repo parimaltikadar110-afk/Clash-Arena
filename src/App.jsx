@@ -37,6 +37,17 @@ const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
 const CASINO_NAV = [["home","Casino","M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 4v10M7 12h10"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit",timeZone:"Asia/Kolkata"});  // always show Indian time, whatever the phone timezone
+const fetchAll = async (mk, size = 1000) => {
+  let out = [], from = 0;
+  for (;;) {
+    const { data, error } = await mk().range(from, from + size - 1);
+    if (error) return { data: out, error };
+    out = out.concat(data || []);
+    if (!data || data.length < size) break;
+    from += size;
+  }
+  return { data: out, error: null };
+};
 const kf = n => n >= 1000 ? (n/1000).toFixed(1)+"k" : n;
 // Match title-er sheshe " #1", " #2" thakle shoriye dey (match number alada, card-er niche chhoto kore dekhay)
 const cleanTitle = t => { const s=String(t||"").trim(), c=s.replace(/\s*#\d+\s*$/,"").trim(); return c||s };
@@ -413,7 +424,7 @@ export default function App() {
       setNotifs(ntR.data||[]); setRooms(Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])));
     if(ru.data) setRules(Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x]))); setDeps(d.data||[]); setMyW(mw.data||[]); setMyRes(mrR.data||[]); if(st.data) setS(Object.fromEntries((st.data||[]).map(x=>[x.key,x.value])));
     if(p.data) try{ localStorage.setItem("x7cache",JSON.stringify({uid,me:p.data,M:cleanMatches(rawM.current),joined:(j.data||[]).map(x=>x.match_id),rooms:Object.fromEntries((r.data||[]).map(x=>[x.match_id,x])),rules:Object.fromEntries((ru.data||[]).map(x=>[fixMode(x.mode),x])),S:Object.fromEntries((st.data||[]).map(x=>[x.key,x.value]))})) }catch{}
-    if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([q("profiles").order("created_at"),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
+    if(p.data?.role==="admin" || session.user.email?.toLowerCase()===ADMIN_EMAIL){const [u,w,sx,gs,dp]=await Promise.all([fetchAll(() => q("profiles").order("created_at").order("id")),q("withdrawals").order("created_at",{ascending:false}),supabase.rpc("admin_stats"),supabase.rpc("admin_gateway_status"),q("deposits").order("created_at",{ascending:false}).limit(300)]);setDeps(dp.data||[]);setAllU(u.data||[]);setStats(sx.error?{error:sx.error.message}:sx.data);setGwOk(gs.data||{});setW(w.data||[])}
     else if(p.data?.role==="acting_admin"){const [u]=await Promise.all([supabase.rpc("staff_list_users")]);setAllU(u.data||[])}
   },[session]);
   useEffect(()=>{
