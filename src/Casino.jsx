@@ -2685,6 +2685,286 @@ function VipPage({ supabase, me, reload, say, onBack }) {
   );
 }
 
+/* ---------- Plinko (server decides the path and the bin) ---------- */
+const PL_TABLE = {
+  8: [10.26, 4.49, 1.53, 0.43, 0.28, 0.43, 1.53, 4.49, 10.26],
+  12: [15.09, 8.91, 4.76, 2.24, 0.95, 0.48, 0.41, 0.48, 0.95, 2.24, 4.76, 8.91, 15.09],
+  16: [18.86, 12.8, 8.25, 4.99, 2.8, 1.48, 0.8, 0.55, 0.51, 0.55, 0.8, 1.48, 2.8, 4.99, 8.25, 12.8, 18.86],
+};
+const plBinColor = m => (m >= 5 ? "#dc2626" : m >= 2 ? "#f59e0b" : m >= 1 ? "#16a34a" : "#334155");
+const PL = {
+  board: { position: "relative", width: "100%", height: 380, borderRadius: 16, overflow: "hidden", border: `1px solid ${GOLD}`, background: "radial-gradient(circle at 50% 0%,#1e1b4b 0%,#0b0a1f 70%)", boxShadow: "0 10px 26px #000c", marginBottom: 12 },
+  peg: { position: "absolute", width: 6, height: 6, marginLeft: -3, marginTop: -3, borderRadius: "50%", background: "#c4b5fd" },
+  ball: { position: "absolute", width: 14, height: 14, marginLeft: -7, marginTop: -7, borderRadius: "50%", background: "radial-gradient(circle at 30% 30%,#fff,#facc15)", boxShadow: "0 0 10px #facc15", transition: "left .12s linear, top .12s linear" },
+  bin: { position: "absolute", display: "grid", placeItems: "center", color: "#fff", fontWeight: 900, borderRadius: 4, boxSizing: "border-box", border: "1px solid #0009" },
+  rowBtn: (sel, busy) => ({ flex: 1, padding: "10px 0", borderRadius: 12, border: `1px solid ${sel ? GOLD_L : "#334155"}`, background: sel ? "#14532d" : "#0f172a", color: "#f8fafc", fontWeight: 900, fontSize: 14, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 }),
+};
+
+function Plinko({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [rows, setRows] = useState(12);
+  const [busy, setBusy] = useState(false);
+  const [drop, setDrop] = useState(null);       // { id, path, bin, multiplier, payout }
+  const [step, setStep] = useState(0);
+  const [done, setDone] = useState(null);       // finished drop
+  const [history, setHistory] = useState([]);   // newest first multipliers
+  const [msg, setMsg] = useState("");
+  const busyRef = useRef(false);
+  const dropSeq = useRef(0);
+  const timer = useRef(null);
+  useEffect(() => () => clearInterval(timer.current), []);
+
+  // walk the ball down the server-decided path
+  useEffect(() => {
+    if (!drop) return;
+    let i = 0;
+    setStep(0);
+    setDone(null);
+    clearInterval(timer.current);
+    timer.current = setInterval(() => {
+      i += 1;
+      setStep(i);
+      if (i >= drop.path.length) {
+        clearInterval(timer.current);
+        setDone(drop);
+        setHistory(h => [drop.multiplier, ...h].slice(0, 12));
+        busyRef.current = false;
+        setBusy(false);
+      }
+    }, 130);
+    return () => clearInterval(timer.current);
+  }, [drop]);
+
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const dropBall = async () => {
+    if (busyRef.current) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    busyRef.current = true; setBusy(true); setMsg("");
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_plinko_drop", { p_bet: bet, p_rows: rows })); }
+    catch (e) { error = e; }
+    if (error || !data?.success) {
+      busyRef.current = false; setBusy(false);
+      const m = error?.message || "Could not drop the ball";
+      return say ? say(m, 1) : setMsg(m);
+    }
+    setBal(Number(data.new_balance) || 0);
+    dropSeq.current += 1;
+    setDrop({ id: dropSeq.current, path: data.path, bin: data.bin, multiplier: Number(data.multiplier) || 0, payout: Number(data.payout) || 0 });
+    reload && reload();
+  };
+
+  // board geometry (percent of the board box)
+  const n = rows;
+  const rowH = 100 / (n + 3);
+  const h = 50 / (n + 2);
+  const k = drop ? drop.path.slice(0, step).split("").filter(c => c === "R").length : 0;
+  const ballX = drop ? 50 + (2 * k - step) * h : 50;
+  const ballY = drop ? step * rowH : 0;
+
+  const pegs = [];
+  for (let r = 0; r < n; r++) {
+    for (let j = 0; j <= r + 1; j++) {
+      pegs.push(<div key={`${r}-${j}`} style={{ ...PL.peg, left: `${50 + (2 * j - r - 1) * h}%`, top: `${(r + 1) * rowH}%` }} />);
+    }
+  }
+  const bins = (PL_TABLE[n] || []).map((m, idx) => (
+    <div key={idx} style={{ ...PL.bin, left: `${50 + (2 * idx - n) * h - h}%`, width: `${2 * h}%`, top: `${(n + 1) * rowH}%`, height: `${rowH * 1.5}%`, background: plBinColor(m), fontSize: n > 12 ? 8 : 10 }}>
+      {m}x
+    </div>
+  ));
+
+  const finished = done && drop && done.id === drop.id;
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Plinko</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={PL.board}>
+        {pegs}
+        {bins}
+        {drop && <div style={{ ...PL.ball, left: `${ballX}%`, top: `${ballY}%` }} />}
+        {!drop && <div style={{ ...PL.ball, left: "50%", top: "2%" }} />}
+      </div>
+
+      <div style={GW.statRow}>
+        {[8, 12, 16].map(r => (
+          <button key={r} disabled={busy} onClick={() => setRows(r)} style={{ ...PL.rowBtn(rows === r, busy), flex: 1 }}>
+            {r} rows
+          </button>
+        ))}
+      </div>
+
+      <div style={GW.betRow}>
+        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={dropBall}>
+        Drop ball · Stake {R(bet)}
+      </button>
+
+      <div style={GW.msg}>
+        {finished
+          ? `Landed ${done.multiplier}x · ${done.payout > 0 ? `Won ${RM(done.payout)}` : "No win this time"}`
+          : msg}
+      </div>
+
+      {history.length > 0 && (
+        <div style={GW.hist}>
+          {history.map((m, i) => (
+            <div key={i} style={{ padding: "4px 8px", borderRadius: 10, fontSize: 11, fontWeight: 800, color: "#fff", background: plBinColor(m) }}>{m}x</div>
+          ))}
+        </div>
+      )}
+
+      <div style={GW.rules}>
+        Each ball bounces down {rows} rows and lands in a bin. Edge bins pay the most, centre bins pay less. Return is about 96%. Virtual points only.
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Limbo (server rolls the result) ---------- */
+const LB = {
+  screen: { textAlign: "center", padding: "22px 10px", borderRadius: 18, border: "1px solid #334155", background: "radial-gradient(circle at 50% 0%,#0c4a6e 0%,#020617 75%)", boxShadow: "0 10px 26px #000c", marginBottom: 12 },
+  chip: (won) => ({ padding: "4px 8px", borderRadius: 10, fontSize: 11, fontWeight: 800, color: "#fff", background: won ? "#16a34a" : "#b91c1c" }),
+};
+
+function Limbo({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [target, setTarget] = useState(2);
+  const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(1);
+  const [res, setRes] = useState(null);         // { result, won, payout, target }
+  const [history, setHistory] = useState([]);   // newest first { result, won }
+  const [msg, setMsg] = useState("");
+  const timer = useRef(null);
+  useEffect(() => () => clearInterval(timer.current), []);
+
+  const t = Math.round((Number(target) || 0) * 100) / 100;
+  const validTarget = t >= 1.01 && t <= 1000;
+  const winChance = validTarget ? Math.min(99, 96 / t) : 0;
+
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const play = async () => {
+    if (busy) return;
+    if (!validTarget) return setMsg("Target must be between 1.01x and 1000x");
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg(""); setRes(null);
+    let data = null, error = null;
+    try { ({ data, error } = await supabase.rpc("casino_limbo_play", { p_bet: bet, p_target: t })); }
+    catch (e) { error = e; }
+    if (error || !data?.success) {
+      setBusy(false);
+      const m = error?.message || "Could not play";
+      return say ? say(m, 1) : setMsg(m);
+    }
+    setBal(Number(data.new_balance) || 0);
+    const result = Number(data.result) || 1;
+    const won = !!data.won;
+    const t0 = Date.now(), DUR = 700;
+    clearInterval(timer.current);
+    timer.current = setInterval(() => {
+      const p = Math.min(1, (Date.now() - t0) / DUR);
+      setShown(1 + (result - 1) * p);
+      if (p >= 1) {
+        clearInterval(timer.current);
+        setRes({ result, won, payout: Number(data.payout) || 0, target: t });
+        setHistory(h => [{ result, won }, ...h].slice(0, 12));
+        setBusy(false);
+        reload && reload();
+      }
+    }, 30);
+  };
+
+  const color = res ? (res.won ? "#4ade80" : "#f87171") : GOLD_L;
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Limbo</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ ...LB.screen, borderColor: res ? (res.won ? "#16a34a" : "#b91c1c") : "#334155" }}>
+        <div style={{ fontSize: 56, fontWeight: 900, color, textShadow: "0 4px 18px #000" }}>{shown.toFixed(2)}x</div>
+        <div style={{ fontSize: 13, opacity: .8, marginTop: 6 }}>
+          {res ? (res.won ? `Hit ${res.target.toFixed(2)}x · Won ${RM(res.payout)}` : `Missed ${res.target.toFixed(2)}x`) : `Target ${validTarget ? t.toFixed(2) : "—"}x`}
+        </div>
+      </div>
+
+      <div style={GW.statRow}>
+        <div style={GW.stat}>
+          <div style={GW.statLabel}>Win chance</div>
+          <div style={GW.statVal}>{validTarget ? `${winChance.toFixed(2)}%` : "—"}</div>
+        </div>
+        <div style={GW.stat}>
+          <div style={GW.statLabel}>Payout</div>
+          <div style={GW.statVal}>{validTarget ? RM(Math.round(bet * t * 100) / 100) : "—"}</div>
+        </div>
+        <div style={GW.stat}>
+          <div style={GW.statLabel}>Target</div>
+          <div style={GW.statVal}>{validTarget ? `${t.toFixed(2)}x` : "—"}</div>
+        </div>
+      </div>
+
+      <div style={GW.betRow}>
+        <span style={{ fontSize: 12, opacity: .8 }}>Target</span>
+        <input type="number" step="0.01" value={target} disabled={busy} style={GW.input}
+          onChange={e => setTarget(e.target.value)} />
+        {[1.5, 2, 5, 10].map(v => (
+          <button key={v} disabled={busy} style={GW.quick} onClick={() => setTarget(v)}>{v}x</button>
+        ))}
+      </div>
+
+      <div style={GW.betRow}>
+        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={play}>
+        Play · Stake {R(bet)}
+      </button>
+
+      <div style={GW.msg}>{msg}</div>
+
+      {history.length > 0 && (
+        <div style={GW.hist}>
+          {history.map((h, i) => <div key={i} style={LB.chip(h.won)}>{h.result.toFixed(2)}x</div>)}
+        </div>
+      )}
+
+      <div style={GW.rules}>
+        The server rolls a result. If it reaches your target you get stake × target. Otherwise you lose the stake. Return is about 96%. Virtual points only.
+      </div>
+    </div>
+  );
+}
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -2709,12 +2989,14 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "ludo") return <Ludo {...common} />;
   if (view === "goal") return <GoalWave {...common} />;
   if (view === "vip") return <VipPage {...common} />;
+  if (view === "plinko") return <Plinko {...common} />;
+  if (view === "limbo") return <Limbo {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
       <button onClick={() => setView("lobby")} style={{ padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>« Lobby</button>
       <div style={{ display: "flex", justifyContent: "center" }}>
-        <SafeVault supabase={supabase} />
+        <SafeVault supabase={supabase} minDeposit={+C.vault_min || 0} />
       </div>
     </div>
   );
@@ -2730,7 +3012,9 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["elements", "elements", "Elements", "Pick Earth, Water or Fire. Match the draw.", "linear-gradient(135deg,#1e3a8a,#7c2d12)"],
     ["ludo", "ludo", "Ludo", "Player vs player. Winner takes 90% of the pot.", "linear-gradient(135deg,#14532d,#16a34a)"],
     ["goal", "goal", "Goal Wave", "Take penalties. Build a streak of goals and cash out before the keeper saves one.", "linear-gradient(135deg,#052e16,#15803d)"],
-  ].filter(([, key]) => (key === "goal" ? games.goal !== false : games[key]));
+    ["plinko", "plinko", "Plinko", "Drop the ball and land a multiplier. Pick 8, 12 or 16 rows.", "linear-gradient(135deg,#1e1b4b,#7c3aed)"],
+    ["limbo", "limbo", "Limbo", "Set a target multiplier. Beat it and your stake multiplies.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
+  ].filter(([, key]) => (["goal", "plinko", "limbo"].includes(key) ? games[key] !== false : games[key]));
 
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
