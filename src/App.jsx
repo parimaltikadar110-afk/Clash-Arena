@@ -894,6 +894,13 @@ export default function App() {
     if(err) return say("History load failed: "+err.message,1);
     setHist({user:x,txs:t.data||[],deps:d.data||[],wds:w.data||[]});
   };
+  const delHist = (kind,id) => ask("Delete record",[],async()=>{
+    const {error}=await supabase.rpc("admin_delete_history",{p_kind:kind,p_id:id});
+    if(error){say(error.message,1);return false}
+    say("Record deleted");
+    await showHistory(hist.user);
+    return true;
+  },{},{note:"This removes the row from history only. The user's balance is NOT changed. This cannot be undone.",btn:"Yes, delete"});
   const adjust = x => ask(`Balance · ${x.name}`,[["a","Amount ₹ (use minus to deduct)","number"]],async v=>{ const a=+v.a; if(!a){say("Enter an amount",1);return false} return rpc("admin_adjust_balance",{p_user:x.id,p_amt:a},`Balance updated (${a>0?"+":""}₹${a})`) },{},{note:`Current deposit balance: ₹${x.balance}`,btn:"Update balance"});
   const reloadSupportCfg = () => supabase.from("app_settings").select("key,value").then(({data})=>{
     const o={}; (data||[]).forEach(r=>{o[r.key]=r.value});
@@ -1462,9 +1469,9 @@ export default function App() {
       </div>;
     }
     if(cur==="Users"){const k=(f.q||"").toLowerCase(), L=allU.filter(x=>!k||x.name?.toLowerCase().includes(k)||x.email?.toLowerCase().includes(k)||x.phone?.includes(k)||x.username?.includes(k)); b=<>{inp("q","Search name / email / mobile")}{hist&&<div className="pnl"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><h3 style={{margin:0}}>📜 {hist.user.name||hist.user.email||"User"}</h3><button className="sm" onClick={()=>setHist(null)}>Close</button></div>
-<p className="sh">Transactions</p>{hist.txs.length?hist.txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span></div>):<p className="hint">No transactions</p>}
-<p className="sh">Deposits</p>{hist.deps.length?hist.deps.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}</div>):<p className="hint">No deposits</p>}
-<p className="sh">Withdrawals</p>{hist.wds.length?hist.wds.map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}</div>):<p className="hint">No withdrawals</p>}
+<p className="sh">Transactions</p>{hist.txs.length?hist.txs.map(x=><div className="lr" key={x.id}><b>{x.note}<div style={{fontSize:10,color:"#777"}}>{fmt(x.created_at)}</div></b><span className={x.amount>0?"gn":""}>{x.amount>0?"+":""}₹{x.amount}</span>{isAdmin&&<button className="sm no" onClick={()=>delHist("transaction",x.id)}>🗑</button>}</div>):<p className="hint">No transactions</p>}
+<p className="sh">Deposits</p>{hist.deps.length?hist.deps.map(d=><div className="lr" key={d.id}><b>₹{d.amount}<div style={{fontSize:10,color:"#777"}}>{d.gateway} · {fmt(d.created_at)}</div></b>{stTxt(d.status)}{isAdmin&&d.status!=="pending"&&<button className="sm no" onClick={()=>delHist("deposit",d.id)}>🗑</button>}</div>):<p className="hint">No deposits</p>}
+<p className="sh">Withdrawals</p>{hist.wds.length?hist.wds.map(w=><div className="lr" key={w.id}><b>₹{w.amount}<div style={{fontSize:10,color:"#777"}}>{w.upi} · {fmt(w.created_at)}</div></b>{stTxt(w.status)}{isAdmin&&w.status!=="pending"&&<button className="sm no" onClick={()=>delHist("withdrawal",w.id)}>🗑</button>}</div>):<p className="hint">No withdrawals</p>}
 </div>}
 <p className="hint">{L.length} user{L.length===1?"":"s"}{isActingAdmin?" · you can add / deduct balance":""}</p><div className="acards">{L.map(x=><div className="ucard" key={x.id}><div className="uhead"><b>{x.name||"-"}{x.banned?" 🚫":""}</b><span className={"pill "+(x.role||"user")}>{x.role==="acting_admin"?"Acting Admin":(x.role||"user")}</span></div><div className="ugrid"><span>Email<b>{x.email||"-"}</b></span><span>Mobile<b>{x.phone||"-"}</b></span><span>Game name<b>{x.game_name||"-"}</b></span><span>Deposit<b>₹{x.balance??0}</b></span><span>Winnings<b>₹{x.winnings??0}</b></span></div>{(isAdmin||isActingAdmin)&&<div className="uact"><button className="sm" onClick={()=>showHistory(x)}>History</button>{isAdmin&&<button className="sm" onClick={()=>convertBal(x)}>Convert</button>}<button className="sm" onClick={()=>adjust(x)}>± Balance</button>{x.id!==me.id&&x.role!=="admin"&&(isAdmin||x.role!=="acting_admin")&&<button className={"sm "+(x.banned?"ok":"no")} onClick={()=>rpc("admin_set_ban",{p_user:x.id,p_ban:!x.banned},x.banned?"User unbanned":"User banned")}>{x.banned?"Unban":"Ban"}</button>}{isAdmin&&x.role!=="admin"&&<select className="sm" value={x.role||"user"} onChange={e=>setStaffRole(x,e.target.value)}><option value="user">User</option><option value="moderator">Moderator</option><option value="acting_admin">Acting Admin</option></select>}</div>}</div>)}{!L.length&&<p className="empty">No users found</p>}</div></>}
 
