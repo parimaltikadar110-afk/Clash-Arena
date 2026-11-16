@@ -3399,6 +3399,331 @@ function Keno({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ---------- Hi-Lo (server draws the next card) ---------- */
+const HL_LABEL = (n) => (n === 1 ? "A" : n === 11 ? "J" : n === 12 ? "Q" : n === 13 ? "K" : String(n));
+const HL = {
+  card: { width: 110, height: 150, margin: "8px auto 14px", borderRadius: 14, display: "grid", placeItems: "center", background: "linear-gradient(160deg,#ffffff,#e2e8f0)", color: "#111827", fontSize: 56, fontWeight: 900, border: "4px solid #fde68a", boxShadow: "0 12px 26px #000a" },
+  btn: (dis, tone) => ({ flex: 1, padding: "13px 0", borderRadius: 12, border: "none", cursor: dis ? "not-allowed" : "pointer", color: "#fff", fontWeight: 900, fontSize: 14, opacity: dis ? 0.4 : 1, background: tone === "hi" ? "linear-gradient(135deg,#15803d,#22c55e)" : "linear-gradient(135deg,#b91c1c,#f43f5e)" }),
+};
+
+function HiLo({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+  const [bet, setBet] = useState(10);
+  const [round, setRound] = useState(null);     // { id, bet, card, steps, multiplier, status, payout }
+  const [trail, setTrail] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  // restore a round that was left open
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc("casino_hilo_active");
+        if (alive && data?.round_id) {
+          setRound({ id: data.round_id, bet: Number(data.bet), card: Number(data.card), steps: Number(data.steps), multiplier: Number(data.multiplier), status: "active" });
+          setTrail([Number(data.card)]);
+          setMsg("Your open round was restored.");
+        }
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [supabase]);
+
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+  const active = round?.status === "active";
+  const c = round?.card || 0;
+  const pHigher = c ? (13 - c) / 13 : 0;
+  const pLower = c ? (c - 1) / 13 : 0;
+  const mult = round?.multiplier || 1;
+
+  const callRpc = async (fn, args) => {
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error || !data?.success) throw new Error(error?.message || "Request failed");
+    return data;
+  };
+
+  const deal = async () => {
+    if (busy) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg("");
+    try {
+      const d = await callRpc("casino_hilo_start", { p_bet: bet });
+      setRound({ id: d.round_id, bet, card: Number(d.card), steps: 0, multiplier: 1, status: "active" });
+      setTrail([Number(d.card)]);
+      setBal(Number(d.new_balance) || 0);
+      setMsg("Higher or lower?");
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const guess = async dir => {
+    if (busy || !active) return;
+    setBusy(true); setMsg("");
+    try {
+      const d = await callRpc("casino_hilo_guess", { p_round: round.id, p_dir: dir });
+      const nc = Number(d.card);
+      setTrail(t => [...t, nc]);
+      if (d.won) {
+        setRound(r => ({ ...r, card: nc, steps: Number(d.steps), multiplier: Number(d.multiplier) }));
+        setMsg("Correct. Cash out or keep going.");
+      } else {
+        setRound(r => ({ ...r, card: nc, status: "lost" }));
+        setBal(Number(d.new_balance) || 0);
+        setMsg("Wrong guess. Stake lost.");
+        reload && reload();
+      }
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const cash = async () => {
+    if (busy || !active || round.steps < 1) return;
+    setBusy(true); setMsg("");
+    try {
+      const d = await callRpc("casino_hilo_cashout", { p_round: round.id });
+      setRound(r => ({ ...r, status: "cashed", payout: Number(d.won_amount) }));
+      setBal(Number(d.new_balance) || 0);
+      setMsg(`Cashed out ${RM(Number(d.won_amount))}`);
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Hi-Lo</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={HL.card}>{c ? HL_LABEL(c) : "?"}</div>
+
+      <div style={GW.statRow}>
+        <div style={GW.stat}><div style={GW.statLabel}>Multiplier</div><div style={GW.statVal}>{mult.toFixed(2)}x</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Steps</div><div style={GW.statVal}>{round?.steps || 0}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Cash out</div><div style={GW.statVal}>{RM(round ? Math.round(round.bet * mult * 100) / 100 : 0)}</div></div>
+      </div>
+
+      {active ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <button style={HL.btn(busy || pLower <= 0, "lo")} disabled={busy || pLower <= 0} onClick={() => guess("lower")}>
+            Lower · {(pLower * 100).toFixed(0)}%
+          </button>
+          <button style={HL.btn(busy || pHigher <= 0, "hi")} disabled={busy || pHigher <= 0} onClick={() => guess("higher")}>
+            Higher · {(pHigher * 100).toFixed(0)}%
+          </button>
+        </div>
+      ) : (
+        <>
+          <div style={GW.betRow}>
+            <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+            <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+              onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+            <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+            {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+          </div>
+          <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={deal}>
+            Deal · Stake {R(bet)}
+          </button>
+        </>
+      )}
+
+      {active && round.steps >= 1 && (
+        <button style={{ ...GW.cash, width: "100%", marginTop: 10, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={cash}>
+          Cash out {RM(Math.round(round.bet * mult * 100) / 100)}
+        </button>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+
+      {trail.length > 0 && (
+        <div style={GW.hist}>
+          {trail.map((n, i) => (
+            <div key={i} style={{ padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 800, background: "#1e293b", color: "#fff" }}>{HL_LABEL(n)}</div>
+          ))}
+        </div>
+      )}
+
+      <div style={GW.rules}>Guess whether the next card is higher or lower. Each correct guess multiplies the stake. A tie loses. Return is about 96% per step. Virtual points only.</div>
+    </div>
+  );
+}
+
+/* ---------- Tower (8 floors, 3 tiles, 1 bomb per floor) ---------- */
+const TW = {
+  cell: (state) => ({
+    height: 44, borderRadius: 10, display: "grid", placeItems: "center", fontWeight: 900, fontSize: 16,
+    cursor: state === "pickable" ? "pointer" : "default",
+    border: `1px solid ${state === "safe" ? "#16a34a" : state === "bomb" ? "#dc2626" : state === "pickable" ? "#a78bfa" : "#334155"}`,
+    background: state === "safe" ? "#14532d" : state === "bomb" ? "#7f1d1d" : state === "pickable" ? "#2e1065" : "#0f172a",
+    color: state === "bomb" ? "#fecaca" : "#f8fafc",
+    opacity: state === "dim" ? 0.45 : 1,
+  }),
+};
+
+function Tower({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+  const [bet, setBet] = useState(10);
+  const [round, setRound] = useState(null);     // { id, bet, floors, multiplier, status, bombs, payout }
+  const [picks, setPicks] = useState([]);       // tile picked on each cleared floor
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc("casino_tower_active");
+        if (alive && data?.round_id) {
+          setRound({ id: data.round_id, bet: Number(data.bet), floors: Number(data.floors), multiplier: Number(data.multiplier), status: "active", bombs: null });
+          setMsg("Your open round was restored.");
+        }
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [supabase]);
+
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+  const active = round?.status === "active";
+  const floors = round?.floors || 0;
+  const mult = round ? round.multiplier : 1;
+
+  const callRpc = async (fn, args) => {
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error || !data?.success) throw new Error(error?.message || "Request failed");
+    return data;
+  };
+
+  const climb = async () => {
+    if (busy) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg(""); setPicks([]);
+    try {
+      const d = await callRpc("casino_tower_start", { p_bet: bet });
+      setRound({ id: d.round_id, bet, floors: 0, multiplier: 1, status: "active", bombs: null });
+      setBal(Number(d.new_balance) || 0);
+      setMsg("Pick a safe tile on the first floor.");
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const pick = async tile => {
+    if (busy || !active) return;
+    setBusy(true); setMsg("");
+    try {
+      const d = await callRpc("casino_tower_pick", { p_round: round.id, p_tile: tile });
+      if (d.hit_bomb) {
+        setRound(r => ({ ...r, status: "lost", bombs: d.bombs, floors: Number(d.floors) }));
+        setBal(Number(d.new_balance) || 0);
+        setMsg("Bomb! Stake lost.");
+        reload && reload();
+      } else if (d.top) {
+        setPicks(p => [...p, tile]);
+        setRound(r => ({ ...r, status: "cashed", bombs: d.bombs, floors: Number(d.floors), multiplier: Number(d.multiplier), payout: Number(d.payout) }));
+        setBal(Number(d.new_balance) || 0);
+        setMsg(`Top floor! Paid ${RM(Number(d.payout))}`);
+        reload && reload();
+      } else {
+        setPicks(p => [...p, tile]);
+        setRound(r => ({ ...r, floors: Number(d.floors), multiplier: Number(d.multiplier) }));
+        setMsg("Safe. Climb again or cash out.");
+      }
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const cash = async () => {
+    if (busy || !active || floors < 1) return;
+    setBusy(true); setMsg("");
+    try {
+      const d = await callRpc("casino_tower_cashout", { p_round: round.id });
+      setRound(r => ({ ...r, status: "cashed", bombs: d.bombs, payout: Number(d.payout), multiplier: Number(d.multiplier) }));
+      setBal(Number(d.new_balance) || 0);
+      setMsg(`Cashed out ${RM(Number(d.payout))}`);
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const floorRows = [];
+  for (let f = 8; f >= 1; f--) {
+    const cleared = f <= floors;
+    const isNext = active && f === floors + 1;
+    const floorMult = Math.round(Math.pow(1.44, f) * 100) / 100;
+    const tiles = [1, 2, 3].map(t => {
+      const revealedBomb = round?.bombs && round.bombs[f - 1] === t;
+      let state = "idle";
+      if (revealedBomb) state = "bomb";
+      else if (cleared && picks[f - 1] === t) state = "safe";
+      else if (cleared) state = "dim";
+      else if (isNext) state = "pickable";
+      return (
+        <div key={t} style={TW.cell(state)} onClick={() => { if (state === "pickable") pick(t); }}>
+          {state === "bomb" ? "✕" : state === "safe" ? "◆" : ""}
+        </div>
+      );
+    });
+    floorRows.push(
+      <div key={f} style={{ display: "grid", gridTemplateColumns: "58px repeat(3,1fr)", gap: 6, marginBottom: 6, alignItems: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: isNext ? "#c4b5fd" : "#94a3b8" }}>{floorMult.toFixed(2)}x</div>
+        {tiles}
+      </div>
+    );
+  }
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Tower</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>{floorRows}</div>
+
+      <div style={GW.statRow}>
+        <div style={GW.stat}><div style={GW.statLabel}>Floor</div><div style={GW.statVal}>{floors}/8</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Multiplier</div><div style={GW.statVal}>{mult.toFixed(2)}x</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Cash out</div><div style={GW.statVal}>{RM(round ? Math.round(round.bet * mult * 100) / 100 : 0)}</div></div>
+      </div>
+
+      {!active ? (
+        <>
+          <div style={GW.betRow}>
+            <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+            <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+              onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+            <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+            {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+          </div>
+          <button style={{ ...GW.primary, opacity: busy ? 0.5 : 1 }} disabled={busy} onClick={climb}>
+            Start · Stake {R(bet)}
+          </button>
+        </>
+      ) : (
+        <button style={{ ...GW.cash, width: "100%", opacity: busy || floors < 1 ? 0.45 : 1 }} disabled={busy || floors < 1} onClick={cash}>
+          Cash out {RM(Math.round(round.bet * mult * 100) / 100)}
+        </button>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+      <div style={GW.rules}>Each floor has three tiles and one bomb. A safe tile multiplies the stake by 1.44x. Cash out any time after the first floor. Virtual points only.</div>
+    </div>
+  );
+}
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -3429,6 +3754,8 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "coinflip") return <CoinFlip {...common} />;
   if (view === "wheel") return <LuckyWheel {...common} />;
   if (view === "keno") return <Keno {...common} />;
+  if (view === "hilo") return <HiLo {...common} />;
+  if (view === "tower") return <Tower {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -3456,7 +3783,9 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["coinflip", "coinflip", "Coin Flip", "Heads or tails. A correct call pays 1.92x.", "linear-gradient(135deg,#78350f,#ca8a04)"],
     ["wheel", "wheel", "Lucky Wheel", "Spin the wheel. Land a segment and multiply your stake.", "linear-gradient(135deg,#0f766e,#1d4ed8)"],
     ["keno", "keno", "Keno", "Pick 4 to 10 numbers from 1 to 40. More hits pay more.", "linear-gradient(135deg,#14532d,#16a34a)"],
-  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno"].includes(key) ? games[key] !== false : games[key]));
+    ["hilo", "hilo", "Hi-Lo", "Is the next card higher or lower? Each correct guess multiplies.", "linear-gradient(135deg,#1e293b,#475569)"],
+    ["tower", "tower", "Tower", "Climb 8 floors. Find the safe tile on each floor.", "linear-gradient(135deg,#312e81,#6366f1)"],
+  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower"].includes(key) ? games[key] !== false : games[key]));
 
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
