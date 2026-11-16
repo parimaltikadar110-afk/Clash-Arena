@@ -3724,6 +3724,137 @@ function Tower({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ---------- Color Lottery (60-second periods, server-generated results) ---------- */
+const CL = {
+  dot: (c) => ({ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 900, color: "#fff", background: c === "green" ? "#16a34a" : c === "red" ? "#dc2626" : "#7c3aed", border: "2px solid #0008" }),
+  pick: (sel, tone) => ({ flex: 1, padding: "11px 0", borderRadius: 12, border: `2px solid ${sel ? "#fde68a" : "transparent"}`, cursor: "pointer", color: "#fff", fontWeight: 900, fontSize: 13, background: tone === "green" ? "#15803d" : tone === "red" ? "#b91c1c" : tone === "violet" ? "#6d28d9" : "#334155" }),
+  num: (sel) => ({ aspectRatio: "1", borderRadius: 10, border: `2px solid ${sel ? "#fde68a" : "#334155"}`, background: "#0f172a", color: "#fff", fontWeight: 900, fontSize: 15, cursor: "pointer" }),
+};
+const CL_COLOR_OF = { 0: ["red", "violet"], 5: ["green", "violet"] };
+
+function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start);
+  useEffect(() => { setBal(start); }, [start]);
+
+  const [bet, setBet] = useState(10);
+  const [sel, setSel] = useState({ kind: "color", pick: "green" });
+  const [st, setSt] = useState(null);             // server state + fetchedAt
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc("casino_lottery_state", { p_game: "color" });
+    if (!error && data?.success) setSt({ ...data, fetchedAt: Date.now() });
+  }, [supabase]);
+
+  useEffect(() => {
+    load();
+    const poll = setInterval(load, 3000);
+    const clock = setInterval(() => setNow(Date.now()), 250);
+    return () => { clearInterval(poll); clearInterval(clock); };
+  }, [load]);
+
+  const secsLeft = st ? Math.max(0, Math.ceil(st.seconds_left - (now - st.fetchedAt) / 1000)) : 0;
+  const open = secsLeft >= 6;
+  const hist = st?.history || [];
+  const mine = st?.my_bet;
+  const changeBet = v => { if (!busy) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const place = async () => {
+    if (busy) return;
+    if (!open) return setMsg("Betting is closed. Next period opens soon.");
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg("");
+    try {
+      const { data, error } = await supabase.rpc("casino_lottery_bet", { p_game: "color", p_kind: sel.kind, p_pick: sel.pick, p_bet: bet });
+      if (error || !data?.success) throw new Error(error?.message || "Could not place bet");
+      setBal(Number(data.new_balance) || 0);
+      setMsg("Bet placed for this period.");
+      reload && reload();
+      load();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const isSel = (kind, pick) => sel.kind === kind && sel.pick === pick;
+
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Color Lottery</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+
+      <div style={{ ...GW.stat, padding: 12, marginBottom: 10 }}>
+        <div style={GW.statLabel}>Period {st?.period ?? "—"} · {open ? "betting open" : "betting closed"}</div>
+        <div style={{ fontSize: 34, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: open ? "#4ade80" : "#f87171" }}>
+          00:{String(secsLeft).padStart(2, "0")}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginBottom: 10, minHeight: 30 }}>
+        {hist.map((h, i) => (
+          <div key={i} title={`period ${h.period}`} style={CL.dot(h.colors?.[0] === "red" ? "red" : h.colors?.[0] === "violet" ? "violet" : "green")}>
+            {h.number}
+          </div>
+        ))}
+      </div>
+
+      {mine && (
+        <div style={{ ...GW.msg, marginTop: 0, marginBottom: 10 }}>
+          Your bet: {mine.kind} {mine.pick} · {RM(Number(mine.bet))} ·{" "}
+          {mine.status === "pending" ? "waiting for result" : mine.status === "won" ? `won ${RM(Number(mine.payout))}` : "lost"}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {["green", "violet", "red"].map(c => (
+          <button key={c} disabled={busy} onClick={() => setSel({ kind: "color", pick: c })} style={{ ...CL.pick(isSel("color", c), c), opacity: busy ? 0.6 : 1 }}>
+            {c.toUpperCase()}<br /><span style={{ fontSize: 11, opacity: .85 }}>{c === "violet" ? "4.8x" : "1.92x"}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, marginBottom: 10 }}>
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+          <button key={n} disabled={busy} onClick={() => setSel({ kind: "number", pick: String(n) })} style={CL.num(isSel("number", String(n)))}>{n}</button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {["big", "small"].map(s => (
+          <button key={s} disabled={busy} onClick={() => setSel({ kind: "size", pick: s })} style={{ ...CL.pick(isSel("size", s), "gray"), opacity: busy ? 0.6 : 1 }}>
+            {s.toUpperCase()}<br /><span style={{ fontSize: 11, opacity: .85 }}>1.92x</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={GW.betRow}>
+        <button style={GW.quick} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      <button style={{ ...GW.primary, opacity: busy || !open ? 0.5 : 1 }} disabled={busy || !open} onClick={place}>
+        Bet {sel.pick.toUpperCase()} · Stake {R(bet)}
+      </button>
+
+      <div style={GW.msg}>{msg}</div>
+
+      <div style={GW.rules}>
+        One bet per 60-second period. Results are created after the period closes and cannot change. Colour: 0 is red and violet, 5 is green and violet. Return is about 96%. Virtual points only.
+      </div>
+    </div>
+  );
+}
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -3756,6 +3887,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "keno") return <Keno {...common} />;
   if (view === "hilo") return <HiLo {...common} />;
   if (view === "tower") return <Tower {...common} />;
+  if (view === "color") return <ColorLottery {...common} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
@@ -3785,7 +3917,8 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["keno", "keno", "Keno", "Pick 4 to 10 numbers from 1 to 40. More hits pay more.", "linear-gradient(135deg,#14532d,#16a34a)"],
     ["hilo", "hilo", "Hi-Lo", "Is the next card higher or lower? Each correct guess multiplies.", "linear-gradient(135deg,#1e293b,#475569)"],
     ["tower", "tower", "Tower", "Climb 8 floors. Find the safe tile on each floor.", "linear-gradient(135deg,#312e81,#6366f1)"],
-  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower"].includes(key) ? games[key] !== false : games[key]));
+    ["color", "color", "Color Lottery", "Bet on the colour or number of the next 60-second draw.", "linear-gradient(135deg,#4c1d95,#be185d)"],
+  ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color"].includes(key) ? games[key] !== false : games[key]));
 
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
