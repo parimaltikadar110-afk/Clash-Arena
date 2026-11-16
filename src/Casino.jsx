@@ -4660,6 +4660,16 @@ function ChickenRoad2({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+const LOBBY_SECTIONS = [
+  { key: "table", label: "Table games" },
+  { key: "crash", label: "Crash" },
+  { key: "lottery", label: "Lottery" },
+  { key: "slots", label: "Slots" },
+  { key: "originals", label: "Originals" },
+];
+// Put your own artwork here, e.g. LOBBY_IMG.vortex2 = "https://.../vortex2.png"
+const LOBBY_IMG = {};
+
 export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -4761,23 +4771,44 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
         <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: GOLD_L }}>OPEN ›</div>
       </div>
       {cards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games are open right now.</p>}
+      <div style={{ position: "relative", borderRadius: 18, overflow: "hidden", padding: "18px", marginBottom: 14, background: "linear-gradient(120deg,#1e1b4b 0%,#312e81 45%,#0e7490 100%)", border: "1px solid #334155", boxShadow: "0 12px 30px #000a" }}>
+        <div style={{ fontSize: 11, letterSpacing: 1.4, color: "#a5b4fc", fontWeight: 800 }}>FEATURED</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginTop: 4 }}>Play. Multiply. Cash out.</div>
+        <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 6, maxWidth: "75%" }}>Every result is decided on the server. Return is about 96% on the games.</div>
+      </div>
       <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
         {LOBBY_CATS.map(([k, label]) => (
           <button key={k} onClick={() => setLobbyCat(k)} style={{ flexShrink: 0, padding: "8px 14px", borderRadius: 999, cursor: "pointer", fontWeight: 800, fontSize: 12, color: "#f8fafc", border: `1px solid ${lobbyCat === k ? GOLD_L : "#334155"}`, background: lobbyCat === k ? "#14532d" : "#0f172a" }}>{label}</button>
         ))}
       </div>
       {visibleCards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games in this category right now.</p>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-        {visibleCards.map(([v, , name, desc, bg]) => (
-          <div key={v} onClick={() => setView(v)} style={{ position: "relative", borderRadius: 14, overflow: "hidden", cursor: "pointer", background: "#0f1420", border: "1px solid #1f2937", minHeight: 100 }}>
-            <div style={{ height: 5, background: bg }} />
-            <div style={{ padding: "12px 10px" }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: bg, display: "grid", placeItems: "center", fontWeight: 900, fontSize: 12, color: "#fff", letterSpacing: .5 }}>{initials(name)}</div>
-              <div style={{ fontWeight: 800, fontSize: 13, marginTop: 10, color: "#f1f5f9" }}>{name}</div>
+      {LOBBY_SECTIONS.filter(sec => lobbyCat === "all" || sec.key === lobbyCat).map(sec => {
+        const items = visibleCards.filter(([v]) => (LOBBY_SETS[sec.key] || []).includes(v));
+        if (!items.length) return null;
+        return (
+          <div key={sec.key} style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+              <div style={{ fontWeight: 900, fontSize: 16, color: "#f8fafc" }}>{sec.label}</div>
+              <div style={{ fontSize: 11, color: "#64748b", letterSpacing: .6 }}>{items.length} GAMES</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollSnapType: "x mandatory" }}>
+              {items.map(([v, , name, desc, bg]) => (
+                <div key={v} onClick={() => setView(v)} style={{ flex: "0 0 132px", scrollSnapAlign: "start", borderRadius: 16, overflow: "hidden", cursor: "pointer", background: "#0f1420", border: "1px solid #1f2937" }}>
+                  <div style={{ height: 118, background: bg, display: "grid", placeItems: "center", overflow: "hidden" }}>
+                    {LOBBY_IMG[v]
+                      ? <img src={LOBBY_IMG[v]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <div style={{ fontSize: 34, fontWeight: 900, color: "rgba(255,255,255,.92)", textShadow: "0 4px 14px rgba(0,0,0,.35)" }}>{initials(name)}</div>}
+                  </div>
+                  <div style={{ padding: "9px 10px 11px" }}>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: "#f1f5f9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{desc}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
