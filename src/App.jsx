@@ -404,21 +404,17 @@ export default function App() {
     const bundleSig = html => {
       try{
         const doc = new DOMParser().parseFromString(html,"text/html");
-        return [...doc.scripts].map(x=>x.getAttribute("src")).filter(Boolean).sort().join("|");
+        return [...doc.scripts].map(x=>x.getAttribute("src")).filter(s=>s&&s.includes("/assets/")).sort().join("|");
       }catch{return ""}
     };
-    const currentSig = () => [...document.scripts].map(x=>x.getAttribute("src")).filter(Boolean).sort().join("|");
+    const currentSig = () => [...document.scripts].map(x=>x.getAttribute("src")).filter(s=>s&&s.includes("/assets/")).sort().join("|");
     const checkDeployment = async () => {
       if(document.visibilityState!=="visible" || updatePending) return;
       try{
         const r = await fetch(window.location.pathname + "?x7v=" + Date.now(), {cache:"no-store",headers:{"Cache-Control":"no-cache"}});
         if(!r.ok) return;
         const fresh = bundleSig(await r.text());
-        if(fresh && currentSig() && fresh!==currentSig()){
-          const last = +(sessionStorage.getItem("x7reload")||0);
-          if(!uploadingRef.current && Date.now()-last>60000){ sessionStorage.setItem("x7reload", String(Date.now())); const go=()=>window.location.reload(); try{ if("caches" in window){ caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k)))).finally(go) } else go() }catch{ go() } }
-          else setUpdatePending(true);
-        }
+        if(fresh && currentSig() && fresh!==currentSig()) setUpdatePending(true);
       }catch{}
     };
     const upTimer = setInterval(checkDeployment,60000);
