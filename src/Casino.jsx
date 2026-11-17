@@ -4708,7 +4708,7 @@ const LOBBY_GLYPH = {
   originals: '<path d="M32 8 L38 26 L57 26 L42 37 L48 56 L32 45 L16 56 L22 37 L7 26 L26 26Z" fill="#fff"/>',
 };
 
-export default function CasinoHub({ supabase, me, reload, say, cfg }) {
+function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
   const images = C.images || {};
@@ -4850,7 +4850,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
                   <div style={{ padding: "10px 11px 12px" }}>
                     <div style={{ fontWeight: 800, fontSize: 14, color: "#f8fafc", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
                     <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3, lineHeight: 1.35, height: 30, overflow: "hidden" }}>{desc}</div>
-                    <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, marginTop: 6 }}>Min {R(+C?.min_bet || 10)}</div>
+                    <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, marginTop: 6 }}>Min {R(+C?.min_bets?.[v === "dragon" ? "dragon_tiger" : v] || +C?.min_bet || 10)}</div>
                   </div>
                 </div>
               ))}
@@ -4858,6 +4858,20 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+const CASINO_AMT_CSS = `
+.cx-root input[type=number]{color:#f8fafc !important;-webkit-text-fill-color:#f8fafc !important;caret-color:#f8fafc !important;background:#0b1220 !important;opacity:1 !important;font-weight:800 !important;font-size:16px !important;border:1px solid #334155 !important;border-radius:10px !important;padding:8px 10px !important;text-align:center !important;-moz-appearance:textfield}
+.cx-root input[type=number]::-webkit-outer-spin-button,.cx-root input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.cx-root input[type=number]::placeholder{color:#64748b !important;-webkit-text-fill-color:#64748b !important}
+`;
+export default function CasinoHub(props) {
+  return (
+    <div className="cx-root" style={{ minHeight: "100vh" }}>
+      <style>{CASINO_AMT_CSS}</style>
+      <CasinoHubInner {...props} />
     </div>
   );
 }
