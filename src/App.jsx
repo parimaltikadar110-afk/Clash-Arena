@@ -159,6 +159,10 @@ function Skeleton({onRetry,onLogout}) {
   </div>);
 }
 
+const scrollParentOf = (el) => { let p = el && el.parentElement; while (p && p !== document.body) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p; p = p.parentElement; } return window; };
+const scrollPos = (sp) => (sp === window ? window.scrollY : sp.scrollTop);
+const restoreScroll = (sp, y) => { const go = () => { if (sp === window) window.scrollTo(0, y); else sp.scrollTop = y; }; go(); requestAnimationFrame(go); setTimeout(go, 150); };
+
 export default function App() {
   const [session,setSession] = useState(BOOT.c?BOOT.s:null), [ready,setReady] = useState(!!BOOT.c || !BOOT.s), [hash,setHash] = useState(window.location.hash);
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
@@ -224,16 +228,16 @@ export default function App() {
   // app_settings: pull once, then get live changes via Realtime; 5-min fallback pull only while the tab is visible
   useEffect(()=>{
     if(!supabase) return;
-    const pull = ()=>supabase.from("app_settings").select("key,value").in("key",["app_mode","casino_config"])
+    const pull = ()=>uploadingRef.current ? null : supabase.from("app_settings").select("key,value").in("key",["app_mode","casino_config"])
       .then(({data})=>{ if(data?.length) setS(o=>({...o,...Object.fromEntries(data.map(x=>[x.key,x.value]))})) });
     const ch = supabase.channel("app-settings-live").on("postgres_changes",{event:"*",schema:"public",table:"app_settings"},pull).subscribe();
     const id = setInterval(()=>{ if(document.visibilityState==="visible") pull(); }, 60000);
     const onShow = ()=>{ if(document.visibilityState==="visible") pull(); };
     document.addEventListener("visibilitychange", onShow);
-    window.addEventListener("focus", pull);
-    return ()=>{ clearInterval(id); supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", pull); };
+    return ()=>{ clearInterval(id); supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onShow); };
   },[]);
-  const setGameImage = async (k, url) => {
+  const uploadingRef = useRef(false);
+  const saveGameImage = async (k, url) => {
     const { data: row, error: e1 } = await supabase.from("app_settings").select("value").eq("key", "casino_config").maybeSingle();
     if (e1) { say(e1.message, 1); return false; }
     const cur = row?.value || {};
@@ -245,6 +249,7 @@ export default function App() {
     say(url ? "Image is live" : "Image removed");
     return true;
   };
+  const setGameImage = async (k, url) => { uploadingRef.current = true; try { return await saveGameImage(k, url); } finally { uploadingRef.current = false; } };
   // fresh config whenever the user logs in
   useEffect(()=>{ if(!me || !me.id) return; supabase.from("app_settings").select("key,value").in("key",["app_mode","casino_config"]).then(({data})=>{ if(data?.length) setS(o=>({...o,...Object.fromEntries(data.map(x=>[x.key,x.value]))})) }); },[me && me.id]);
   const loadGifts = async () => { const {data,error} = await supabase.rpc("admin_list_gift_codes"); if(error) return say(error.message,1); setGifts(data||[]) };
@@ -1473,7 +1478,7 @@ export default function App() {
         <p className="hint">Upload an image per game (PNG/JPG/WebP, under 2 MB, 600×500 recommended). Empty = default icon. The image goes live as soon as it uploads. No need to press Save.</p>
         {GL.map(([k,l])=>{ const url = (cc.images && cc.images[k]) || ""; return <div key={k} className="mi" style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{width:56,height:48,borderRadius:8,overflow:"hidden",background:"#111",flexShrink:0,display:"grid",placeItems:"center"}}>{url ? <img src={/^https?:/.test(url)?url:supabase.storage.from("game-art").getPublicUrl(url).data.publicUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <small style={{opacity:.5}}>none</small>}</div>
-          <div style={{flex:1,minWidth:0}}><span>{l}</span><div style={{display:"flex",gap:6,alignItems:"center",marginTop:4}}><input type="file" accept="image/png,image/jpeg,image/webp" style={{flex:1,minWidth:0}} onChange={e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return; if(!/^image\/(png|jpeg|webp)$/.test(f.type)) return alert("PNG, JPG or WebP only"); if(f.size>2*1024*1024) return alert("Image must be under 2 MB"); const ext=(f.name.split(".").pop()||"png").toLowerCase().replace(/[^a-z0-9]/g,""); const path=`${k}-${Date.now()}.${ext}`; run(supabase.storage.from("game-art").upload(path,f,{upsert:true,contentType:f.type}),"Image uploaded").then(ok=>{ if(ok){ const pub=supabase.storage.from("game-art").getPublicUrl(path).data.publicUrl; setGameImage(k, pub); } }); }}/>{url && <button className="sm" onClick={()=>{ setGameImage(k, ""); }}>Remove</button>}</div></div>
+          <div style={{flex:1,minWidth:0}}><span>{l}</span><div style={{display:"flex",gap:6,alignItems:"center",marginTop:4}}><input type="file" accept="image/png,image/jpeg,image/webp" style={{flex:1,minWidth:0}} onChange={e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return; if(!/^image\/(png|jpeg|webp)$/.test(f.type)) return alert("PNG, JPG or WebP only"); if(f.size>2*1024*1024) return alert("Image must be under 2 MB"); const ext=(f.name.split(".").pop()||"png").toLowerCase().replace(/[^a-z0-9]/g,""); const path=`${k}-${Date.now()}.${ext}`; run(supabase.storage.from("game-art").upload(path,f,{upsert:true,contentType:f.type}),"Image uploaded").then(ok=>{ if(ok){ const pub=supabase.storage.from("game-art").getPublicUrl(path).data.publicUrl; const sp=scrollParentOf(e.target), y=scrollPos(sp); setGameImage(k, pub).then(()=>restoreScroll(sp,y)); } }); }}/>{url && <button className="sm" onClick={()=>{ const sp=scrollParentOf(e.currentTarget), y=scrollPos(sp); setGameImage(k, "").then(()=>restoreScroll(sp,y)); }}>Remove</button>}</div></div>
         </div>; })}
         <button className="btn" style={{marginTop:10}} onClick={()=>run(supabase.from("app_settings").upsert({key:"casino_config",value:cc,updated_at:new Date().toISOString()}),"Casino settings saved").then(ok=>{ if(ok) setCcDraft(null) })}>Save casino settings</button>
         <p className="sh" style={{marginTop:16}}>Stats</p>
