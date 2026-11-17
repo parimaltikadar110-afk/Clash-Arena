@@ -4784,7 +4784,9 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   const visibleCards = cards.filter(([v]) => lobbyMatches(lobbyCat, v));
   // admin stores either a full URL or a file name inside the game-art bucket; resolve both
   const lobbyImgSrc = (v) => {
-    const raw = (C?.images?.[v]) || LOBBY_IMG[v];
+    // the admin saves Dragon Tiger under "dragon_tiger"; the lobby card key is "dragon"
+    const alias = { dragon: "dragon_tiger" }[v];
+    const raw = C?.images?.[v] || (alias && C?.images?.[alias]) || LOBBY_IMG[v];
     if (!raw) return null;
     return /^https?:\/\//.test(raw) ? raw : supabase.storage.from("game-art").getPublicUrl(raw).data.publicUrl;
   };
