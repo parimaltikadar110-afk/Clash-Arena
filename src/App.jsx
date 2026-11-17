@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { WebSplash, WebLanding, WebAuth } from "./webSite";
 import SupportChat, { WhatsAppSupport, SupportModeBox, TelegramSupport } from "./SupportChat";
-import CasinoHome from "./Casino";
+import CasinoHome, { ActivityPage } from "./Casino";
 
 /* ClashX7 - Supabase version. Run schema.sql THEN schema_patch.sql. Admin / moderator panel: /#admin */
 // TEMP DEBUG: shows any JS error on screen (no PC console needed). Remove after the bug is fixed.
@@ -35,7 +35,7 @@ const T = ["SOLO BR","DUO BR","DUO PER KILL","SOLO PER KILL","LONE WOLF","LW HEA
 const PERMS = [["matches","Create & edit matches"],["results","Submit results"],["withdrawals","Approve withdrawals"],["deposits","Approve deposits"],["support","Support chat"],["notifications","Send notifications"],["users","Users & wallet balance"],["gift","Gift codes"],["leaderboard","Leaderboard"]];
 const COL = ["#7f1d1d","#1e3a5f","#14532d","#4c1d95","#78350f"];
 const NAV = [["home","Home","M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"],["my","My Matches","M7 4h10v5a5 5 0 0 1-10 0zM4 5h3M17 5h3M12 14v4M8 20h8"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"],["lb","Leaderboard","M5 20V11M12 20V4M19 20v-7"]];
-const CASINO_NAV = [["home","Casino","M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 4v10M7 12h10"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"]];
+const CASINO_NAV = [["home","Casino","M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 4v10M7 12h10"],["activity","Activity","M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.5 6.7 19.1l1-5.8-4.2-4.1 5.9-.9z"],["wallet","Wallet","M4 7h15a1 1 0 0 1 1 1v11H5a1 1 0 0 1-1-1zM4 7l12-3v3M15 13h3"]];
 const fmt = t => new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"numeric",minute:"2-digit",timeZone:"Asia/Kolkata"});  // always show Indian time, whatever the phone timezone
 const fetchAll = async (mk, size = 1000) => {
   let out = [], from = 0;
@@ -1056,6 +1056,7 @@ export default function App() {
   };
 
   const body = () => {
+    if(appMode==="casino"&&nav==="activity") return <ActivityPage supabase={supabase} me={me} reload={load} say={say} cfg={casinoCfg}/>;
     if(appMode==="casino"&&nav!=="wallet") return <CasinoHome supabase={supabase} me={me} reload={load} say={say} cfg={casinoCfg}/>;
     if(nav==="home"){
       const ms=M.filter(m=>m.status==="upcoming"&&!m.is_private&&m.mode===tab);
@@ -1487,6 +1488,18 @@ export default function App() {
         {GL.map(([k,l])=><div key={k} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{l}</span><button className="sm" onClick={()=>setG(k,!(["goal","plinko","limbo","vortex2","coinflip","wheel","keno","hilo","tower","color","slots","fishing","moto","aviator2","space","minespro","chicken2","dcrash"].includes(k)?cc.games?.[k]!==false:cc.games?.[k]))}>{(["goal","plinko","limbo","vortex2","coinflip","wheel","keno","hilo","tower","color","slots","fishing","moto","aviator2","space","minespro","chicken2","dcrash"].includes(k)?cc.games?.[k]!==false:cc.games?.[k])?"ON":"OFF"}</button></div>)}
         <label>Min bet ₹</label><input type="number" value={cc.min_bet} onChange={e=>setCcDraft({...cc,min_bet:+e.target.value})}/><label>Coin Vault min deposit ₹</label><input type="number" value={cc.vault_min??10} onChange={e=>setCcDraft({...cc,vault_min:+e.target.value})}/>
         <label>Max bet ₹</label><input type="number" value={cc.max_bet} onChange={e=>setCcDraft({...cc,max_bet:+e.target.value})}/>
+        <p className="sh" style={{marginTop:16}}>Lobby banner</p>
+        <p className="hint">Shown at the top of the casino lobby. Choose a game to open when it is tapped. Uploads go live immediately.</p>
+        <div className="mi" style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div style={{width:96,height:44,borderRadius:8,overflow:"hidden",background:"#111",flexShrink:0,display:"grid",placeItems:"center"}}>{cc.images&&cc.images.banner ? <img src={/^https?:/.test(cc.images.banner)?cc.images.banner:supabase.storage.from("game-art").getPublicUrl(cc.images.banner).data.publicUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <small style={{opacity:.5}}>none</small>}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <input type="file" accept="image/*" onChange={async e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return; const small=await shrinkImage(f); if(!small) return alert("Could not read this image"); const path=`banner-${Date.now()}.jpg`; run(supabase.storage.from("game-art").upload(path,small,{upsert:true,contentType:"image/jpeg"}),"Banner uploaded").then(ok=>{ if(ok) setGameImage("banner", supabase.storage.from("game-art").getPublicUrl(path).data.publicUrl); }); }}/>
+            <select value={(cc.images&&cc.images.banner_target)||""} onChange={e=>setGameImage("banner_target", e.target.value)} style={{width:"100%",marginTop:4}}>
+              <option value="">No link (banner only)</option>
+              {GL.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+            </select>
+          </div>
+        </div>
         <p className="sh" style={{marginTop:16}}>Game images</p>
         <p className="hint">Upload an image per game (PNG/JPG/WebP, under 2 MB, 600×500 recommended). Empty = default icon. The image goes live as soon as it uploads. No need to press Save.</p>
         {GL.map(([k,l])=>{ const url = (cc.images && cc.images[k]) || ""; return <div key={k} className="mi" style={{display:"flex",gap:8,alignItems:"center"}}>
