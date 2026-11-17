@@ -159,6 +159,22 @@ function Skeleton({onRetry,onLogout}) {
   </div>);
 }
 
+const shrinkImage = async (file) => {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    for (const q of [0.9, 0.8, 0.7, 0.6]) {
+      const blob = await new Promise(r => c.toBlob(r, "image/jpeg", q));
+      if (blob && blob.size <= 2 * 1024 * 1024) return new File([blob], "game.jpg", { type: "image/jpeg" });
+    }
+    return null;
+  } catch { return null; }
+};
 const scrollParentOf = (el) => { let p = el && el.parentElement; while (p && p !== document.body) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p; p = p.parentElement; } return window; };
 const scrollPos = (sp) => (sp === window ? window.scrollY : sp.scrollTop);
 const restoreScroll = (sp, y) => { const go = () => { if (sp === window) window.scrollTo(0, y); else sp.scrollTop = y; }; go(); requestAnimationFrame(go); setTimeout(go, 150); };
@@ -1478,7 +1494,7 @@ export default function App() {
         <p className="hint">Upload an image per game (PNG/JPG/WebP, under 2 MB, 600×500 recommended). Empty = default icon. The image goes live as soon as it uploads. No need to press Save.</p>
         {GL.map(([k,l])=>{ const url = (cc.images && cc.images[k]) || ""; return <div key={k} className="mi" style={{display:"flex",gap:8,alignItems:"center"}}>
           <div style={{width:56,height:48,borderRadius:8,overflow:"hidden",background:"#111",flexShrink:0,display:"grid",placeItems:"center"}}>{url ? <img src={/^https?:/.test(url)?url:supabase.storage.from("game-art").getPublicUrl(url).data.publicUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <small style={{opacity:.5}}>none</small>}</div>
-          <div style={{flex:1,minWidth:0}}><span>{l}</span><div style={{display:"flex",gap:6,alignItems:"center",marginTop:4}}><input type="file" accept="image/png,image/jpeg,image/webp" style={{flex:1,minWidth:0}} onChange={e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return; if(!/^image\/(png|jpeg|webp)$/.test(f.type)) return alert("PNG, JPG or WebP only"); if(f.size>2*1024*1024) return alert("Image must be under 2 MB"); const ext=(f.name.split(".").pop()||"png").toLowerCase().replace(/[^a-z0-9]/g,""); const path=`${k}-${Date.now()}.${ext}`; run(supabase.storage.from("game-art").upload(path,f,{upsert:true,contentType:f.type}),"Image uploaded").then(ok=>{ if(ok){ const pub=supabase.storage.from("game-art").getPublicUrl(path).data.publicUrl; const sp=scrollParentOf(e.target), y=scrollPos(sp); setGameImage(k, pub).then(()=>restoreScroll(sp,y)); } }); }}/>{url && <button className="sm" onClick={()=>{ const sp=scrollParentOf(e.currentTarget), y=scrollPos(sp); setGameImage(k, "").then(()=>restoreScroll(sp,y)); }}>Remove</button>}</div></div>
+          <div style={{flex:1,minWidth:0}}><span>{l}</span><div style={{display:"flex",gap:6,alignItems:"center",marginTop:4}}><input type="file" accept="image/png,image/jpeg,image/webp" style={{flex:1,minWidth:0}} onChange={async e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return; if(!/^image\//.test(f.type)) return alert("Please choose an image file"); const small=await shrinkImage(f); if(!small) return alert("Could not read this image"); const path=`${k}-${Date.now()}.jpg`; run(supabase.storage.from("game-art").upload(path,small,{upsert:true,contentType:"image/jpeg"}),"Image uploaded").then(ok=>{ if(ok){ const pub=supabase.storage.from("game-art").getPublicUrl(path).data.publicUrl; const sp=scrollParentOf(e.target), y=scrollPos(sp); setGameImage(k, pub).then(()=>restoreScroll(sp,y)); } }); }}/>{url && <button className="sm" onClick={()=>{ const sp=scrollParentOf(e.currentTarget), y=scrollPos(sp); setGameImage(k, "").then(()=>restoreScroll(sp,y)); }}>Remove</button>}</div></div>
         </div>; })}
         <button className="btn" style={{marginTop:10}} onClick={()=>run(supabase.from("app_settings").upsert({key:"casino_config",value:cc,updated_at:new Date().toISOString()}),"Casino settings saved").then(ok=>{ if(ok) setCcDraft(null) })}>Save casino settings</button>
         <p className="sh" style={{marginTop:16}}>Stats</p>
