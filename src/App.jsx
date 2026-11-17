@@ -254,13 +254,9 @@ export default function App() {
   },[]);
   const uploadingRef = useRef(false);
   const saveGameImage = async (k, url) => {
-    const { data: row, error: e1 } = await supabase.from("app_settings").select("value").eq("key", "casino_config").maybeSingle();
-    if (e1) { say(e1.message, 1); return false; }
-    const cur = row?.value || {};
-    const next = { ...cur, images: { ...(cur.images || {}), [k]: url } };
-    const { error } = await supabase.from("app_settings").upsert({ key: "casino_config", value: next, updated_at: new Date().toISOString() });
+    const { data: v, error } = await supabase.rpc("admin_set_game_image", { p_key: k, p_url: url });
     if (error) { say(error.message, 1); return false; }
-    setS(o => ({ ...o, casino_config: next }));
+    setS(o => ({ ...o, casino_config: v }));
     setCcDraft(null);
     say(url ? "Image is live" : "Image removed");
     return true;
