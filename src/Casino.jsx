@@ -4782,6 +4782,12 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color", "slots", "fishing", "moto", "aviator2", "space", "minespro", "chicken2", "dcrash"].includes(key) ? games[key] !== false : games[key]));
 
   const visibleCards = cards.filter(([v]) => lobbyMatches(lobbyCat, v));
+  // admin stores either a full URL or a file name inside the game-art bucket; resolve both
+  const lobbyImgSrc = (v) => {
+    const raw = (C?.images?.[v]) || LOBBY_IMG[v];
+    if (!raw) return null;
+    return /^https?:\/\//.test(raw) ? raw : supabase.storage.from("game-art").getPublicUrl(raw).data.publicUrl;
+  };
   return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
       padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
@@ -4826,8 +4832,8 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
               {items.map(([v, , name, desc, bg]) => (
                 <div key={v} onClick={() => setView(v)} style={{ flex: "0 0 150px", scrollSnapAlign: "start", borderRadius: 16, overflow: "hidden", cursor: "pointer", background: "#0d131d", border: "1px solid #1f2937", boxShadow: "0 10px 22px #0008" }}>
                   <div style={{ height: 124, position: "relative", display: "grid", placeItems: "center", background: `radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.25),transparent 60%), ${bg}` }}>
-                    {LOBBY_IMG[v]
-                      ? <img src={LOBBY_IMG[v]} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                    {lobbyImgSrc(v)
+                      ? <img src={lobbyImgSrc(v)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
                       : <svg viewBox="0 0 64 64" width="64" height="64" style={{ filter: "drop-shadow(0 6px 10px rgba(0,0,0,.35))" }} dangerouslySetInnerHTML={{ __html: LOBBY_GLYPH[v] || LOBBY_GLYPH.originals }} />}
                   </div>
                   <div style={{ padding: "10px 11px 12px" }}>
