@@ -413,10 +413,14 @@ export default function App() {
         const r = await fetch(window.location.pathname + "?x7v=" + Date.now(), {cache:"no-store",headers:{"Cache-Control":"no-cache"}});
         if(!r.ok) return;
         const fresh = bundleSig(await r.text());
-        if(fresh && currentSig() && fresh!==currentSig()) setUpdatePending(true);
+        if(fresh && currentSig() && fresh!==currentSig()){
+          const last = +(sessionStorage.getItem("x7reload")||0);
+          if(!uploadingRef.current && Date.now()-last>60000){ sessionStorage.setItem("x7reload", String(Date.now())); window.location.reload(); }
+          else setUpdatePending(true);
+        }
       }catch{}
     };
-    const upTimer = setInterval(checkDeployment,300000);
+    const upTimer = setInterval(checkDeployment,60000);
     checkDeployment();
 
     if(!supabase){
