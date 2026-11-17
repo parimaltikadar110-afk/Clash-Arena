@@ -3775,11 +3775,26 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [confirm, setConfirm] = useState(false);
+  const [outcome, setOutcome] = useState(null);   // last settled order shown as a win/lose card
+  const seenRef = useRef(null);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc("casino_lottery_state", { p_game: "color" });
-    if (!error && data?.success) setSt({ ...data, fetchedAt: Date.now() });
+    if (!error && data?.success) {
+      setSt({ ...data, fetchedAt: Date.now() });
+      const ls = data.last_settled;
+      if (ls) {
+        if (seenRef.current === null) seenRef.current = ls.period;          // first open: do not replay old results
+        else if (ls.period !== seenRef.current) { seenRef.current = ls.period; setOutcome(ls); }
+      }
+    }
   }, [supabase]);
+
+  useEffect(() => {
+    if (!outcome) return undefined;
+    const id = setTimeout(() => setOutcome(null), 3200);
+    return () => clearTimeout(id);
+  }, [outcome]);
 
   useEffect(() => {
     load();
@@ -3792,6 +3807,7 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
   const open = secsLeft >= 6;
   const hist = st?.history || [];
   const mine = st?.my_bet;
+  const myHist = st?.my_history || [];
   const last = hist[0];
   const total = base * qty;
   const odds = sel.kind === "number" ? 9.6 : sel.kind === "color" && sel.pick === "violet" ? 4.8 : 1.92;
@@ -3933,19 +3949,51 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
         )}
 
         {pane === "mine" && (
-          <div style={{ fontSize: 13, lineHeight: 1.7 }}>
-            {mine ? (
-              <>
-                <div>{String(mine.kind)} · {String(mine.pick).toUpperCase()}</div>
-                <div>Stake {RM(Number(mine.bet))}</div>
-                <div style={{ fontWeight: 800, color: mine.status === "won" ? "#4ade80" : mine.status === "lost" ? "#f87171" : "#fde68a" }}>
-                  {mine.status === "pending" ? "Waiting for result" : mine.status === "won" ? `Won ${RM(Number(mine.payout))}` : "Lost"}
-                </div>
-              </>
-            ) : <div style={{ color: "#64748b" }}>No order in this period.</div>}
+          <div style={{ maxHeight: 360, overflowY: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1fr", fontSize: 11, color: "#8b9bb4", padding: "4px 0", fontWeight: 700 }}>
+              <span>Period</span><span>Order</span><span>Stake</span><span>Result</span>
+            </div>
+            {myHist.length === 0 && <div style={{ fontSize: 12, color: "#64748b", padding: "10px 0" }}>No orders yet.</div>}
+            {myHist.map((o, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1fr", fontSize: 12, padding: "8px 0", borderTop: "1px solid #1e2a3d", alignItems: "center", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ color: "#94a3b8" }}>{String(o.period).slice(-5)}</span>
+                <span style={{ fontWeight: 800 }}>{String(o.kind) === "number" ? `No. ${o.pick}` : String(o.pick).toUpperCase()}</span>
+                <span>{RM(Number(o.bet))}</span>
+                <span style={{ fontWeight: 800, color: o.status === "won" ? "#4ade80" : o.status === "lost" ? "#f87171" : "#fde68a" }}>
+                  {o.status === "won" ? `+${RM(Number(o.payout) - Number(o.bet))}` : o.status === "lost" ? `-${RM(Number(o.bet))}` : "Pending"}
+                </span>
+              </div>
+            ))}
           </div>
         )}
-      </div>
+      </div>      </div>
+
+      {outcome && (
+        <div onClick={() => setOutcome(null)} style={{ position: "fixed", inset: 0, zIndex: 60, display: "grid", placeItems: "center", background: "rgba(2,6,12,.72)", animation: "clFade .2s ease" }}>
+          <style>{`@keyframes clFade{from{opacity:0}to{opacity:1}}@keyframes clPop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}@keyframes clShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}@keyframes clBurst{from{transform:translate(0,0) scale(1);opacity:1}to{transform:translate(var(--dx),var(--dy)) scale(.4);opacity:0}}`}</style>
+          {outcome.status === "won" && [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(i => (
+            <span key={i} style={{ position: "absolute", left: "50%", top: "42%", width: 8, height: 8, borderRadius: "50%", background: i % 2 ? "#fde68a" : "#4ade80", ["--dx"]: `${Math.cos(i * 0.52) * 150}px`, ["--dy"]: `${Math.sin(i * 0.52) * 150}px`, animation: "clBurst .9s ease-out forwards" }} />
+          ))}
+          <div onClick={e => e.stopPropagation()} style={{ width: "min(86vw,340px)", borderRadius: 22, padding: "26px 22px", textAlign: "center", color: "#fff", boxShadow: "0 24px 60px #000c", animation: outcome.status === "won" ? "clPop .35s cubic-bezier(.2,1.3,.4,1)" : "clShake .5s ease", background: outcome.status === "won" ? "radial-gradient(120% 90% at 50% 0%,#bbf7d0 0%,#16a34a 45%,#052e16 100%)" : "linear-gradient(180deg,#334155,#0b1220)" }}>
+            <div style={{ fontSize: 12, letterSpacing: 2, opacity: .9 }}>PERIOD {outcome.period}</div>
+            <div style={{ fontSize: 46, fontWeight: 900, margin: "6px 0 2px", letterSpacing: 1, textShadow: outcome.status === "won" ? "0 4px 18px #0008" : "none" }}>
+              {outcome.status === "won" ? "YOU WIN" : "YOU LOSE"}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: outcome.status === "won" ? "#fef9c3" : "#fca5a5" }}>
+              {outcome.status === "won" ? `+${RM(Number(outcome.payout) - Number(outcome.bet))}` : `-${RM(Number(outcome.bet))}`}
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 14, alignItems: "center", marginTop: 18 }}>
+              <div style={{ width: 66, height: 66, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 26, fontWeight: 900, border: "3px solid #fff", color: "#fff", background: clBall(Number(outcome.number)) }}>{outcome.number}</div>
+              <div style={{ textAlign: "left", fontSize: 12, lineHeight: 1.7 }}>
+                <div>{String(outcome.kind).toUpperCase()} · {String(outcome.pick).toUpperCase()}</div>
+                <div>Stake {RM(Number(outcome.bet))}</div>
+                <div>{outcome.status === "won" ? `Returned ${RM(Number(outcome.payout))}` : "Stake lost"}</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 18, fontSize: 11, opacity: .7 }}>Tap to continue</div>
+          </div>
+        </div>
+      )}
 
       {confirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,12,.7)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 50 }} onClick={() => setConfirm(false)}>
