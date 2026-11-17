@@ -3966,7 +3966,7 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
             ))}
           </div>
         )}
-      </div>      </div>
+      </div>
 
       {outcome && (
         <div onClick={() => setOutcome(null)} style={{ position: "fixed", inset: 0, zIndex: 60, display: "grid", placeItems: "center", background: "rgba(2,6,12,.72)", animation: "clFade .2s ease" }}>
