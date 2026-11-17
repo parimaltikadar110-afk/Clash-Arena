@@ -4720,7 +4720,9 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     evs.forEach(e => window.addEventListener(e, u, true));
     return () => evs.forEach(e => window.removeEventListener(e, u, true));
   }, []);
-  const common = { supabase, me, reload, say, cfg: C, onBack: () => setView("lobby") };
+  const MIN_KEY = { dragon: "dragon_tiger" };
+  const gameCfg = { ...C, min_bet: +(C.min_bets?.[MIN_KEY[view] || view]) || C.min_bet };
+  const common = { supabase, me, reload, say, cfg: gameCfg, onBack: () => setView("lobby") };
   const [lobbyCat, setLobbyCat] = useState("all");
 
   if (view === "roulette") return <Roulette {...common} />;
@@ -4747,8 +4749,8 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
   if (view === "moto") return <MotoRace {...common} />;
   if (view === "minespro") return <MinesPro {...common} />;
   if (view === "chicken2") return <ChickenRoad2 {...common} />;
-  if (view === "aviator2" || view === "space" || view === "dcrash") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
-  if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={C} onBack={() => setView("lobby")} />;
+  if (view === "aviator2" || view === "space" || view === "dcrash") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
+  if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
       <button onClick={() => setView("lobby")} style={{ padding: "8px 14px", borderRadius: 12, border: "1px solid #334155", background: "#1e293b", color: "#f1f5f9", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 12 }}>« Lobby</button>
