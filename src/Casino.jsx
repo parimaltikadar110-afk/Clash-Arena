@@ -4839,6 +4839,10 @@ function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   ].filter(([, key]) => (["goal", "plinko", "limbo", "vortex2", "coinflip", "wheel", "keno", "hilo", "tower", "color", "slots", "fishing", "moto", "aviator2", "space", "minespro", "chicken2", "dcrash"].includes(key) ? games[key] !== false : games[key]));
 
   const visibleCards = cards.filter(([v]) => lobbyMatches(lobbyCat, v));
+  const bannerRaw = C?.images?.banner;
+  const bannerSrc = bannerRaw ? (/^https?:\/\//.test(bannerRaw) ? bannerRaw : supabase.storage.from("game-art").getPublicUrl(bannerRaw).data.publicUrl) : null;
+  const bannerTargetRaw = C?.images?.banner_target === "dragon_tiger" ? "dragon" : C?.images?.banner_target;
+  const bannerTarget = bannerTargetRaw && cards.some(([v]) => v === bannerTargetRaw) ? bannerTargetRaw : null;
   // admin stores either a full URL or a file name inside the game-art bucket; resolve both
   const lobbyImgSrc = (v) => {
     // the admin saves Dragon Tiger under "dragon_tiger"; the lobby card key is "dragon"
@@ -4848,60 +4852,71 @@ function CasinoHubInner({ supabase, me, reload, say, cfg }) {
     return /^https?:\/\//.test(raw) ? raw : supabase.storage.from("game-art").getPublicUrl(raw).data.publicUrl;
   };
   return (
-    <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", color: "#f3efe0",
-      padding: "14px 12px 40px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
-      <style>{CSS}</style>
-      <div style={{ textAlign: "center", margin: "6px 0 16px" }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 0 4px" }}><SoundBtn /></div>
-        <h2 style={{ color: GOLD_L, margin: 0, letterSpacing: 1 }}>Casino</h2>
-        <p style={{ margin: "4px 0 0", fontSize: 12, opacity: .7 }}>Pick a table to play</p>
+    <div style={{ background: "radial-gradient(120% 60% at 50% 0%,#0f2a1d 0%,#06100b 65%)", minHeight: "100vh", color: "#f3efe0", padding: "14px 14px 48px", boxSizing: "border-box", fontFamily: "system-ui,-apple-system,Segoe UI,Roboto,sans-serif" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div onClick={() => setView("vip")} style={{ borderRadius: 16, padding: "14px 12px", cursor: "pointer", background: "linear-gradient(135deg,#3f2a05,#b45309)", border: "1px solid #facc1555" }}>
+          <div style={{ fontWeight: 900, fontSize: 15 }}>VIP</div>
+          <div style={{ fontSize: 11, opacity: .85, marginTop: 4 }}>Level rewards and rebate</div>
+        </div>
+        <div onClick={() => setView("vault")} style={{ borderRadius: 16, padding: "14px 12px", cursor: "pointer", background: "linear-gradient(135deg,#2e1065,#6d28d9)", border: "1px solid #c084fc55" }}>
+          <div style={{ fontWeight: 900, fontSize: 15 }}>Coin Vault</div>
+          <div style={{ fontSize: 11, opacity: .85, marginTop: 4 }}>Lock and earn daily</div>
+        </div>
       </div>
-      <div onClick={() => setView("vip")} style={{ marginBottom: 12, padding: 14, borderRadius: 18, cursor: "pointer", border: `1px solid ${GOLD}`, background: "linear-gradient(135deg,#3f2a05,#ca8a04)", boxShadow: "0 10px 26px #000c" }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>👑 VIP</div>
-        <div style={{ fontSize: 12, opacity: .92, marginTop: 6 }}>Earn EXP while you play. Level-up rewards and a monthly rebate.</div>
-        <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: GOLD_L }}>OPEN ›</div>
+
+      {bannerSrc && (
+        <div onClick={bannerTarget ? () => setView(bannerTarget) : undefined} style={{ borderRadius: 18, overflow: "hidden", marginBottom: 14, cursor: bannerTarget ? "pointer" : "default", boxShadow: "0 16px 34px #000b" }}>
+          <img src={bannerSrc} alt="" style={{ width: "100%", display: "block", aspectRatio: "2.2 / 1", objectFit: "cover" }} />
+        </div>
+      )}
+
+      <div onClick={() => setView("color")} style={{ position: "relative", overflow: "hidden", borderRadius: 20, padding: "18px 18px 16px", marginBottom: 16, cursor: "pointer", background: "linear-gradient(120deg,#4c1d95 0%,#be185d 55%,#0e7490 100%)", boxShadow: "0 18px 40px #000b" }}>
+        <div style={{ fontSize: 11, letterSpacing: 1.6, fontWeight: 800, opacity: .85 }}>NEW DRAW EVERY 60 SECONDS</div>
+        <div style={{ fontSize: 26, fontWeight: 900, marginTop: 6 }}>Colour Lottery</div>
+        <div style={{ fontSize: 12, opacity: .9, marginTop: 4, maxWidth: "80%", lineHeight: 1.4 }}>Pick a colour, a number, or big or small. Results are created when each period closes.</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#16a34a", border: "2px solid #fff8" }} />
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#7c3aed", border: "2px solid #fff8" }} />
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#dc2626", border: "2px solid #fff8" }} />
+          <span style={{ marginLeft: "auto", padding: "9px 16px", borderRadius: 999, background: "#fff", color: "#111827", fontWeight: 900, fontSize: 13 }}>Play now</span>
+        </div>
       </div>
-      <div onClick={() => setView("vault")} style={{ marginBottom: 12, padding: 14, borderRadius: 18, cursor: "pointer", border: `1px solid ${GOLD}`, background: "linear-gradient(135deg,#1e1b4b,#4c1d95)", boxShadow: "0 10px 26px #000c" }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>🪙 Coin Vault</div>
-        <div style={{ fontSize: 12, opacity: .92, marginTop: 6 }}>Lock tokens, earn the daily arcade bonus, claim after the timer.</div>
-        <div style={{ marginTop: 12, fontSize: 12, fontWeight: 900, color: GOLD_L }}>OPEN ›</div>
-      </div>
-      {cards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games are open right now.</p>}
-      <div style={{ position: "relative", borderRadius: 18, overflow: "hidden", padding: "18px", marginBottom: 14, background: "linear-gradient(120deg,#1e1b4b 0%,#312e81 45%,#0e7490 100%)", border: "1px solid #334155", boxShadow: "0 12px 30px #000a" }}>
-        <div style={{ fontSize: 11, letterSpacing: 1.4, color: "#a5b4fc", fontWeight: 800 }}>FEATURED</div>
-        <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginTop: 4 }}>Play. Multiply. Cash out.</div>
-        <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 6, maxWidth: "75%" }}>Every result is decided on the server. Return is about 96% on the games.</div>
-      </div>
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 14, paddingBottom: 4 }}>
         {LOBBY_CATS.map(([k, label]) => (
-          <button key={k} onClick={() => setLobbyCat(k)} style={{ flexShrink: 0, padding: "8px 14px", borderRadius: 999, cursor: "pointer", fontWeight: 800, fontSize: 12, color: "#f8fafc", border: `1px solid ${lobbyCat === k ? GOLD_L : "#334155"}`, background: lobbyCat === k ? "#14532d" : "#0f172a" }}>{label}</button>
+          <button key={k} onClick={() => setLobbyCat(k)} style={{ flexShrink: 0, padding: "9px 16px", borderRadius: 999, cursor: "pointer", fontWeight: 800, fontSize: 12, color: "#f8fafc", border: `1px solid ${lobbyCat === k ? "#fbbf24" : "#1f2937"}`, background: lobbyCat === k ? "#14532d" : "#0f172a" }}>{label}</button>
         ))}
       </div>
       {visibleCards.length === 0 && <p style={{ textAlign: "center", opacity: .7 }}>No games in this category right now.</p>}
+
       {LOBBY_SECTIONS.filter(sec => lobbyCat === "all" || sec.key === lobbyCat).map(sec => {
         const items = visibleCards.filter(([v]) => (LOBBY_SETS[sec.key] || []).includes(v));
         if (!items.length) return null;
         return (
-          <div key={sec.key} style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-              <div style={{ fontWeight: 900, fontSize: 16, color: "#f8fafc", borderLeft: "3px solid #fbbf24", paddingLeft: 8 }}>{sec.label}</div>
-              <div style={{ fontSize: 11, color: "#64748b", letterSpacing: .6 }}>{items.length} GAMES</div>
+          <div key={sec.key} style={{ marginBottom: 22 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 900, fontSize: 17, color: "#f8fafc" }}>{sec.label}</div>
+              <div style={{ fontSize: 11, color: "#64748b", letterSpacing: .8 }}>{items.length} GAMES</div>
             </div>
-            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollSnapType: "x mandatory" }}>
-              {items.map(([v, , name, desc, bg]) => (
-                <div key={v} onClick={() => setView(v)} style={{ flex: "0 0 150px", scrollSnapAlign: "start", borderRadius: 16, overflow: "hidden", cursor: "pointer", background: "#0d131d", border: "1px solid #1f2937", boxShadow: "0 10px 22px #0008" }}>
-                  <div style={{ height: 124, position: "relative", display: "grid", placeItems: "center", background: `radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.25),transparent 60%), ${bg}` }}>
-                    {lobbyImgSrc(v)
-                      ? <img src={lobbyImgSrc(v)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <svg viewBox="0 0 64 64" width="64" height="64" style={{ filter: "drop-shadow(0 6px 10px rgba(0,0,0,.35))" }} dangerouslySetInnerHTML={{ __html: LOBBY_GLYPH[v] || LOBBY_GLYPH.originals }} />}
+            <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 6, scrollSnapType: "x mandatory" }}>
+              {items.map(([v, , name, desc, bg]) => {
+                const src = lobbyImgSrc(v);
+                const min = +C?.min_bets?.[v === "dragon" ? "dragon_tiger" : v] || +C?.min_bet || 10;
+                return (
+                  <div key={v} onClick={() => setView(v)} style={{ flex: "0 0 196px", scrollSnapAlign: "start", borderRadius: 18, overflow: "hidden", cursor: "pointer", background: "#0c1219", border: "1px solid #1c2633", boxShadow: "0 12px 26px #0009" }}>
+                    <div style={{ height: 146, position: "relative", display: "grid", placeItems: "center", background: `radial-gradient(120% 90% at 30% 0%,rgba(255,255,255,.22),transparent 60%), ${bg}` }}>
+                      {src
+                        ? <img src={src} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                        : <svg viewBox="0 0 64 64" width="72" height="72" style={{ filter: "drop-shadow(0 8px 14px rgba(0,0,0,.4))" }} dangerouslySetInnerHTML={{ __html: LOBBY_GLYPH[v] || LOBBY_GLYPH.originals }} />}
+                      <span style={{ position: "absolute", right: 10, top: 10, fontSize: 10, fontWeight: 900, padding: "4px 8px", borderRadius: 999, background: "rgba(0,0,0,.55)", color: "#fde68a" }}>MIN {R(min)}</span>
+                    </div>
+                    <div style={{ padding: "11px 12px 13px" }}>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "#f8fafc", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4, lineHeight: 1.35, height: 30, overflow: "hidden" }}>{desc}</div>
+                    </div>
                   </div>
-                  <div style={{ padding: "10px 11px 12px" }}>
-                    <div style={{ fontWeight: 800, fontSize: 14, color: "#f8fafc", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3, lineHeight: 1.35, height: 30, overflow: "hidden" }}>{desc}</div>
-                    <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, marginTop: 6 }}>Min {R(+C?.min_bets?.[v === "dragon" ? "dragon_tiger" : v] || +C?.min_bet || 10)}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -4920,6 +4935,77 @@ export default function CasinoHub(props) {
     <div className="cx-root" style={{ minHeight: "100vh" }}>
       <style>{CASINO_AMT_CSS}</style>
       <CasinoHubInner {...props} />
+    </div>
+  );
+}
+
+export function ActivityPage({ supabase, me, reload, say, cfg }) {
+  const [st, setSt] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc("vip_status");
+    if (error) setErr("Activity is not available yet.");
+    else { setSt(data || {}); setErr(""); }
+  }, [supabase]);
+  useEffect(() => { load(); }, [load, me && me.balance, me && me.winnings]);
+
+  const levels = st?.levels || [];
+  const cur = +st?.level || 0;
+  const claimed = st?.claimed || [];
+  const claimable = levels.filter(l => l.level <= cur && l.levelup_bonus > 0 && !claimed.includes(l.level));
+  const claimTotal = claimable.reduce((a, l) => a + Number(l.levelup_bonus), 0);
+  const curRow = levels.find(l => l.level === cur);
+
+  const claim = async () => {
+    if (busy || claimTotal <= 0) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("vip_claim_levelup");
+    setBusy(false);
+    if (error || !data?.success) { say ? say(error?.message || "Could not claim", 1) : null; return; }
+    say && say(`Claimed ${RM(data.claimed)}`);
+    reload && reload();
+    load();
+  };
+
+  const card = { background: "#0c1219", border: "1px solid #1c2633", borderRadius: 18, padding: 16, marginBottom: 14, boxShadow: "0 10px 24px #0008" };
+  return (
+    <div style={{ minHeight: "100vh", padding: "14px 14px 48px", boxSizing: "border-box", color: "#f3efe0", background: "radial-gradient(120% 60% at 50% 0%,#0f2a1d 0%,#06100b 65%)", fontFamily: "system-ui,-apple-system,Segoe UI,Roboto,sans-serif" }}>
+      <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 14 }}>Activity</div>
+      {err && <div style={{ ...card, textAlign: "center", opacity: .8 }}>{err}</div>}
+
+      <div style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 16 }}>Activity Award</div>
+            <div style={{ fontSize: 12, opacity: .75, marginTop: 4 }}>Level-up rewards, paid once per level</div>
+          </div>
+          <div style={{ fontWeight: 900, fontSize: 18, color: "#fde68a" }}>{cur ? `VIP ${cur}` : "—"}</div>
+        </div>
+        <div style={{ fontSize: 12, marginTop: 12, opacity: .85 }}>
+          {claimTotal > 0 ? `Ready to claim ${RM(claimTotal)}` : "Nothing to claim right now"}
+        </div>
+        <button disabled={claimTotal <= 0 || busy} onClick={claim}
+          style={{ width: "100%", marginTop: 12, padding: "13px 0", borderRadius: 12, border: "none", fontWeight: 900, color: "#fff", cursor: claimTotal > 0 ? "pointer" : "not-allowed", opacity: claimTotal > 0 ? 1 : .6, background: claimTotal > 0 ? "linear-gradient(90deg,#16a34a,#84cc16)" : "#1f2937" }}>
+          {claimTotal > 0 ? `Claim ${RM(claimTotal)}` : "Claim"}
+        </button>
+      </div>
+
+      <div style={card}>
+        <div style={{ fontWeight: 900, fontSize: 16 }}>Betting rebate</div>
+        <div style={{ fontSize: 12, opacity: .75, marginTop: 4 }}>Paid to Winnings on the 1st of every month at 2:00 AM IST</div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, fontSize: 13 }}>
+          <span>Your rebate rate</span>
+          <b style={{ color: "#fde68a" }}>{curRow ? `${(Number(curRow.rebate_rate) * 100).toFixed(2)}%` : "—"}</b>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 13 }}>
+          <span>Staked this month</span>
+          <b>{RM(Number(st?.period_stake || 0))}</b>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, opacity: .6, textAlign: "center" }}>Virtual points only.</div>
     </div>
   );
 }
