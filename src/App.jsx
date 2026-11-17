@@ -183,7 +183,7 @@ export default function App() {
   const [session,setSession] = useState(BOOT.c?BOOT.s:null), [ready,setReady] = useState(!!BOOT.c || !BOOT.s), [hash,setHash] = useState(window.location.hash);
   const [me,setMe] = useState(BOOT.c?.me||null), [M,setM] = useState(cleanMatches(BOOT.c?.M)), [rooms,setRooms] = useState(BOOT.c?.rooms||{}), [joined,setJoined] = useState(BOOT.c?.joined||[]), [txs,setTxs] = useState([]), [lb,setLb] = useState([]), [allU,setAllU] = useState([]), [W,setW] = useState([]);
   const [deps,setDeps] = useState([]), [rules,setRules] = useState(BOOT.c?.rules||{}), [dlg,setDlg] = useState(null), [toast,setToast] = useState(null), [gw,setGw] = useState(GATEWAYS[0]), [busy,setBusy] = useState(false);
-  const [live,setLive] = useState(false), [S,setS] = useState(BOOT.c?.S||{}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
+  const [live,setLive] = useState(false), [S,setS] = useState({}), [stats,setStats] = useState(null), [gwOk,setGwOk] = useState({}), [pv,setPv] = useState(null), [myW,setMyW] = useState([]), [authOpen,setAuthOpen] = useState(false), [inst,setInst] = useState(null), [howto,setHowto] = useState(false), [updatePending,setUpdatePending] = useState(false);
   const [myRes,setMyRes] = useState([]);
   const [myNotes,setMyNotes] = useState([]);
   const [thumbMsg,setThumbMsg] = useState("");
@@ -252,6 +252,7 @@ export default function App() {
     document.addEventListener("visibilitychange", onShow);
     return ()=>{ clearInterval(id); supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onShow); };
   },[]);
+  useEffect(()=>{ try{ if("caches" in window) caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{}) }catch{} },[]);
   const uploadingRef = useRef(false);
   const saveGameImage = async (k, url) => {
     const { data: v, error } = await supabase.rpc("admin_set_game_image", { p_key: k, p_url: url });
@@ -415,7 +416,7 @@ export default function App() {
         const fresh = bundleSig(await r.text());
         if(fresh && currentSig() && fresh!==currentSig()){
           const last = +(sessionStorage.getItem("x7reload")||0);
-          if(!uploadingRef.current && Date.now()-last>60000){ sessionStorage.setItem("x7reload", String(Date.now())); window.location.reload(); }
+          if(!uploadingRef.current && Date.now()-last>60000){ sessionStorage.setItem("x7reload", String(Date.now())); const go=()=>window.location.reload(); try{ if("caches" in window){ caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k)))).finally(go) } else go() }catch{ go() } }
           else setUpdatePending(true);
         }
       }catch{}
