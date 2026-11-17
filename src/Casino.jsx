@@ -1901,7 +1901,7 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
     <div style={CS.page}>
       <div style={CS.bar}>
         <button style={CS.back} onClick={onBack}>« Lobby</button>
-        <div style={CS.title}>Chicken Road 2</div>
+        <div style={CS.title}>Chicken Road</div>
         <button style={CS.icon} onClick={toggleSound} aria-label="Sound">{sound ? "🔊" : "🔇"}</button>
       </div>
 
@@ -1911,6 +1911,13 @@ function ChickenRoad({ supabase, me, reload, say, cfg, onBack }) {
         <div style={{ ...CS.curb, right: 0 }} />
         <div style={CS.laneLine} />
         {[18, 46, 74].map(x => <div key={x} style={{ ...CS.laneLine, left: `${x}%`, opacity: 0.25 }} />)}
+        <style>{`@keyframes crDown{from{top:-12%}to{top:105%}}@keyframes crUp{from{top:105%}to{top:-12%}}`}</style>
+        {[
+          { x: 30, a: "crDown", t: 2.4, d: 0, c: "🚙" }, { x: 30, a: "crDown", t: 3.2, d: 1.5, c: "🚗" },
+          { x: 62, a: "crUp", t: 2.8, d: 0.7, c: "🚕" }, { x: 62, a: "crUp", t: 3.6, d: 2.2, c: "🚌" },
+        ].map((car, i) => (
+          <span key={i} style={{ position: "absolute", left: `${car.x}%`, top: "0%", fontSize: 24, transform: "translateX(-50%)", animation: `${car.a} ${car.t}s linear ${car.d}s infinite`, pointerEvents: "none", zIndex: 1 }}>{car.c}</span>
+        ))}
         <span style={{ ...CS.tree, left: 6, top: 30 }}>🌳</span>
         <span style={{ ...CS.tree, right: 6, top: 150 }}>🌲</span>
         <span style={{ ...CS.tree, left: 6, top: 290 }}>🌳</span>
@@ -3907,7 +3914,7 @@ function ColorLottery({ supabase, me, reload, say, cfg, onBack }) {
         </div>
 
         {pane === "history" && (
-          <div>
+          <div style={{ maxHeight: 360, overflowY: "auto" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.8fr 0.8fr", fontSize: 11, color: "#8b9bb4", padding: "4px 0", fontWeight: 700 }}>
               <span>Period</span><span>Number</span><span>Size</span><span>Colour</span>
             </div>
@@ -4758,7 +4765,7 @@ export default function CasinoHub({ supabase, me, reload, say, cfg }) {
     ["mines", "mines", "Mines", "Pick safe cells. Cash out before you hit a mine.", "linear-gradient(135deg,#052e16,#166534)"],
     ["vortex", "vortex", "Vortex", "Spin the multiplier wheel. Land on up to 27.5x.", "linear-gradient(135deg,#2e1065,#7e22ce)"],
     ["dice", "dice", "Dice", "Roll two dice. Under 7, seven, or over 7.", "linear-gradient(135deg,#0c4a6e,#0284c7)"],
-    ["chicken", "chicken", "Chicken Road 2", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
+    ["chicken", "chicken", "Chicken Road", "Cross the road lane by lane. Cash out before you get hit.", "linear-gradient(135deg,#3f2a05,#ca8a04)"],
     ["elements", "elements", "Elements", "Pick Earth, Water or Fire. Match the draw.", "linear-gradient(135deg,#1e3a8a,#7c2d12)"],
     ["ludo", "ludo", "Ludo", "Player vs player. Winner takes 90% of the pot.", "linear-gradient(135deg,#14532d,#16a34a)"],
     ["goal", "goal", "Goal Wave", "Take penalties. Build a streak of goals and cash out before the keeper saves one.", "linear-gradient(135deg,#052e16,#15803d)"],
