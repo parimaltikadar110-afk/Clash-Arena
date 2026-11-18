@@ -4939,15 +4939,20 @@ export default function CasinoHub(props) {
   );
 }
 
+const ATT_LADDER = [4, 20, 65, 180, 450, 2200, 6000];
+
 export function ActivityPage({ supabase, me, reload, say, cfg }) {
   const [st, setSt] = useState(null);
+  const [att, setAtt] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState("");
+  const [gmsg, setGmsg] = useState("");
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc("vip_status");
-    if (error) setErr("Activity is not available yet.");
-    else { setSt(data || {}); setErr(""); }
+    const [v, a] = await Promise.all([supabase.rpc("vip_status"), supabase.rpc("attendance_state")]);
+    if (v.error) setErr("VIP rewards are not set up yet."); else { setSt(v.data || {}); setErr(""); }
+    if (!a.error && a.data) setAtt(a.data);
   }, [supabase]);
   useEffect(() => { load(); }, [load, me && me.balance, me && me.winnings]);
 
@@ -4958,22 +4963,87 @@ export function ActivityPage({ supabase, me, reload, say, cfg }) {
   const claimTotal = claimable.reduce((a, l) => a + Number(l.levelup_bonus), 0);
   const curRow = levels.find(l => l.level === cur);
 
-  const claim = async () => {
+  const claimAward = async () => {
     if (busy || claimTotal <= 0) return;
     setBusy(true);
     const { data, error } = await supabase.rpc("vip_claim_levelup");
     setBusy(false);
     if (error || !data?.success) { say ? say(error?.message || "Could not claim", 1) : null; return; }
     say && say(`Claimed ${RM(data.claimed)}`);
-    reload && reload();
-    load();
+    reload && reload(); load();
   };
 
+  const checkIn = async () => {
+    if (busy || !att || att.checked_today) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("attendance_claim");
+    setBusy(false);
+    if (error || !data?.success) { say ? say(error?.message || "Could not check in", 1) : null; return; }
+    say && say(`Check-in done. +${RM(data.reward)}`);
+    reload && reload(); load();
+  };
+
+  const redeem = async () => {
+    const c = code.trim();
+    if (!c || busy) return;
+    setBusy(true); setGmsg("");
+    const { data, error } = await supabase.rpc("gift_redeem", { p_code: c });
+    setBusy(false);
+    if (error || !data?.success) { setGmsg(error?.message || "Could not redeem"); return; }
+    setCode(""); setGmsg(`Redeemed ${RM(data.amount)}`);
+    reload && reload(); load();
+  };
+
+  const ladder = att?.ladder || ATT_LADDER;
+  const streak = +att?.streak || 0;
+  const checked = !!att?.checked_today;
+  const nextDay = +att?.next_day || 1;
+
   const card = { background: "#0c1219", border: "1px solid #1c2633", borderRadius: 18, padding: 16, marginBottom: 14, boxShadow: "0 10px 24px #0008" };
+  const btn = (on) => ({ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", fontWeight: 900, color: "#fff", cursor: on ? "pointer" : "not-allowed", opacity: on ? 1 : .55, background: on ? "linear-gradient(90deg,#16a34a,#84cc16)" : "#1f2937" });
+
   return (
     <div style={{ minHeight: "100vh", padding: "14px 14px 48px", boxSizing: "border-box", color: "#f3efe0", background: "radial-gradient(120% 60% at 50% 0%,#0f2a1d 0%,#06100b 65%)", fontFamily: "system-ui,-apple-system,Segoe UI,Roboto,sans-serif" }}>
       <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 14 }}>Activity</div>
       {err && <div style={{ ...card, textAlign: "center", opacity: .8 }}>{err}</div>}
+
+      <div style={{ ...card, background: "linear-gradient(135deg,#7f1d1d 0%,#dc2626 60%,#f97316 100%)", border: "1px solid #fca5a555" }}>
+        <div style={{ fontWeight: 900, fontSize: 20 }}>Attendance bonus</div>
+        <div style={{ fontSize: 12, opacity: .92, marginTop: 4 }}>Check in every day. Rewards grow with each consecutive day.</div>
+        <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "stretch" }}>
+          <div style={{ flex: 1, background: "rgba(0,0,0,.25)", borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontSize: 11, opacity: .85 }}>Consecutive days</div>
+            <div style={{ fontSize: 22, fontWeight: 900 }}>{att ? `${streak} / 7` : "—"}</div>
+          </div>
+          <div style={{ flex: 1, background: "rgba(0,0,0,.25)", borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontSize: 11, opacity: .85 }}>Total earned</div>
+            <div style={{ fontSize: 22, fontWeight: 900 }}>{RM(Number(att?.total_claimed || 0))}</div>
+          </div>
+        </div>
+        {!att && <div style={{ fontSize: 12, marginTop: 12, opacity: .85 }}>Attendance is not set up yet.</div>}
+      </div>
+
+      {att && (
+        <div style={card}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+            {ladder.map((r, i) => {
+              const d = i + 1;
+              const done = d <= streak;
+              const today = !checked && d === nextDay;
+              return (
+                <div key={d} style={{ borderRadius: 12, padding: "11px 6px", textAlign: "center", background: done ? "#1e293b" : "#0f1726", border: `1px solid ${done ? "#fbbf24" : today ? "#38bdf8" : "#1f2937"}`, opacity: done || today ? 1 : .7 }}>
+                  <div style={{ fontWeight: 900, fontSize: 13, color: "#fde68a" }}>{RM(r)}</div>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", margin: "8px auto", background: done ? "radial-gradient(circle at 30% 30%,#fff7c2,#f59e0b)" : "#1f2937", border: "2px solid #92400e55" }} />
+                  <div style={{ fontSize: 11, opacity: .8 }}>{d} Day</div>
+                </div>
+              );
+            })}
+          </div>
+          <button disabled={checked || busy} onClick={checkIn} style={{ ...btn(!checked && !busy), marginTop: 14 }}>
+            {checked ? "Checked in today" : `Check in · ${RM(ladder[nextDay - 1])}`}
+          </button>
+        </div>
+      )}
 
       <div style={card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -4986,10 +5056,23 @@ export function ActivityPage({ supabase, me, reload, say, cfg }) {
         <div style={{ fontSize: 12, marginTop: 12, opacity: .85 }}>
           {claimTotal > 0 ? `Ready to claim ${RM(claimTotal)}` : "Nothing to claim right now"}
         </div>
-        <button disabled={claimTotal <= 0 || busy} onClick={claim}
-          style={{ width: "100%", marginTop: 12, padding: "13px 0", borderRadius: 12, border: "none", fontWeight: 900, color: "#fff", cursor: claimTotal > 0 ? "pointer" : "not-allowed", opacity: claimTotal > 0 ? 1 : .6, background: claimTotal > 0 ? "linear-gradient(90deg,#16a34a,#84cc16)" : "#1f2937" }}>
+        <button disabled={claimTotal <= 0 || busy} onClick={claimAward} style={{ ...btn(claimTotal > 0 && !busy), marginTop: 12 }}>
           {claimTotal > 0 ? `Claim ${RM(claimTotal)}` : "Claim"}
         </button>
+      </div>
+
+      <div style={card}>
+        <div style={{ fontWeight: 900, fontSize: 16 }}>Gift code</div>
+        <div style={{ fontSize: 12, opacity: .75, marginTop: 4 }}>Enter a code to receive a gift reward in Winnings</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="ENTER CODE" disabled={busy}
+            style={{ flex: 1, minWidth: 0, padding: "12px 12px", borderRadius: 12, border: "1px solid #22304a", background: "#0a0f18", color: "#f8fafc", fontWeight: 800, letterSpacing: 1, boxSizing: "border-box" }} />
+          <button onClick={redeem} disabled={!code.trim() || busy}
+            style={{ padding: "0 18px", borderRadius: 12, border: "none", fontWeight: 900, color: "#fff", cursor: code.trim() && !busy ? "pointer" : "not-allowed", opacity: code.trim() && !busy ? 1 : .55, background: "linear-gradient(90deg,#7c3aed,#db2777)" }}>
+            Redeem
+          </button>
+        </div>
+        {gmsg && <div style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: gmsg.startsWith("Redeemed") ? "#4ade80" : "#fca5a5" }}>{gmsg}</div>}
       </div>
 
       <div style={card}>
