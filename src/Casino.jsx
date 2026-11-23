@@ -4760,15 +4760,17 @@ const LOBBY_GLYPH = {
 function ModeSwitch({ Manual, Auto, ...props }) {
   const [mode, setMode] = useState("manual");
   const tab = (id, label) => (
-    <button type="button" onClick={() => setMode(id)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, cursor: "pointer", fontWeight: 900, fontSize: 13, color: "#f8fafc", border: `1px solid ${mode === id ? "#fbbf24" : "#2a3345"}`, background: mode === id ? "#14532d" : "#0f172a" }}>{label}</button>
+    <button type="button" onClick={() => setMode(id)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, cursor: "pointer", fontWeight: 900, fontSize: 13, color: "#f8fafc", border: `1px solid ${mode === id ? "#fbbf24" : "#2a3345"}`, background: mode === id ? "#14532d" : "#0f172a" }}>{label}</button>
   );
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8, padding: "10px 14px 0", background: "#06100b" }}>
+    <div style={{ minHeight: "100vh", background: "#06100b", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1 }}>
+        {mode === "manual" ? <Manual {...props} /> : <Auto {...props} />}
+      </div>
+      <div style={{ display: "flex", gap: 8, padding: "10px 14px 18px", background: "#06100b", borderTop: "1px solid #1e2a3d" }}>
         {tab("manual", "Manual")}
         {tab("auto", "Auto")}
       </div>
-      {mode === "manual" ? <Manual {...props} /> : <Auto {...props} />}
     </div>
   );
 }
@@ -5013,6 +5015,221 @@ function AutoKeno({ supabase, me, reload, say, cfg, onBack }) {
   );
 }
 
+/* ---------- Aviator 2 (own professional layout, same server crash engine) ---------- */
+const AV = {
+  page: { minHeight: "100vh", padding: "12px 12px 40px", boxSizing: "border-box", color: "#e5e7eb", background: "linear-gradient(180deg,#0b1a2e,#060d18)", fontFamily: "system-ui,-apple-system,Segoe UI,Roboto,sans-serif" },
+  stage: { position: "relative", height: 300, borderRadius: 18, overflow: "hidden", border: "1px solid #1e3050", background: "radial-gradient(120% 90% at 50% 100%,#1d4ed822,transparent 60%),linear-gradient(180deg,#0a1628,#070e1b)", boxShadow: "inset 0 0 40px #000a" },
+  grid: { position: "absolute", inset: 0, backgroundImage: "linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)", backgroundSize: "40px 40px" },
+  tabs: (on) => ({ flex: 1, padding: "9px 0", border: "none", cursor: "pointer", fontWeight: 800, fontSize: 12, letterSpacing: .5, color: on ? "#0b1220" : "#94a3b8", background: on ? "linear-gradient(90deg,#38bdf8,#818cf8)" : "transparent", borderRadius: 9 }),
+  chip: (on) => ({ flex: 1, padding: "8px 0", borderRadius: 9, border: `1px solid ${on ? "#38bdf8" : "#1e3050"}`, background: on ? "#0c2a44" : "#0b1628", color: "#e2e8f0", fontWeight: 800, fontSize: 12, cursor: "pointer" }),
+};
+
+function AviatorPro({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start0 = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start0);
+  useEffect(() => { setBal(start0); }, [start0]);
+
+  const [mode, setMode] = useState("manual");
+  const [bet, setBet] = useState(10);
+  const [autoAt, setAutoAt] = useState(2);
+  const [round, setRound] = useState(null);     // { id, bet, startMs }
+  const [offset, setOffset] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const [end, setEnd] = useState(null);         // { kind, multiplier, payout, crash_point, elapsed }
+  const [busy, setBusy] = useState(false);
+  const [hist, setHist] = useState([]);         // recent crash points
+  const [mine, setMine] = useState([]);         // my recent rounds
+  const [msg, setMsg] = useState("");
+  const cashingRef = useRef(false);
+
+  const running = !!round && !end;
+  const elapsed = running ? Math.max(0, (now + offset - round.startMs) / 1000) : (end?.elapsed || 0);
+  const mult = running ? Math.floor(Math.exp(0.07 * elapsed) * 100) / 100 : (end?.multiplier || 1);
+  const cashAmt = Math.round(bet * mult * 100) / 100;
+
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(async () => {
+      const { data } = await supabase.rpc("casino_crash_status", { p_round: round.id });
+      if (data?.crashed) {
+        const cp = Number(data.crash_point);
+        setEnd({ kind: "crashed", multiplier: cp, crash_point: cp, payout: 0, elapsed: Number(data.elapsed) || elapsed });
+        setHist(h => [cp, ...h].slice(0, 12));
+        setMine(m => [{ bet: round.bet, mult: cp, won: false, payout: 0 }, ...m].slice(0, 20));
+        setMsg(`Flew away at ${cp.toFixed(2)}x`);
+        reload && reload();
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [running, round, supabase, reload]);
+
+  const cash = async () => {
+    if (!running || cashingRef.current) return;
+    cashingRef.current = true;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("casino_crash_cashout", { p_round: round.id });
+      if (error || !data?.success) throw new Error(error?.message || "Cash-out failed");
+      if (data.crashed) {
+        const cp = Number(data.crash_point);
+        setEnd({ kind: "crashed", multiplier: cp, crash_point: cp, payout: 0, elapsed });
+        setHist(h => [cp, ...h].slice(0, 12));
+        setMine(m => [{ bet: round.bet, mult: cp, won: false, payout: 0 }, ...m].slice(0, 20));
+        setMsg(`Too late. It flew away at ${cp.toFixed(2)}x`);
+      } else {
+        const m = Number(data.multiplier);
+        setEnd({ kind: "cashed", multiplier: m, payout: Number(data.payout), elapsed });
+        setBal(Number(data.new_balance) || 0);
+        setMine(l => [{ bet: round.bet, mult: m, won: true, payout: Number(data.payout) }, ...l].slice(0, 20));
+        setMsg(`Cashed out at ${m.toFixed(2)}x · ${RM(Number(data.payout))}`);
+      }
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); cashingRef.current = false; }
+  };
+
+  // auto cash-out at the chosen multiplier (still validated by the server)
+  useEffect(() => {
+    if (running && mode === "auto" && mult >= autoAt && !cashingRef.current) cash();
+  }, [mult, running, mode, autoAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const launch = async () => {
+    if (busy || running) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setBusy(true); setMsg(""); setEnd(null);
+    try {
+      const { data, error } = await supabase.rpc("casino_crash_start", { p_game: "aviator2", p_bet: bet });
+      if (error || !data?.success) throw new Error(error?.message || "Could not start");
+      setOffset(Number(data.server_ms) - Date.now());
+      setNow(Date.now());
+      setRound({ id: data.round_id, bet, startMs: Number(data.started_ms) });
+      setBal(Number(data.new_balance) || 0);
+      setMsg("");
+      reload && reload();
+    } catch (e) { say ? say(e.message, 1) : setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const changeBet = (v) => { if (!running) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  // trail and plane position
+  const pts = [];
+  const steps = Math.max(2, Math.floor(elapsed * 10));
+  for (let i = 0; i <= steps; i++) {
+    const t = (elapsed * i) / steps;
+    const m = Math.exp(0.07 * t);
+    pts.push([Math.min(290, 12 + 22 * t), Math.max(12, 190 - Math.min(170, 90 * (m - 1)))]);
+  }
+  const last = pts[pts.length - 1] || [12, 190];
+  const tilt = Math.min(22, elapsed * 2.2);
+  const state = running ? "flying" : end ? (end.kind === "crashed" ? "crashed" : "cashed") : "idle";
+  const stateColor = state === "crashed" ? "#f87171" : state === "cashed" ? "#4ade80" : "#e5e7eb";
+
+  const panel = { background: "linear-gradient(180deg,#0e1a2e,#0a1424)", border: "1px solid #1e3050", borderRadius: 16, padding: 12, marginTop: 12 };
+  return (
+    <div style={AV.page}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <button onClick={onBack} style={{ ...AV.chip(false), flex: "none", padding: "8px 14px" }}>« Lobby</button>
+        <div style={{ fontWeight: 900, letterSpacing: 1.2, color: "#7dd3fc" }}>AVIATOR 2</div>
+        <div style={{ fontWeight: 800, color: "#fde68a", fontSize: 13 }}>{R(bal)}</div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, paddingBottom: 2 }}>
+        {hist.length === 0 && <span style={{ fontSize: 11, opacity: .6 }}>Crash history appears here</span>}
+        {hist.map((h, i) => (
+          <span key={i} style={{ flexShrink: 0, padding: "4px 9px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: h >= 2 ? "#14532d" : "#1e293b", color: h >= 2 ? "#86efac" : "#cbd5e1" }}>{h.toFixed(2)}x</span>
+        ))}
+      </div>
+
+      <div style={AV.stage}>
+        <div style={AV.grid} />
+        <svg viewBox="0 0 300 200" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+          <polyline fill="none" stroke={state === "crashed" ? "#f87171" : "#38bdf8"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            points={pts.map(p => p.join(",")).join(" ")} opacity=".9" />
+        </svg>
+        {state !== "idle" && (
+          <div style={{ position: "absolute", left: `${(last[0] / 300) * 100}%`, top: `${(last[1] / 200) * 100}%`, transform: `translate(-50%,-50%) rotate(${-tilt}deg)`, transition: "left .1s linear, top .1s linear" }}>
+            <svg width="56" height="28" viewBox="0 0 56 28" style={{ opacity: state === "crashed" ? .25 : 1, filter: "drop-shadow(0 4px 8px #000a)" }}>
+              <path d="M4 15 L40 12 L52 5 L50 13 L54 15 L50 17 L52 25 L40 18 L4 15Z" fill="#e2e8f0" stroke="#38bdf8" strokeWidth="1" />
+            </svg>
+          </div>
+        )}
+        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 58, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: stateColor, textShadow: "0 4px 20px #000" }}>{mult.toFixed(2)}x</div>
+            <div style={{ fontSize: 12, letterSpacing: 2, marginTop: 4, color: state === "crashed" ? "#fca5a5" : "#94a3b8", fontWeight: 800 }}>
+              {state === "flying" ? "FLYING" : state === "crashed" ? `FLEW AWAY AT ${Number(end.crash_point).toFixed(2)}x` : state === "cashed" ? "CASHED OUT" : "PLACE YOUR BET"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={panel}>
+        <div style={{ display: "flex", gap: 6, background: "#0a1424", borderRadius: 11, padding: 4, marginBottom: 12 }}>
+          <button onClick={() => setMode("manual")} style={AV.tabs(mode === "manual")}>Manual</button>
+          <button onClick={() => setMode("auto")} style={AV.tabs(mode === "auto")}>Auto cash-out</button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+          <button disabled={running} onClick={() => changeBet(bet - 10)} style={{ ...AV.chip(false), flex: "none", width: 42 }}>−</button>
+          <input type="number" value={bet} disabled={running} onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)}
+            style={{ flex: 1, minWidth: 0, padding: "11px 10px", borderRadius: 10, border: "1px solid #1e3050", background: "#060d18", color: "#f8fafc", fontWeight: 800, fontSize: 16, textAlign: "center", boxSizing: "border-box" }} />
+          <button disabled={running} onClick={() => changeBet(bet + 10)} style={{ ...AV.chip(false), flex: "none", width: 42 }}>+</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {[10, 50, 100, 500].map(v => <button key={v} disabled={running} onClick={() => changeBet(v)} style={AV.chip(bet === v)}>{v}</button>)}
+        </div>
+
+        {mode === "auto" && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, opacity: .7, marginBottom: 6 }}>Cash out automatically at</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[1.5, 2, 3, 5].map(v => <button key={v} disabled={running} onClick={() => setAutoAt(v)} style={AV.chip(autoAt === v)}>{v}x</button>)}
+            </div>
+          </div>
+        )}
+
+        {!running ? (
+          <button disabled={busy} onClick={launch}
+            style={{ width: "100%", padding: "16px 0", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", color: "#052e16", fontWeight: 900, fontSize: 16, letterSpacing: .5, background: "linear-gradient(90deg,#4ade80,#22c55e)", opacity: busy ? .6 : 1 }}>
+            BET {R(bet)}
+          </button>
+        ) : (
+          <button disabled={busy} onClick={cash}
+            style={{ width: "100%", padding: "16px 0", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", color: "#1c1202", fontWeight: 900, fontSize: 16, letterSpacing: .5, background: "linear-gradient(90deg,#fde68a,#f59e0b)", opacity: busy ? .6 : 1 }}>
+            CASH OUT {RM(cashAmt)}
+          </button>
+        )}
+        <div style={{ textAlign: "center", minHeight: 18, marginTop: 8, fontSize: 12, fontWeight: 700, color: "#fde68a" }}>{msg}</div>
+      </div>
+
+      <div style={panel}>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, color: "#94a3b8", marginBottom: 8 }}>MY BETS</div>
+        {mine.length === 0 && <div style={{ fontSize: 12, color: "#64748b" }}>Your rounds from this visit appear here.</div>}
+        {mine.map((r, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", fontSize: 12, padding: "7px 0", borderTop: i ? "1px solid #1e3050" : "none", fontVariantNumeric: "tabular-nums" }}>
+            <span>{RM(r.bet)}</span>
+            <span style={{ color: "#cbd5e1" }}>{r.mult.toFixed(2)}x</span>
+            <span style={{ textAlign: "right", fontWeight: 800, color: r.won ? "#4ade80" : "#f87171" }}>{r.won ? `+${RM(r.payout - r.bet)}` : `-${RM(r.bet)}`}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", lineHeight: 1.5, marginTop: 14 }}>
+        The multiplier rises until the plane flies away. The crash point is set when you bet and stays hidden until the round ends. Return is about 96%. Virtual points only.
+      </div>
+    </div>
+  );
+}
+
 function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -5054,7 +5271,8 @@ function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   if (view === "moto") return <MotoRace {...common} />;
   if (view === "minespro") return <ModeSwitch Manual={MinesPro} Auto={AutoMines} {...common} />;
   if (view === "chicken2") return <ChickenRoad2 {...common} />;
-  if (view === "aviator2" || view === "space" || view === "dcrash") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
+  if (view === "aviator2") return <AviatorPro {...common} />;
+  if (view === "space" || view === "dcrash") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
   if (view === "vault") return (
     <div style={{ background: "linear-gradient(180deg,#0a1f14 0%,#050d09 100%)", minHeight: "100vh", padding: "14px 12px 40px", boxSizing: "border-box" }}>
