@@ -4756,6 +4756,263 @@ const LOBBY_GLYPH = {
   originals: '<path d="M32 8 L38 26 L57 26 L42 37 L48 56 L32 45 L16 56 L22 37 L7 26 L26 26Z" fill="#fff"/>',
 };
 
+/* ---------- Manual / Auto switch (shared by Mines and Keno) ---------- */
+function ModeSwitch({ Manual, Auto, ...props }) {
+  const [mode, setMode] = useState("manual");
+  const tab = (id, label) => (
+    <button type="button" onClick={() => setMode(id)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, cursor: "pointer", fontWeight: 900, fontSize: 13, color: "#f8fafc", border: `1px solid ${mode === id ? "#fbbf24" : "#2a3345"}`, background: mode === id ? "#14532d" : "#0f172a" }}>{label}</button>
+  );
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, padding: "10px 14px 0", background: "#06100b" }}>
+        {tab("manual", "Manual")}
+        {tab("auto", "Auto")}
+      </div>
+      {mode === "manual" ? <Manual {...props} /> : <Auto {...props} />}
+    </div>
+  );
+}
+
+/* ---------- Auto Mines: each round reveals N gems at random, then cashes out ---------- */
+const AM_CELL = (st) => ({ aspectRatio: "1", borderRadius: 10, display: "grid", placeItems: "center", fontSize: 18, fontWeight: 900, color: "#fff", border: `1px solid ${st === "gem" ? "#22d3ee" : st === "mine" ? "#f43f5e" : "#1e3a5f"}`, background: st === "gem" ? "radial-gradient(circle,#0e7490,#042f2e)" : st === "mine" ? "radial-gradient(circle,#9f1239,#1f0a14)" : "linear-gradient(180deg,#0f2748,#081426)" });
+
+function AutoMines({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start0 = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start0);
+  useEffect(() => { setBal(start0); }, [start0]);
+  const [bet, setBet] = useState(10);
+  const [mineCount, setMineCount] = useState(3);
+  const [gems, setGems] = useState(3);
+  const [rounds, setRounds] = useState(10);
+  const [running, setRunning] = useState(false);
+  const [board, setBoard] = useState({ opened: [], mines: [] });
+  const [log, setLog] = useState([]);
+  const [profit, setProfit] = useState(0);
+  const [msg, setMsg] = useState("");
+  const stopRef = useRef(false);
+  useEffect(() => () => { stopRef.current = true; }, []);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const call = async (fn, args) => {
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error || !data?.success) throw new Error(error?.message || "Request failed");
+    return data;
+  };
+  const changeBet = (v) => { if (!running) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const start = async () => {
+    if (running) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setRunning(true); stopRef.current = false; setMsg(""); setLog([]); setProfit(0);
+    let balNow = bal, total = 0;
+    for (let r = 1; r <= rounds && !stopRef.current; r++) {
+      if (bet > balNow) { setMsg("Balance too low to continue"); break; }
+      try {
+        const d = await call("casino_mines_start", { p_bet: bet, p_mines: mineCount });
+        const id = d.round_id;
+        balNow = Number(d.new_balance) || balNow; setBal(balNow);
+        setBoard({ opened: [], mines: [] });
+        const pool = Array.from({ length: 25 }, (_, i) => i).sort(() => Math.random() - 0.5);
+        let opened = [], mult = 1, busted = false;
+        for (let k = 0; k < gems; k++) {
+          const rv = await call("casino_mines_reveal", { p_round: id, p_cell: pool[k] });
+          if (rv.hit) {
+            busted = true; balNow = Number(rv.new_balance) || balNow; setBal(balNow);
+            setBoard({ opened, mines: rv.mines || [] });
+            break;
+          }
+          opened = [...opened, pool[k]]; mult = Number(rv.multiplier) || mult;
+          setBoard({ opened, mines: [] });
+          await sleep(160);
+        }
+        if (!busted) {
+          const co = await call("casino_mines_cashout", { p_round: id });
+          balNow = Number(co.new_balance) || balNow; setBal(balNow);
+          const win = Math.round(bet * mult * 100) / 100;
+          total += win - bet;
+          setBoard({ opened, mines: co.mines || [] });
+          setLog(l => [{ n: r, ok: true, amt: win - bet, mult }, ...l].slice(0, 30));
+        } else {
+          total -= bet;
+          setLog(l => [{ n: r, ok: false, amt: -bet, mult: 0 }, ...l].slice(0, 30));
+        }
+        setProfit(total);
+      } catch (e) { setMsg(e.message); break; }
+      await sleep(700);
+    }
+    setRunning(false);
+    reload && reload();
+  };
+
+  const cellSt = (i) => (board.mines.includes(i) ? "mine" : board.opened.includes(i) ? "gem" : "hidden");
+  const chip = (on, dis) => ({ ...GW.quick, flex: 1, border: `1px solid ${on ? "#fbbf24" : "#334155"}`, opacity: dis ? .5 : 1 });
+  const lbl = { fontSize: 11, opacity: .7, margin: "10px 0 6px" };
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Mines · Auto</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+      <div style={GW.statRow}>
+        <div style={GW.stat}><div style={GW.statLabel}>Rounds</div><div style={GW.statVal}>{log.length}/{rounds}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Profit</div><div style={{ ...GW.statVal, color: profit >= 0 ? "#4ade80" : "#f87171" }}>{profit >= 0 ? "+" : ""}{RM(profit)}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Gems / round</div><div style={GW.statVal}>{gems}</div></div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 6 }}>
+        {Array.from({ length: 25 }, (_, i) => { const st = cellSt(i); return <div key={i} style={AM_CELL(st)}>{st === "gem" ? "💠" : st === "mine" ? "💥" : ""}</div>; })}
+      </div>
+
+      <div style={lbl}>Mines per round</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[1, 3, 5, 10, 15].map(c => <button key={c} disabled={running} onClick={() => setMineCount(c)} style={chip(mineCount === c, running)}>{c}</button>)}
+      </div>
+      <div style={lbl}>Gems to reveal each round, then cash out</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[1, 2, 3, 5, 8, 10].map(c => <button key={c} disabled={running} onClick={() => setGems(c)} style={chip(gems === c, running)}>{c}</button>)}
+      </div>
+      <div style={lbl}>Number of rounds</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[5, 10, 25, 50].map(c => <button key={c} disabled={running} onClick={() => setRounds(c)} style={chip(rounds === c, running)}>{c}</button>)}
+      </div>
+      <div style={lbl}>Stake per round</div>
+      <div style={GW.betRow}>
+        <button style={GW.quick} disabled={running} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} disabled={running} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} disabled={running} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} disabled={running} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      {running ? (
+        <button style={{ ...GW.cash, width: "100%" }} onClick={() => { stopRef.current = true; }}>Stop after this round</button>
+      ) : (
+        <button style={GW.primary} onClick={start}>Start auto · {rounds} rounds · Stake {R(bet)}</button>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+      {log.length > 0 && (
+        <div style={GW.hist}>
+          {log.map((x, i) => (
+            <div key={i} style={{ padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 800, color: "#fff", background: x.ok ? "#15803d" : "#b91c1c" }}>
+              #{x.n} {x.ok ? `+${RM(x.amt)}` : `-${RM(-x.amt)}`}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={GW.rules}>Each round reveals random gems, then cashes out. A mine ends that round with the stake lost. Virtual points only.</div>
+    </div>
+  );
+}
+
+/* ---------- Auto Keno: each round uses fresh random picks ---------- */
+function AutoKeno({ supabase, me, reload, say, cfg, onBack }) {
+  const MIN = +cfg?.min_bet || 10, MAX = +cfg?.max_bet || 50000;
+  const start0 = (Number(me.balance) || 0) + (Number(me.winnings) || 0);
+  const [bal, setBal] = useState(start0);
+  useEffect(() => { setBal(start0); }, [start0]);
+  const [bet, setBet] = useState(10);
+  const [count, setCount] = useState(4);
+  const [rounds, setRounds] = useState(10);
+  const [running, setRunning] = useState(false);
+  const [board, setBoard] = useState({ picks: [], draw: [] });
+  const [log, setLog] = useState([]);
+  const [profit, setProfit] = useState(0);
+  const [msg, setMsg] = useState("");
+  const stopRef = useRef(false);
+  useEffect(() => () => { stopRef.current = true; }, []);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const changeBet = (v) => { if (!running) setBet(Math.min(MAX, Math.max(MIN, Math.round(+v) || MIN))); };
+
+  const start = async () => {
+    if (running) return;
+    if (bet < MIN) return setMsg(`Minimum bet ${R(MIN)}`);
+    if (bet > bal) return setMsg("Balance too low");
+    setRunning(true); stopRef.current = false; setMsg(""); setLog([]); setProfit(0);
+    let balNow = bal, total = 0;
+    for (let r = 1; r <= rounds && !stopRef.current; r++) {
+      if (bet > balNow) { setMsg("Balance too low to continue"); break; }
+      const picks = Array.from({ length: 40 }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, count);
+      setBoard({ picks, draw: [] });
+      try {
+        const { data, error } = await supabase.rpc("casino_keno_play", { p_bet: bet, p_picks: picks });
+        if (error || !data?.success) throw new Error(error?.message || "Request failed");
+        balNow = Number(data.new_balance) || balNow; setBal(balNow);
+        const draw = (data.draw || []).map(Number);
+        const net = (Number(data.payout) || 0) - bet;
+        total += net;
+        setBoard({ picks, draw });
+        setLog(l => [{ n: r, hits: Number(data.hits) || 0, net }, ...l].slice(0, 30));
+        setProfit(total);
+      } catch (e) { setMsg(e.message); break; }
+      await sleep(900);
+    }
+    setRunning(false);
+    reload && reload();
+  };
+
+  const chip = (on, dis) => ({ ...GW.quick, flex: 1, border: `1px solid ${on ? "#fbbf24" : "#334155"}`, opacity: dis ? .5 : 1 });
+  const lbl = { fontSize: 11, opacity: .7, margin: "10px 0 6px" };
+  return (
+    <div style={GW.page}>
+      <div style={GW.bar}>
+        <button style={GW.back} onClick={onBack}>« Lobby</button>
+        <div style={GW.title}>Keno · Auto</div>
+        <div style={GW.balTag}>{R(bal)}</div>
+      </div>
+      <div style={GW.statRow}>
+        <div style={GW.stat}><div style={GW.statLabel}>Rounds</div><div style={GW.statVal}>{log.length}/{rounds}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Profit</div><div style={{ ...GW.statVal, color: profit >= 0 ? "#4ade80" : "#f87171" }}>{profit >= 0 ? "+" : ""}{RM(profit)}</div></div>
+        <div style={GW.stat}><div style={GW.statLabel}>Picks</div><div style={GW.statVal}>{count}</div></div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 5, marginBottom: 8 }}>
+        {Array.from({ length: 40 }, (_, i) => i + 1).map(n => {
+          const picked = board.picks.includes(n);
+          const drawn = board.draw.includes(n);
+          const hit = picked && drawn;
+          return <div key={n} style={{ ...KN.cell(picked, drawn, hit), fontSize: 11 }}>{n}</div>;
+        })}
+      </div>
+
+      <div style={lbl}>Numbers picked each round</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[4, 6, 8, 10].map(c => <button key={c} disabled={running} onClick={() => setCount(c)} style={chip(count === c, running)}>Pick {c}</button>)}
+      </div>
+      <div style={lbl}>Number of rounds</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[5, 10, 25, 50].map(c => <button key={c} disabled={running} onClick={() => setRounds(c)} style={chip(rounds === c, running)}>{c}</button>)}
+      </div>
+      <div style={lbl}>Stake per round</div>
+      <div style={GW.betRow}>
+        <button style={GW.quick} disabled={running} onClick={() => changeBet(bet - 10)}>−</button>
+        <input type="number" value={bet} min={MIN} max={MAX} disabled={running} style={GW.input}
+          onChange={e => setBet(+e.target.value || 0)} onBlur={e => changeBet(e.target.value)} />
+        <button style={GW.quick} disabled={running} onClick={() => changeBet(bet + 10)}>+</button>
+        {[10, 50, 100, 500].map(v => <button key={v} disabled={running} style={GW.quick} onClick={() => changeBet(v)}>{v}</button>)}
+      </div>
+
+      {running ? (
+        <button style={{ ...GW.cash, width: "100%" }} onClick={() => { stopRef.current = true; }}>Stop after this round</button>
+      ) : (
+        <button style={GW.primary} onClick={start}>Start auto · {rounds} rounds · Stake {R(bet)}</button>
+      )}
+
+      <div style={GW.msg}>{msg}</div>
+      {log.length > 0 && (
+        <div style={GW.hist}>
+          {log.map((x, i) => (
+            <div key={i} style={{ padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 800, color: "#fff", background: x.net >= 0 ? "#15803d" : "#b91c1c" }}>
+              #{x.n} {x.hits} hit · {x.net >= 0 ? `+${RM(x.net)}` : `-${RM(-x.net)}`}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={GW.rules}>Each round uses new random numbers and the server draws 10. Return is about 96%. Virtual points only.</div>
+    </div>
+  );
+}
+
 function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   const C = cfg || {};
   const games = C.games || {};
@@ -4776,7 +5033,7 @@ function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   if (view === "roulette") return <Roulette {...common} />;
   if (view === "dragon") return <DragonTiger {...common} />;
   if (view === "aviator") return <Aviator {...common} />;
-  if (view === "mines") return <Mines {...common} />;
+  if (view === "mines") return <ModeSwitch Manual={Mines} Auto={AutoMines} {...common} />;
   if (view === "vortex") return <Vortex {...common} />;
   if (view === "dice") return <Dice {...common} />;
   if (view === "elements") return <Elements {...common} />;
@@ -4788,14 +5045,14 @@ function CasinoHubInner({ supabase, me, reload, say, cfg }) {
   if (view === "vortex2") return <Vortex2 {...common} />;
   if (view === "coinflip") return <CoinFlip {...common} />;
   if (view === "wheel") return <LuckyWheel {...common} />;
-  if (view === "keno") return <Keno {...common} />;
+  if (view === "keno") return <ModeSwitch Manual={Keno} Auto={AutoKeno} {...common} />;
   if (view === "hilo") return <HiLo {...common} />;
   if (view === "tower") return <Tower {...common} />;
   if (view === "color") return <ColorLottery {...common} />;
   if (view === "slots") return <Slots {...common} />;
   if (view === "fishing") return <Fishing {...common} />;
   if (view === "moto") return <MotoRace {...common} />;
-  if (view === "minespro") return <MinesPro {...common} />;
+  if (view === "minespro") return <ModeSwitch Manual={MinesPro} Auto={AutoMines} {...common} />;
   if (view === "chicken2") return <ChickenRoad2 {...common} />;
   if (view === "aviator2" || view === "space" || view === "dcrash") return <CrashGame variant={view} supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
   if (view === "chicken") return <ChickenRoad supabase={supabase} me={me} reload={reload} say={say} cfg={gameCfg} onBack={() => setView("lobby")} />;
