@@ -4760,14 +4760,12 @@ const LOBBY_GLYPH = {
 function ModeSwitch({ Manual, Auto, ...props }) {
   const [mode, setMode] = useState("manual");
   const tab = (id, label) => (
-    <button type="button" onClick={() => setMode(id)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, cursor: "pointer", fontWeight: 900, fontSize: 13, color: "#f8fafc", border: `1px solid ${mode === id ? "#fbbf24" : "#2a3345"}`, background: mode === id ? "#14532d" : "#0f172a" }}>{label}</button>
+    <button type="button" onClick={() => setMode(id)} style={{ flex: 1, padding: "9px 0", borderRadius: 999, border: "none", cursor: "pointer", fontWeight: 900, fontSize: 13, color: mode === id ? "#052e16" : "#cbd5e1", background: mode === id ? "linear-gradient(90deg,#fde68a,#f59e0b)" : "transparent" }}>{label}</button>
   );
   return (
-    <div style={{ minHeight: "100vh", background: "#06100b", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1 }}>
-        {mode === "manual" ? <Manual {...props} /> : <Auto {...props} />}
-      </div>
-      <div style={{ display: "flex", gap: 8, padding: "10px 14px 18px", background: "#06100b", borderTop: "1px solid #1e2a3d" }}>
+    <div style={{ paddingBottom: 96 }}>
+      {mode === "manual" ? <Manual {...props} /> : <Auto {...props} />}
+      <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 70, zIndex: 40, display: "flex", gap: 4, padding: 4, width: "min(92vw,300px)", borderRadius: 999, background: "rgba(11,18,32,.96)", border: "1px solid #334155", boxShadow: "0 8px 24px #000a", boxSizing: "border-box" }}>
         {tab("manual", "Manual")}
         {tab("auto", "Auto")}
       </div>
@@ -5423,9 +5421,11 @@ export function ActivityPage({ supabase, me, reload, say, cfg }) {
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
   const [gmsg, setGmsg] = useState("");
+  const [wb, setWb] = useState(null);
 
   const load = useCallback(async () => {
-    const [v, a] = await Promise.all([supabase.rpc("vip_status"), supabase.rpc("attendance_state")]);
+    const [v, a, w] = await Promise.all([supabase.rpc("vip_status"), supabase.rpc("attendance_state"), supabase.rpc("welcome_bonus_state")]);
+    if (!w.error && w.data) setWb(w.data);
     if (v.error) setErr("VIP rewards are not set up yet."); else { setSt(v.data || {}); setErr(""); }
     if (!a.error && a.data) setAtt(a.data);
   }, [supabase]);
@@ -5482,6 +5482,14 @@ export function ActivityPage({ supabase, me, reload, say, cfg }) {
       <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 14 }}>Activity</div>
       {err && <div style={{ ...card, textAlign: "center", opacity: .8 }}>{err}</div>}
 
+      {wb && wb.status !== "none" && (
+        <div style={{ ...card, background: wb.status === "released" ? "linear-gradient(135deg,#14532d,#16a34a)" : "linear-gradient(135deg,#1e293b,#334155)", border: "1px solid #fde68a55" }}>
+          <div style={{ fontWeight: 900, fontSize: 16 }}>Welcome bonus {RM(Number(wb.amount))}</div>
+          {wb.status === "released"
+            ? <div style={{ fontSize: 12, marginTop: 6, opacity: .9 }}>Unlocked. You can use it in games now.</div>
+            : <div style={{ fontSize: 12, marginTop: 6, opacity: .9 }}>Locked. Make a deposit of {RM(Math.max(0, Number(wb.needed) || 10))} or more to unlock and use it in games.</div>}
+        </div>
+      )}
       <div style={{ ...card, background: "linear-gradient(135deg,#7f1d1d 0%,#dc2626 60%,#f97316 100%)", border: "1px solid #fca5a555" }}>
         <div style={{ fontWeight: 900, fontSize: 20 }}>Attendance bonus</div>
         <div style={{ fontSize: 12, opacity: .92, marginTop: 4 }}>Check in every day. Rewards grow with each consecutive day.</div>
