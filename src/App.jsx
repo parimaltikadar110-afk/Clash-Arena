@@ -256,6 +256,9 @@ export default function App() {
   const [ibDays, setIbDays] = useState(30);
   const [ibAmt, setIbAmt] = useState(5);
   const [ibPreview, setIbPreview] = useState(null);
+  const [ibConfirm, setIbConfirm] = useState(false);
+  const [ibBusy, setIbBusy] = useState(false);
+  const [ibResult, setIbResult] = useState(null);
   const uploadingRef = useRef(false);
   const saveGameImage = async (k, url) => {
     const { data: v, error } = await supabase.rpc("admin_set_game_image", { p_key: k, p_url: url });
@@ -1494,14 +1497,24 @@ export default function App() {
         <p className="sh" style={{marginTop:16}}>Inactive user bonus</p>
         <p className="hint">Give a bonus to users who have not signed in for the chosen number of days. A user gets it at most once every 30 days. Admins are never included.</p>
         <div className="mi" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <label>Inactive for (days) <input type="number" min="1" value={ibDays} onChange={e=>{ setIbDays(Math.max(1,+e.target.value||1)); setIbPreview(null); }} style={{width:90}}/></label>
-          <label>Bonus ₹ <input type="number" min="1" value={ibAmt} onChange={e=>{ setIbAmt(Math.max(1,+e.target.value||1)); setIbPreview(null); }} style={{width:90}}/></label>
+          <label>Inactive for (days) <input type="number" min="1" value={ibDays} onChange={e=>{ setIbDays(Math.max(1,+e.target.value||1)); setIbPreview(null); setIbConfirm(false); }} style={{width:90}}/></label>
+          <label>Bonus ₹ <input type="number" min="1" value={ibAmt} onChange={e=>{ setIbAmt(Math.max(1,+e.target.value||1)); setIbPreview(null); setIbConfirm(false); }} style={{width:90}}/></label>
         </div>
-        <div style={{display:"flex",gap:8,marginTop:8}}>
-          <button className="btn" onClick={async()=>{ const {data,error}=await supabase.rpc("admin_inactive_preview",{p_days:ibDays,p_amount:ibAmt}); if(error) return say(error.message,1); setIbPreview(data); }}>Check users</button>
-          <button className="btn" disabled={!ibPreview || !ibPreview.count} onClick={async()=>{ if(!confirm(`Give ₹${ibAmt} to ${ibPreview.count} users (total ₹${ibPreview.total})?`)) return; const {data,error}=await supabase.rpc("admin_run_inactive_bonus",{p_days:ibDays,p_amount:ibAmt}); if(error) return say(error.message,1); setIbPreview(null); say(`Bonus given to ${data.credited} users`); }}>Give bonus</button>
+        <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+          <button className="btn" disabled={ibBusy} onClick={async()=>{ setIbBusy(true); setIbResult(null); setIbConfirm(false); const {data,error}=await supabase.rpc("admin_inactive_preview",{p_days:ibDays,p_amount:ibAmt}); setIbBusy(false); if(error){ setIbResult({ok:false,text:error.message}); return; } setIbPreview(data); }}>Check users</button>
+          <button className="btn" disabled={ibBusy || !ibPreview || !ibPreview.count} onClick={()=>{ setIbResult(null); setIbConfirm(true); }}>Give bonus</button>
         </div>
         {ibPreview && <p className="hint">{ibPreview.count} users inactive for {ibDays}+ days will get ₹{ibAmt} each (total ₹{ibPreview.total}).</p>}
+        {ibConfirm && (
+          <div style={{marginTop:8,padding:10,border:"1px solid #f59e0b",borderRadius:10}}>
+            <div style={{marginBottom:8}}>Give ₹{ibAmt} to {ibPreview ? ibPreview.count : 0} users now? This cannot be undone.</div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="btn" disabled={ibBusy} onClick={async()=>{ setIbBusy(true); setIbConfirm(false); const {data,error}=await supabase.rpc("admin_run_inactive_bonus",{p_days:ibDays,p_amount:ibAmt}); setIbBusy(false); if(error){ setIbResult({ok:false,text:"Failed: "+error.message}); return; } setIbPreview(null); setIbResult({ok:true,text:`Done. ₹${ibAmt} given to ${data.credited} users (total ₹${data.total}).`}); }}>Yes, give now</button>
+              <button className="btn" onClick={()=>setIbConfirm(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {ibResult && <div style={{marginTop:8,padding:8,borderRadius:8,fontWeight:700,color:ibResult.ok?"#15803d":"#b91c1c"}}>{ibResult.text}</div>}
         <p className="sh" style={{marginTop:16}}>Lobby banner</p>
         <p className="hint">Shown at the top of the casino lobby. Choose a game to open when it is tapped. Uploads go live immediately.</p>
         <div className="mi" style={{display:"flex",gap:8,alignItems:"center"}}>
