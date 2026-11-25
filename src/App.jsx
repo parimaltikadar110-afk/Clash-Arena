@@ -253,6 +253,9 @@ export default function App() {
     return ()=>{ clearInterval(id); supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onShow); };
   },[]);
   useEffect(()=>{ try{ if("caches" in window) caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{}) }catch{} },[]);
+  const [ibDays, setIbDays] = useState(30);
+  const [ibAmt, setIbAmt] = useState(5);
+  const [ibPreview, setIbPreview] = useState(null);
   const uploadingRef = useRef(false);
   const saveGameImage = async (k, url) => {
     const { data: v, error } = await supabase.rpc("admin_set_game_image", { p_key: k, p_url: url });
@@ -1488,6 +1491,17 @@ export default function App() {
         {GL.map(([k,l])=><div key={k} className="mi" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{l}</span><button className="sm" onClick={()=>setG(k,!(["goal","plinko","limbo","vortex2","coinflip","wheel","keno","hilo","tower","color","slots","fishing","moto","aviator2","space","minespro","chicken2","dcrash"].includes(k)?cc.games?.[k]!==false:cc.games?.[k]))}>{(["goal","plinko","limbo","vortex2","coinflip","wheel","keno","hilo","tower","color","slots","fishing","moto","aviator2","space","minespro","chicken2","dcrash"].includes(k)?cc.games?.[k]!==false:cc.games?.[k])?"ON":"OFF"}</button></div>)}
         <label>Min bet ₹</label><input type="number" value={cc.min_bet} onChange={e=>setCcDraft({...cc,min_bet:+e.target.value})}/><label>Coin Vault min deposit ₹</label><input type="number" value={cc.vault_min??10} onChange={e=>setCcDraft({...cc,vault_min:+e.target.value})}/>
         <label>Max bet ₹</label><input type="number" value={cc.max_bet} onChange={e=>setCcDraft({...cc,max_bet:+e.target.value})}/>
+        <p className="sh" style={{marginTop:16}}>Inactive user bonus</p>
+        <p className="hint">Give a bonus to users who have not signed in for the chosen number of days. A user gets it at most once every 30 days. Admins are never included.</p>
+        <div className="mi" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <label>Inactive for (days) <input type="number" min="1" value={ibDays} onChange={e=>{ setIbDays(Math.max(1,+e.target.value||1)); setIbPreview(null); }} style={{width:90}}/></label>
+          <label>Bonus ₹ <input type="number" min="1" value={ibAmt} onChange={e=>{ setIbAmt(Math.max(1,+e.target.value||1)); setIbPreview(null); }} style={{width:90}}/></label>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          <button className="btn" onClick={async()=>{ const {data,error}=await supabase.rpc("admin_inactive_preview",{p_days:ibDays,p_amount:ibAmt}); if(error) return say(error.message,1); setIbPreview(data); }}>Check users</button>
+          <button className="btn" disabled={!ibPreview || !ibPreview.count} onClick={async()=>{ if(!confirm(`Give ₹${ibAmt} to ${ibPreview.count} users (total ₹${ibPreview.total})?`)) return; const {data,error}=await supabase.rpc("admin_run_inactive_bonus",{p_days:ibDays,p_amount:ibAmt}); if(error) return say(error.message,1); setIbPreview(null); say(`Bonus given to ${data.credited} users`); }}>Give bonus</button>
+        </div>
+        {ibPreview && <p className="hint">{ibPreview.count} users inactive for {ibDays}+ days will get ₹{ibAmt} each (total ₹{ibPreview.total}).</p>}
         <p className="sh" style={{marginTop:16}}>Lobby banner</p>
         <p className="hint">Shown at the top of the casino lobby. Choose a game to open when it is tapped. Uploads go live immediately.</p>
         <div className="mi" style={{display:"flex",gap:8,alignItems:"center"}}>
